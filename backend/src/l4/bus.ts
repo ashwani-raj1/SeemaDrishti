@@ -72,6 +72,10 @@ export function streamResponse(): Response {
       "content-type": "text/event-stream",
       "cache-control": "no-cache, no-transform",
       connection: "keep-alive",
+      // The console is served from its own port, so the stream needs this too.
+      // Without it EventSource is rejected and the screen goes quietly stale --
+      // which curl never reveals, because curl does not enforce CORS.
+      "access-control-allow-origin": "*",
     },
   });
 }

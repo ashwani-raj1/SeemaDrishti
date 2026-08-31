@@ -32,3 +32,8 @@ report.[0-9]_.[0-9]_.[0-9]_.[0-9]_.json
 
 # Finder (MacOS) folder config
 .DS_Store
+
+# local edge node database (a post never ships its data)
+ibvap.db
+ibvap.db-wal
+ibvap.db-shm
