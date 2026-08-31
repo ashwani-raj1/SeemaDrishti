@@ -1,0 +1,21 @@
+{
+  "name": "seemadrishti",
+  "version": "1.0.0",
+  "description": "",
+  "homepage": "https://github.com/ashwani-raj1/SeemaDrishti#readme",
+  "bugs": {
+    "url": "https://github.com/ashwani-raj1/SeemaDrishti/issues"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/ashwani-raj1/SeemaDrishti.git"
+  },
+  "license": "ISC",
+  "author": "",
+  "type": "commonjs",
+  "main": "index.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1", 
+    "run":"", 
+  }
+}

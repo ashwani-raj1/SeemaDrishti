@@ -1,0 +1,1892 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>IBVAP — Intelligent Border Video Analytics Platform</title>
+</head>
+<body><style>
+:root {
+  color-scheme: light;
+
+  --paper:      #EBEEE9;
+  --plate:      #F7F8F5;
+  --plate-2:    #E2E7E0;
+  --ink:        #1E2A24;
+  --ink-2:      #4A574F;
+  --ink-3:      #78847C;
+  --rule:       #CFD5CB;
+  --rule-2:     #ADB7AB;
+
+  --olive:      #3D6B55;
+  --olive-soft: #E0EAE3;
+  --ochre:      #8A6529;
+  --ochre-soft: #F0E7D5;
+  --slate:      #45657F;
+  --slate-soft: #DFE6EC;
+  --brick:      #9E4530;
+  --brick-soft: #F3E1DC;
+  --amber:      #9A6D22;
+  --green:      #4A7A5C;
+
+  --sans: ui-sans-serif, "Segoe UI Variable Display", "Segoe UI", system-ui, -apple-system, "Helvetica Neue", Arial, sans-serif;
+  --serif: Georgia, "Iowan Old Style", "Palatino Linotype", Palatino, "Times New Roman", serif;
+  --mono: ui-monospace, "Cascadia Mono", "Cascadia Code", Consolas, "SF Mono", Menlo, monospace;
+}
+
+/* Light-locked by choice: this is a daylight briefing sheet. The viewer's
+   dark toggle keeps the same ground rather than inverting into a different
+   document. */
+:root[data-theme="dark"], :root[data-theme="light"] { color-scheme: light; }
+
+* { box-sizing: border-box; }
+
+body {
+  margin: 0;
+  background: var(--paper);
+  color: var(--ink);
+  font-family: var(--serif);
+  font-size: 17px;
+  line-height: 1.72;
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+}
+
+/* ---------- structure ---------- */
+
+.sheet { max-width: 1140px; margin: 0 auto; padding: 0 28px 120px; }
+.col   { max-width: 66ch; }
+.col-wide { max-width: 78ch; }
+
+section { padding-top: 68px; scroll-margin-top: 64px; }
+
+hr.div {
+  border: 0; border-top: 1px solid var(--rule);
+  margin: 64px 0 0;
+}
+
+/* ---------- masthead ---------- */
+
+.masthead {
+  position: relative;
+  padding: 92px 0 44px;
+  border-bottom: 2px solid var(--ink);
+  overflow: hidden;
+}
+.masthead::before {
+  content: ""; position: absolute; inset: 0; z-index: 0;
+  background-image:
+    repeating-linear-gradient(to right, var(--rule) 0 1px, transparent 1px 44px),
+    repeating-linear-gradient(to bottom, var(--rule) 0 1px, transparent 1px 44px);
+  opacity: .5;
+  -webkit-mask-image: linear-gradient(to bottom, rgba(0,0,0,.85), transparent 78%);
+          mask-image: linear-gradient(to bottom, rgba(0,0,0,.85), transparent 78%);
+}
+.masthead > * { position: relative; z-index: 1; }
+
+.stamp {
+  display: inline-flex; align-items: center; gap: 10px;
+  font-family: var(--mono); font-size: 11px; letter-spacing: .14em;
+  text-transform: uppercase; color: var(--olive);
+  border: 1px solid var(--rule-2); background: var(--plate);
+  padding: 6px 11px; margin-bottom: 26px;
+}
+.stamp b { color: var(--ink); font-weight: 600; }
+
+h1 {
+  font-family: var(--sans); font-weight: 650;
+  font-size: clamp(38px, 6.4vw, 62px); line-height: 1.02;
+  letter-spacing: -.028em; margin: 0 0 6px; text-wrap: balance;
+  max-width: 21ch;
+}
+.h1-sub {
+  font-family: var(--sans); font-weight: 400;
+  font-size: clamp(19px, 2.6vw, 26px); line-height: 1.28;
+  letter-spacing: -.01em; color: var(--ink-2);
+  margin: 0 0 34px; max-width: 30ch;
+}
+.deck { font-size: 19px; line-height: 1.66; max-width: 58ch; margin: 0; }
+.deck strong { font-weight: 700; }
+
+.meta {
+  display: flex; flex-wrap: wrap; gap: 0 40px;
+  margin-top: 38px; padding-top: 22px;
+  border-top: 1px solid var(--rule);
+  font-family: var(--mono); font-size: 11.5px; letter-spacing: .04em;
+  color: var(--ink-3);
+}
+.meta div span { display: block; color: var(--ink); letter-spacing: 0; }
+
+/* ---------- headings ---------- */
+
+.eyebrow {
+  font-family: var(--mono); font-size: 11px; letter-spacing: .17em;
+  text-transform: uppercase; color: var(--olive);
+  display: flex; align-items: center; gap: 12px; margin: 0 0 16px;
+}
+.eyebrow::after {
+  content: ""; flex: 1; height: 1px; background: var(--rule); max-width: 180px;
+}
+
+h2 {
+  font-family: var(--sans); font-weight: 640;
+  font-size: clamp(27px, 3.6vw, 35px); line-height: 1.12;
+  letter-spacing: -.021em; margin: 0 0 18px; text-wrap: balance;
+  max-width: 30ch;
+}
+h3 {
+  font-family: var(--sans); font-weight: 620; font-size: 21px;
+  line-height: 1.24; letter-spacing: -.012em;
+  margin: 46px 0 12px; text-wrap: balance;
+}
+h4 {
+  font-family: var(--mono); font-weight: 600; font-size: 12px;
+  letter-spacing: .13em; text-transform: uppercase; color: var(--ink-2);
+  margin: 34px 0 10px;
+}
+p { margin: 0 0 17px; }
+.lead { font-size: 18.5px; color: var(--ink-2); max-width: 62ch; }
+
+a { color: var(--olive); text-decoration-thickness: 1px; text-underline-offset: 2px; }
+a:focus-visible, button:focus-visible {
+  outline: 2px solid var(--olive); outline-offset: 3px;
+}
+
+code {
+  font-family: var(--mono); font-size: .86em;
+  background: var(--plate-2); padding: 1px 5px;
+  border: 1px solid var(--rule); white-space: nowrap;
+}
+.fid {
+  font-family: var(--mono); font-size: .8em; color: var(--olive);
+  white-space: nowrap; font-weight: 600;
+}
+.pid {
+  font-family: var(--mono); font-size: .8em; color: var(--ochre);
+  white-space: nowrap; font-weight: 600;
+}
+
+/* ---------- nav ---------- */
+
+.nav {
+  position: sticky; top: 0; z-index: 40;
+  background: color-mix(in srgb, var(--paper) 92%, transparent);
+  backdrop-filter: blur(9px);
+  border-bottom: 1px solid var(--rule);
+}
+.nav-in {
+  max-width: 1140px; margin: 0 auto; padding: 0 28px;
+  display: flex; gap: 4px; overflow-x: auto; scrollbar-width: thin;
+}
+.nav a {
+  font-family: var(--mono); font-size: 11px; letter-spacing: .09em;
+  text-transform: uppercase; color: var(--ink-2); text-decoration: none;
+  padding: 13px 11px; white-space: nowrap; border-bottom: 2px solid transparent;
+}
+.nav a:hover { color: var(--olive); border-bottom-color: var(--olive); }
+
+/* ---------- plates (diagrams) ---------- */
+
+.plate {
+  background: var(--plate); border: 1px solid var(--rule-2);
+  margin: 30px 0 34px; max-width: 1000px;
+}
+.plate-hd {
+  display: flex; align-items: baseline; gap: 14px; flex-wrap: wrap;
+  padding: 12px 20px; border-bottom: 1px solid var(--rule);
+  background: var(--plate-2);
+  font-family: var(--mono); font-size: 11px; letter-spacing: .13em;
+  text-transform: uppercase;
+}
+.plate-hd b { color: var(--olive); font-weight: 700; }
+.plate-hd span { color: var(--ink-2); letter-spacing: .06em; }
+.plate-body { padding: 26px 22px; overflow-x: auto; }
+.plate-ft {
+  padding: 13px 20px; border-top: 1px solid var(--rule);
+  font-family: var(--sans); font-size: 14px; line-height: 1.55;
+  color: var(--ink-2); background: var(--plate-2);
+}
+
+/* generic diagram atoms */
+.dg { font-family: var(--mono); font-size: 12.5px; line-height: 1.45; min-width: min-content; }
+.box {
+  border: 1px solid var(--rule-2); background: var(--paper);
+  padding: 11px 13px;
+}
+.box-t { font-weight: 700; color: var(--ink); letter-spacing: .02em; }
+.box-s { color: var(--ink-3); font-size: 11.5px; margin-top: 3px; }
+.arw { color: var(--rule-2); text-align: center; font-size: 15px; line-height: 1; }
+.chip {
+  display: inline-block; border: 1px solid var(--rule-2);
+  background: var(--paper); padding: 3px 8px; margin: 2px 3px 2px 0;
+  font-size: 11.5px; white-space: nowrap;
+}
+.chip.olive { border-color: var(--olive); color: var(--olive); background: var(--olive-soft); }
+.chip.slate { border-color: var(--slate); color: var(--slate); background: var(--slate-soft); }
+.chip.ochre { border-color: var(--ochre); color: var(--ochre); background: var(--ochre-soft); }
+
+/* ---------- layer stack ---------- */
+
+.stack { display: flex; flex-direction: column; gap: 0; }
+.layer {
+  display: grid; grid-template-columns: 96px 1fr; align-items: stretch;
+  border: 1px solid var(--rule-2); border-bottom: 0;
+}
+.layer:last-child { border-bottom: 1px solid var(--rule-2); }
+.layer-id {
+  display: flex; flex-direction: column; justify-content: center;
+  padding: 12px 10px; border-right: 1px solid var(--rule-2);
+  font-family: var(--mono); font-size: 15px; font-weight: 700;
+  background: var(--plate-2); color: var(--ink);
+}
+.layer-id small {
+  display: block; font-size: 9.5px; font-weight: 600; letter-spacing: .11em;
+  color: var(--ink-3); margin-top: 3px; text-transform: uppercase;
+}
+.layer-body { padding: 13px 15px; background: var(--paper); }
+.layer-body h5 {
+  font-family: var(--sans); font-size: 15px; font-weight: 620;
+  margin: 0 0 7px; letter-spacing: -.008em;
+}
+.layer-body p {
+  font-family: var(--sans); font-size: 13.5px; line-height: 1.55;
+  color: var(--ink-2); margin: 0 0 8px;
+}
+
+/* three-layer model */
+.tri { display: flex; flex-direction: column; gap: 3px; }
+.tri-band {
+  display: grid; grid-template-columns: 122px 1fr; gap: 0;
+  border: 1px solid var(--rule-2);
+}
+.tri-k {
+  font-family: var(--mono); font-size: 11px; letter-spacing: .1em;
+  text-transform: uppercase; font-weight: 700;
+  padding: 14px 12px; border-right: 1px solid var(--rule-2);
+  display: flex; align-items: center;
+}
+.tri-v { padding: 13px 16px; font-family: var(--sans); font-size: 14px; line-height: 1.58; }
+.tri-v b { font-weight: 650; }
+.tri-0 .tri-k { background: var(--olive); color: #F4F7F3; border-right-color: var(--olive); }
+.tri-0 { border-color: var(--olive); }
+.tri-1 .tri-k { background: var(--ochre-soft); color: var(--ochre); }
+.tri-2 .tri-k { background: var(--slate-soft); color: var(--slate); }
+.tri-link {
+  font-family: var(--mono); font-size: 10.5px; letter-spacing: .1em;
+  color: var(--ink-3); text-transform: uppercase; padding: 2px 0 2px 130px;
+}
+
+/* ---------- cards ---------- */
+
+.cards { display: grid; gap: 14px; margin: 26px 0 0; }
+.cards.two { grid-template-columns: repeat(auto-fit, minmax(268px, 1fr)); }
+.cards.three { grid-template-columns: repeat(auto-fit, minmax(212px, 1fr)); }
+
+.card {
+  border: 1px solid var(--rule-2); background: var(--plate);
+  padding: 17px 18px;
+}
+.card-k {
+  font-family: var(--mono); font-size: 11px; letter-spacing: .12em;
+  text-transform: uppercase; color: var(--ochre); font-weight: 700;
+  margin-bottom: 8px; display: flex; justify-content: space-between; gap: 10px;
+}
+.card-k em { font-style: normal; color: var(--ink-3); font-weight: 400; letter-spacing: .05em; }
+.card h5 {
+  font-family: var(--sans); font-size: 16px; font-weight: 630;
+  margin: 0 0 8px; line-height: 1.3; letter-spacing: -.01em;
+}
+.card p {
+  font-family: var(--sans); font-size: 14px; line-height: 1.6;
+  color: var(--ink-2); margin: 0 0 9px;
+}
+.card p:last-child { margin-bottom: 0; }
+.card .num {
+  font-family: var(--mono); font-variant-numeric: tabular-nums;
+  font-size: 13px; color: var(--ink); font-weight: 600;
+}
+
+/* feature rows */
+.frow {
+  display: grid; grid-template-columns: 58px 1fr; gap: 0;
+  border: 1px solid var(--rule-2); border-bottom: 0; background: var(--plate);
+}
+.frow:last-of-type { border-bottom: 1px solid var(--rule-2); }
+.frow-id {
+  font-family: var(--mono); font-size: 12.5px; font-weight: 700;
+  color: var(--olive); padding: 14px 10px; text-align: center;
+  border-right: 1px solid var(--rule); background: var(--plate-2);
+  font-variant-numeric: tabular-nums;
+}
+.frow-b { padding: 13px 16px; }
+.frow-b h5 {
+  font-family: var(--sans); font-size: 15.5px; font-weight: 630;
+  margin: 0 0 6px; letter-spacing: -.008em;
+}
+.frow-b p {
+  font-family: var(--sans); font-size: 14px; line-height: 1.6;
+  color: var(--ink-2); margin: 0 0 7px;
+}
+.frow-b p:last-child { margin-bottom: 0; }
+.frow-b .why { color: var(--ink); }
+.frow-b .risk { color: var(--brick); }
+.frow-b .why b, .frow-b .risk b {
+  font-family: var(--mono); font-size: 10.5px; letter-spacing: .1em;
+  text-transform: uppercase; font-weight: 700;
+}
+.fgroup { margin: 34px 0 0; }
+.fgroup-hd {
+  display: flex; align-items: baseline; gap: 12px; flex-wrap: wrap;
+  margin-bottom: 12px;
+}
+.fgroup-hd h4 { margin: 0; color: var(--ink); }
+.fgroup-hd .tag {
+  font-family: var(--mono); font-size: 10.5px; letter-spacing: .1em;
+  text-transform: uppercase; padding: 3px 8px; border: 1px solid var(--ochre);
+  color: var(--ochre); background: var(--ochre-soft);
+}
+
+/* ---------- tables ---------- */
+
+.tw { overflow-x: auto; margin: 24px 0 30px; border: 1px solid var(--rule-2); }
+table { border-collapse: collapse; width: 100%; background: var(--plate); }
+th, td {
+  text-align: left; padding: 11px 14px; border-bottom: 1px solid var(--rule);
+  font-family: var(--sans); font-size: 14px; line-height: 1.52;
+  vertical-align: top;
+}
+th {
+  font-family: var(--mono); font-size: 10.5px; letter-spacing: .12em;
+  text-transform: uppercase; color: var(--ink-2); background: var(--plate-2);
+  white-space: nowrap; font-weight: 600;
+}
+tbody tr:last-child td { border-bottom: 0; }
+td.k { font-family: var(--mono); font-size: 12.5px; white-space: nowrap; color: var(--ink); }
+td.no { color: var(--brick); }
+
+/* ---------- callouts ---------- */
+
+.note {
+  border-left: 3px solid var(--olive); background: var(--olive-soft);
+  padding: 15px 18px; margin: 24px 0; max-width: 68ch;
+}
+.note.warn { border-left-color: var(--brick); background: var(--brick-soft); }
+.note.hold { border-left-color: var(--ochre); background: var(--ochre-soft); }
+.note p { font-family: var(--sans); font-size: 14.5px; line-height: 1.62; margin: 0 0 9px; }
+.note p:last-child { margin: 0; }
+.note-k {
+  font-family: var(--mono); font-size: 10.5px; letter-spacing: .13em;
+  text-transform: uppercase; font-weight: 700; color: var(--olive);
+  display: block; margin-bottom: 7px;
+}
+.note.warn .note-k { color: var(--brick); }
+.note.hold .note-k { color: var(--ochre); }
+
+/* ---------- misc ---------- */
+
+ul.tight, ol.tight { margin: 0 0 17px; padding-left: 22px; }
+ul.tight li, ol.tight li { margin-bottom: 8px; }
+
+dl.gloss { margin: 24px 0 0; }
+dl.gloss div {
+  display: grid; grid-template-columns: 168px 1fr; gap: 0 20px;
+  padding: 11px 0; border-top: 1px solid var(--rule);
+}
+dl.gloss dt {
+  font-family: var(--mono); font-size: 12.5px; font-weight: 600; color: var(--ink);
+}
+dl.gloss dd {
+  margin: 0; font-family: var(--sans); font-size: 14px;
+  line-height: 1.6; color: var(--ink-2);
+}
+
+.foot {
+  margin-top: 88px; padding-top: 26px; border-top: 2px solid var(--ink);
+  font-family: var(--mono); font-size: 11.5px; letter-spacing: .05em;
+  color: var(--ink-3); line-height: 1.9;
+}
+
+/* ---------- runtime topology diagram ---------- */
+
+.rtnet { border: 1px dashed var(--rule-2); padding: 18px 13px 13px; position: relative; }
+.rtnetl {
+  position: absolute; top: -8px; left: 12px; background: var(--plate); padding: 0 7px;
+  font-family: var(--mono); font-size: 9.5px; letter-spacing: .11em;
+  text-transform: uppercase; color: var(--ink-2); font-weight: 700;
+}
+.rtbox { border: 1px solid var(--rule-2); background: var(--paper); }
+.rth {
+  display: flex; justify-content: space-between; align-items: baseline; gap: 10px;
+  padding: 8px 10px; border-bottom: 1px solid var(--rule);
+}
+.rtn { font-family: var(--mono); font-size: 12.5px; font-weight: 700; color: var(--ink); }
+.rtt {
+  font-family: var(--mono); font-size: 8.5px; letter-spacing: .12em; text-transform: uppercase;
+  font-weight: 700; padding: 2px 6px; border: 1px solid; white-space: nowrap;
+}
+.rtm { padding: 8px 10px; display: flex; flex-direction: column; gap: 3px; }
+.rtm i { font-style: normal; font-family: var(--mono); font-size: 10.5px; color: var(--ink-3); line-height: 1.4; }
+.rtm i b { color: var(--ink); font-weight: 600; }
+
+.t-proc { border-color: var(--olive); }
+.t-proc .rtt { border-color: var(--olive); color: var(--olive); background: var(--olive-soft); }
+.t-db   { border-color: var(--slate); border-left-width: 5px; }
+.t-db   .rtt { border-color: var(--slate); color: var(--slate); background: var(--slate-soft); }
+.t-brk  { border-color: var(--ochre); border-style: dashed; }
+.t-brk  .rtt { border-color: var(--ochre); color: var(--ochre); background: var(--ochre-soft); }
+.t-vol  { border-color: var(--rule-2); border-bottom-width: 5px; }
+.t-vol  .rtt { border-color: var(--rule-2); color: var(--ink-2); background: var(--plate-2); }
+.t-ext  { border-color: var(--rule-2); border-style: dashed; }
+.t-ext  .rtt { border-color: var(--rule-2); color: var(--ink-3); background: var(--plate-2); }
+
+.rtc {
+  display: flex; align-items: flex-start; gap: 8px; padding: 6px 0 6px 12px;
+  font-family: var(--mono); font-size: 10px; color: var(--ink-3); line-height: 1.45;
+}
+.rtc b { color: var(--rule-2); font-size: 14px; font-weight: 400; line-height: 1; }
+.rtc em { font-style: normal; }
+.rtc em u { text-decoration: none; color: var(--ink); font-weight: 600; }
+
+/* ---------- pipeline diagram ---------- */
+
+.pipe { display: flex; align-items: stretch; gap: 0; }
+.pipe-col {
+  flex: 0 0 168px; border: 1px solid var(--rule-2); background: var(--paper);
+  padding: 10px 11px; display: flex; flex-direction: column; gap: 7px;
+}
+.pipe-col.ingest { border-color: var(--olive); }
+.pipe-col.api    { border-color: var(--slate); }
+.pipe-col.web    { border-color: var(--ochre); }
+.pipe-col.src    { border-style: dashed; flex: 0 0 138px; }
+.pipe-l {
+  font-family: var(--mono); font-size: 10px; letter-spacing: .11em;
+  text-transform: uppercase; font-weight: 700; margin: 0;
+}
+.ingest .pipe-l { color: var(--olive); }
+.api    .pipe-l { color: var(--slate); }
+.web    .pipe-l { color: var(--ochre); }
+.src    .pipe-l { color: var(--ink-3); }
+.pipe-n {
+  font-family: var(--sans); font-size: 13px; font-weight: 630;
+  line-height: 1.25; color: var(--ink);
+}
+.pipe-p { display: flex; flex-direction: column; gap: 3px; }
+.pipe-p i {
+  font-style: normal; font-family: var(--mono); font-size: 10.5px;
+  color: var(--ink-2); line-height: 1.35;
+}
+.pipe-arw {
+  flex: 0 0 74px; display: flex; flex-direction: column;
+  align-items: center; justify-content: center; gap: 2px;
+}
+.pipe-arw b { color: var(--rule-2); font-size: 17px; line-height: 1; font-weight: 400; }
+.pipe-arw em {
+  font-family: var(--mono); font-size: 9.5px; font-style: normal;
+  letter-spacing: .05em; color: var(--ink-3); text-align: center; line-height: 1.3;
+}
+.pipe-arw em b { font-size: inherit; font-weight: 700; color: var(--brick); }
+.legend {
+  display: flex; flex-wrap: wrap; gap: 6px 18px; margin-top: 16px;
+  padding-top: 12px; border-top: 1px dashed var(--rule-2);
+  font-family: var(--mono); font-size: 10.5px; letter-spacing: .06em;
+  color: var(--ink-2);
+}
+.legend span { display: inline-flex; align-items: center; gap: 7px; }
+.legend i { width: 16px; height: 0; border-top: 2px solid; font-style: normal; }
+
+@media (max-width: 640px) {
+  body { font-size: 16px; }
+  .sheet { padding: 0 18px 90px; }
+  .layer, .tri-band { grid-template-columns: 1fr; }
+  .layer-id, .tri-k { border-right: 0; border-bottom: 1px solid var(--rule-2); flex-direction: row; gap: 8px; }
+  .tri-link { padding-left: 10px; }
+  .frow { grid-template-columns: 1fr; }
+  .frow-id { border-right: 0; border-bottom: 1px solid var(--rule); text-align: left; }
+  dl.gloss div { grid-template-columns: 1fr; gap: 4px; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  * { animation: none !important; transition: none !important; }
+}
+</style>
+
+<nav class="nav">
+  <div class="nav-in">
+    <a href="#start">Start here</a>
+    <a href="#layers">Three layers</a>
+    <a href="#problems">Five problems</a>
+    <a href="#unified">One platform</a>
+    <a href="#layer0">Layer 0</a>
+    <a href="#layer1">Layer 1</a>
+    <a href="#layer2">Layer 2</a>
+    <a href="#notbuilding">Not building</a>
+    <a href="#hld">How it's built</a>
+    <a href="#decisions">Decisions</a>
+    <a href="#glossary">Glossary</a>
+  </div>
+</nav>
+
+<div class="sheet">
+
+  <header class="masthead">
+    <div class="stamp">Problem Statement <b>26187</b> · Ministry of Home Affairs</div>
+    <h1>Intelligent Border Video Analytics Platform</h1>
+    <p class="h1-sub">Software that turns cameras India already owns into a system that actually watches.</p>
+    <p class="deck">India's border forces have thousands of ordinary CCTV cameras along the fence, at border posts and at check posts. Those cameras <strong>record</strong>. They don't <strong>notice</strong>. Noticing is left to two or three people staring at screens through the night. This document explains a software layer that does the noticing — and, more importantly, explains why most of the obvious ways to build it have already failed in the field.</p>
+    <div class="meta">
+      <div>Category<span>Software · Smart Automation</span></div>
+      <div>Working name<span>IBVAP</span></div>
+      <div>Audience<span>No prior background assumed</span></div>
+    </div>
+  </header>
+
+  <!-- ============================================ START HERE -->
+  <section id="start">
+    <p class="eyebrow">Orientation</p>
+    <h2>Start here: what exists today, and what's missing</h2>
+
+    <div class="col">
+      <p class="lead">Skip nothing in this section — everything later depends on it.</p>
+
+      <p>A <b>Border Out Post</b> (BOP) is a small manned post along the international border. India has thousands of them, plus check posts on roads and cameras along border roads. Many already have ordinary IP cameras — the same kind used in an office building, sending video over a network cable using a standard called <b>RTSP</b>.</p>
+
+      <p>Those cameras do two things: they show live video on a monitor, and they save it to a hard disk. That's it. If a person climbs the fence at 2 a.m., the camera captures it perfectly and tells nobody. A human has to be looking at that exact tile on that exact screen at that exact moment.</p>
+
+      <p>The obvious fix is to buy smarter cameras — ones with face recognition or number-plate reading built in. India has tried this. It's expensive, the hardware is proprietary, spare parts are hard to get in remote areas, and every installation drags along land acquisition and procurement delays that have historically run into <em>years</em>.</p>
+
+      <div class="note">
+        <span class="note-k">Why this problem statement exists at all</span>
+        <p>An audit found <b>66% of border land-acquisition cases delayed — the worst by nine years</b>. Roughly <b>24,000 acres in Punjab border villages have been disputed since 1988</b>. Every hardware-based solution inherits that entire delay chain.</p>
+        <p>Software running on cameras that are <em>already installed</em> skips all of it. That is the real argument for this project — not that AI is impressive.</p>
+      </div>
+
+      <p>So the goal is a pure-software layer: read the video these cameras already produce, understand what's in it, and tell someone when it matters. No new cameras, no proprietary boxes.</p>
+
+      <h3>The trap almost everyone falls into</h3>
+      <p>Here's the thing that makes this project interesting rather than routine. India already <em>has</em> a large electronic border surveillance programme. Sensors, thermal cameras, radar, laser fences. And the single biggest documented reason those pilots struggled was not that they failed to detect people.</p>
+      <p>It's that they detected <em>everything</em>. Cattle. Wind in the grass. Rain. Dogs. A stray nilgai. An operator who gets 200 false alarms a night stops trusting the system by the third night — and after that, the real alarm looks exactly like the other 199.</p>
+
+      <div class="note warn">
+        <span class="note-k">The claim this project makes</span>
+        <p>Not <em>"we can detect intruders."</em> That is already solved, several times over, by systems in the field right now.</p>
+        <p>The claim is <em>"we can detect intruders <b>without crying wolf</b>"</em> — and everything in this design follows from that one sentence.</p>
+      </div>
+    </div>
+  </section>
+
+  <hr class="div">
+
+  <!-- ============================================ THREE LAYERS -->
+  <section id="layers">
+    <p class="eyebrow">The organising rule</p>
+    <h2>Three layers, built in order</h2>
+
+    <div class="col">
+      <p>This project has a discipline problem baked into it. The clever, memorable, differentiating ideas all sit <em>on top of</em> a fairly ordinary base. If you build the clever parts first, you end up with something that looks impressive and doesn't answer the actual requirement.</p>
+      <p>So the work is split into three layers, and the rule is: <b>build downward from Layer 0, never sideways.</b></p>
+    </div>
+
+    <div class="plate">
+      <div class="plate-hd"><b>Plate 01</b><span>The three-layer rule</span></div>
+      <div class="plate-body">
+        <div class="tri dg">
+
+          <div class="tri-band tri-2">
+            <div class="tri-k">Layer 2<br>Platform</div>
+            <div class="tri-v"><b>The out-of-the-box part.</b> One shared, typed data model, and one platform that any force — BSF, ITBP, Navy, Coast Guard, state police — can run without it being rebuilt for them. This is what makes the project memorable.</div>
+          </div>
+          <div class="tri-link">▲ built on</div>
+
+          <div class="tri-band tri-1">
+            <div class="tri-k">Layer 1<br>Hardening</div>
+            <div class="tri-v"><b>No new features here — only survival.</b> Makes the Layer 0 capabilities work in fog, on a post with no electricity, and in front of a control room staffed by three people. Scoped to five specific documented problems.</div>
+          </div>
+          <div class="tri-link">▲ built on</div>
+
+          <div class="tri-band tri-0">
+            <div class="tri-k">Layer 0<br>PS core</div>
+            <div class="tri-v"><b>Everything the problem statement literally asks for.</b> All eight capabilities, both constraints, working. <b>Layer 0 on its own is a complete, valid submission.</b></div>
+          </div>
+
+        </div>
+      </div>
+      <div class="plate-ft"><b>Read the arrows as dependency, not sequence of importance.</b> Layer 2 is what makes this project stand out. Layer 0 is what makes it <em>count</em>. If Layer 0 is incomplete, Layer 2 stops reading as ambition and starts reading as having ignored the brief.</div>
+    </div>
+  </section>
+
+  <hr class="div">
+
+  <!-- ============================================ PROBLEMS -->
+  <section id="problems">
+    <p class="eyebrow">Layer 1 scope</p>
+    <h2>The five problems we chose to solve</h2>
+
+    <div class="col">
+      <p>Research turned up fourteen documented, sourced problems that Indian border forces face with surveillance technology. Trying to solve all fourteen would produce fourteen shallow features. Five were chosen — the five where <em>software on existing cameras</em> is genuinely the right tool.</p>
+      <p>Each one below is a real, evidenced problem. The numbering (<span class="pid">P1</span>, <span class="pid">P2</span>…) comes from the research catalogue and is used throughout this document.</p>
+    </div>
+
+    <div class="cards two">
+
+      <div class="card">
+        <div class="card-k"><span>P1 · Detection quality</span><em>the big one</em></div>
+        <h5>False alarms, not missed detections, are what killed previous systems</h5>
+        <p>The <span class="num">#1</span> documented failure of India's existing border surveillance pilots was false alerts from <b>wildlife, weather and vegetation</b>.</p>
+        <p><b>What it means for us:</b> the entire value of this platform rests on filtering, not on detecting. This reframes the product.</p>
+      </div>
+
+      <div class="card">
+        <div class="card-k"><span>P2 · Night &amp; fog</span><em>the threat window</em></div>
+        <h5>The border goes blind during exactly the months infiltrators use</h5>
+        <p>From <b>mid-December to February</b>, dense fog drops visibility to near zero at dawn and dusk. Forces confirm infiltrators deliberately exploit it, and that existing equipment capability <b>"declines drastically"</b> in that window.</p>
+        <p><b>What it means for us:</b> low visibility isn't an edge case to handle later. It's the main event.</p>
+      </div>
+
+      <div class="card">
+        <div class="card-k"><span>P3 · Operator load</span><em>a UI problem</em></div>
+        <h5>There is nobody available to watch the screens</h5>
+        <p>BSF is short <b>12,808 personnel</b>, gets pulled onto election and other non-border duties, and a post's control room is manned <b>round the clock by two or three people</b>.</p>
+        <p><b>What it means for us:</b> this is not a detection problem. It's an interface problem. Design for one pair of eyes on an eight-hour shift.</p>
+      </div>
+
+      <div class="card">
+        <div class="card-k"><span>P6 · No power, no signal</span><em>architecture</em></div>
+        <h5>Many posts have no electricity and effectively no connectivity</h5>
+        <p>Several border posts — especially in the hills — <b>lack electricity entirely</b>. Floating river posts have <b>"very poor cellular connectivity."</b> Over <b>4,210 km</b> of access roads are still needed.</p>
+        <p><b>What it means for us:</b> anything cloud-dependent fails the requirement on its own terms. Everything must run locally.</p>
+      </div>
+
+      <div class="card">
+        <div class="card-k"><span>P9 · Drones</span><em>partly out of reach</em></div>
+        <h5>Small drones are the dominant current threat on the Punjab border</h5>
+        <p>Drones recovered in Punjab: <b>107</b> in 2023 → <b>245</b> in 2024 → <b>272+</b> in 2025. Mostly sub-1&nbsp;kg DJI Mavics carrying 500–600&nbsp;g of contraband.</p>
+        <p><b>What it means for us:</b> a ground-facing CCTV camera cannot see one of these. We address two <em>reachable</em> angles instead — see Layer 1.</p>
+      </div>
+
+    </div>
+
+    <div class="note hold">
+      <span class="note-k">On the nine problems left out</span>
+      <p>The other nine documented problems — including that interception, not detection, is the real operational gap, and that equipment breaks with no repair structure — are real and were deliberately set aside. Each has a one-line holding answer prepared, because a knowledgeable reviewer may well ask about them.</p>
+    </div>
+  </section>
+
+  <hr class="div">
+
+  <!-- ============================================ UNIFIED -->
+  <section id="unified">
+    <p class="eyebrow">Product thesis</p>
+    <h2>One platform, many forces</h2>
+
+    <div class="col">
+      <p>This is stated as a design <em>goal</em>, not as a problem being fixed. The problem statement asks the solution to <b>"support integration with existing command and control systems"</b> and to be deployable across <b>"remote border locations and strategic installations."</b></p>
+      <p>That last phrase does a lot of work. <em>Strategic installations</em> is the brief quietly saying "not only the border fence." Naval jetties. Mountain passes. Restricted-area perimeters.</p>
+      <p>So the goal is one platform, one data model, <b>one program</b> — usable by any force, without being customised for any of them. Not a BSF tool and a separate Navy tool. The same primitives, configured differently.</p>
+    </div>
+
+    <div class="plate">
+      <div class="plate-hd"><b>Plate 02</b><span>Same program, different configuration file</span></div>
+      <div class="plate-body">
+        <div class="tw" style="margin:0;border:0">
+          <table>
+            <thead><tr><th>Force</th><th>Zones they'd set up</th><th>Things they'd watch for</th></tr></thead>
+            <tbody>
+              <tr><td class="k">BSF · Punjab / Jammu</td><td>fence line, farm gate, patrol road</td><td>person, vehicle, tractor, animal</td></tr>
+              <tr><td class="k">BSF · Bangladesh border</td><td>waterline, unfenced stretch</td><td>person, boat, livestock herd</td></tr>
+              <tr><td class="k">ITBP · high altitude</td><td>pass, approach route, perimeter</td><td>person, vehicle</td></tr>
+              <tr><td class="k">Navy / Coast Guard</td><td>jetty perimeter, waterline, restricted area</td><td>person, boat, vehicle</td></tr>
+              <tr><td class="k">Police check post</td><td>gate, crossing point</td><td>person, vehicle</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+      <div class="plate-ft"><b>Every row runs identical code.</b> A "zone" is just a shape on the screen plus a label saying what kind of place it is. A fence line and a jetty perimeter are the same thing wearing different names. Supporting ITBP means writing a configuration file, not forking the codebase.</div>
+    </div>
+
+    <div class="note">
+      <span class="note-k">Why this matters more than it sounds</span>
+      <p>It converts a claim into something you can watch happen: the running program switches from a border-fence setup to a naval-waterline setup, live, in about thirty seconds. Same code, same database, same screen — only the config changed.</p>
+      <p>And unlike most impressive demos, this one needs <b>no AI computation at all</b>, so it works on any laptop.</p>
+    </div>
+  </section>
+
+  <hr class="div">
+
+  <!-- ============================================ LAYER 0 -->
+  <section id="layer0">
+    <p class="eyebrow">Layer 0</p>
+    <h2>What the problem statement demands</h2>
+
+    <div class="col">
+      <p>Eight capabilities, two constraints, one integration requirement. Non-negotiable, and complete before anything else gets attention.</p>
+    </div>
+
+    <h4>The eight capabilities</h4>
+    <div style="max-width:1000px">
+      <div class="frow"><div class="frow-id">01</div><div class="frow-b">
+        <h5>Find people and follow them</h5>
+        <p>Spot a person in the video, draw a box around them, and keep the same identity on them frame after frame as they move. "Tracking" means the system knows frame 200's person is the same one from frame 100 — not a new person each time.</p>
+        <p class="risk"><b>Note</b> Table stakes. Every competing team will have this. Zero differentiation on its own.</p>
+      </div></div>
+      <div class="frow"><div class="frow-id">02</div><div class="frow-b">
+        <h5>Find vehicles and say what kind</h5>
+        <p>Car, truck, two-wheeler, tractor — and, where it matters, boat. The word <em>classification</em> in the brief is doing real work: it asks us to tell categories apart, which is the hook the false-alarm fix hangs on.</p>
+      </div></div>
+      <div class="frow"><div class="frow-id">03</div><div class="frow-b">
+        <h5>Virtual fence</h5>
+        <p>Draw a line or shape on the camera's view and get told when someone crosses it. No physical sensor — just geometry over the video.</p>
+        <p class="risk"><b>Note</b> The naive version — "line crossed: yes/no" — is destroyed by <span class="pid">P1</span> and floods with lawful farmer traffic. Layer 1 hardens it.</p>
+      </div></div>
+      <div class="frow"><div class="frow-id">04</div><div class="frow-b">
+        <h5>Live alerts and a record of everything</h5>
+        <p>Raise an alarm as it happens, and keep a searchable log afterwards.</p>
+        <p class="risk"><b>Note</b> Where <span class="pid">P3</span> bites hardest. A system that emits 4,000 events a shift to a three-person room has satisfied the words of the brief and failed its intent.</p>
+      </div></div>
+      <div class="frow"><div class="frow-id">05</div><div class="frow-b">
+        <h5>Face detection</h5>
+        <p>Notice <em>that</em> a face is present. Note carefully: the brief says <b>detection</b>, not identification. Finding a face and knowing whose face it is are completely different problems, with completely different consequences.</p>
+      </div></div>
+      <div class="frow"><div class="frow-id">06</div><div class="frow-b">
+        <h5>Number plate reading (ANPR)</h5>
+        <p>Read a vehicle's registration plate from video.</p>
+        <p class="risk"><b>Note</b> Honestly unreliable on an open border road at night — glare, angle, speed, plate variation. Layer 2 scopes it to where it genuinely works: slow, close, head-on, at a controlled crossing point.</p>
+      </div></div>
+      <div class="frow"><div class="frow-id">07</div><div class="frow-b">
+        <h5>Suspicious activity detection</h5>
+        <p>The vaguest line in the brief. Deliberately <em>not</em> built as a machine-learning "suspicion" classifier — see Layer 1 for what replaces it and why.</p>
+      </div></div>
+      <div class="frow"><div class="frow-id">08</div><div class="frow-b">
+        <h5>Night-time movement detection</h5>
+        <p>Detect movement in the dark. Looks like a minor line item. Because of <span class="pid">P2</span>, it is the single most consequential capability on this list.</p>
+      </div></div>
+    </div>
+
+    <h4>The two constraints</h4>
+    <div style="max-width:1000px">
+      <div class="frow"><div class="frow-id">09</div><div class="frow-b">
+        <h5>Software only — no special hardware</h5>
+        <p>It must work on standard IP cameras already installed. No proprietary smart cameras, no dedicated face-recognition or plate-reading boxes. This constraint <em>is</em> the project.</p>
+      </div></div>
+      <div class="frow"><div class="frow-id">10</div><div class="frow-b">
+        <h5>Read standard camera streams</h5>
+        <p>Speak <b>RTSP</b> and <b>ONVIF</b> — the ordinary, universal languages IP cameras use. If a camera works with generic recording software, it must work with this.</p>
+      </div></div>
+    </div>
+
+    <h4>And the integration requirement</h4>
+    <div style="max-width:1000px">
+      <div class="frow"><div class="frow-id">11</div><div class="frow-b">
+        <h5>Plug into existing command and control systems</h5>
+        <p>Forces already have control-room software. This must feed into it rather than replace it.</p>
+        <p class="why"><b>Where this leads</b> Built honestly, it means a documented event format, an outward feed — and crucially an <em>inward</em> one too, so other equipment can send events <em>to</em> us. That inbound direction turns out to be how the drone problem gets solved.</p>
+      </div></div>
+    </div>
+  </section>
+
+  <hr class="div">
+
+  <!-- ============================================ LAYER 1 -->
+  <section id="layer1">
+    <p class="eyebrow">Layer 1</p>
+    <h2>Making it survive the real world</h2>
+
+    <div class="col">
+      <p>Nothing in this layer is a new capability. Every item exists to make a Layer 0 capability work somewhere that has fog, no electricity, and three tired people.</p>
+      <p>The <span class="fid">#numbers</span> continue from Layer 0 and are used consistently across all project documents.</p>
+    </div>
+
+    <!-- P1 -->
+    <div class="fgroup">
+      <div class="fgroup-hd"><h4>Detection quality</h4><span class="tag">P1 · false alarms</span></div>
+      <div class="frow"><div class="frow-id">12</div><div class="frow-b">
+        <h5>Tell animals from people — the highest-value item in this entire document</h5>
+        <p>Add cattle, dogs, nilgai and wild boar as things the system recognises on purpose, plus a check that rejects the shimmer of moving vegetation. An animal crossing the virtual fence is <b>written to the log and never alerted on</b>.</p>
+        <p>On the eastern border this doubles as real detection: a <em>herd</em> moving toward the river at 2 a.m. is a cattle-smuggling alert. One cow is not.</p>
+        <p class="why"><b>Why it fits</b> It converts the pitch from "we detect intruders" — already solved — to "we detect intruders without crying wolf," which the failure record says is genuinely unsolved.</p>
+        <p class="risk"><b>Risk</b> Standard pre-trained models are weak on nilgai and wild boar, so this needs a small India-specific training set. And failing the <em>other</em> way — suppressing a real human — is the worst outcome in the whole system. That's exactly why <span class="fid">#15</span> exists.</p>
+      </div></div>
+      <div class="frow"><div class="frow-id">13</div><div class="frow-b">
+        <h5>Wait a moment before shouting</h5>
+        <p>Require a crossing to persist for a sustained period before a critical alarm fires, instead of reacting to a single frame's flicker.</p>
+        <p class="risk"><b>Risk</b> This trades speed for accuracy, and it's configurable per zone — two seconds of delay is defensible, fifteen is not. The trade is stated openly rather than hidden.</p>
+      </div></div>
+      <div class="frow"><div class="frow-id">14</div><div class="frow-b">
+        <h5>Learn what "normal" looks like at each camera</h5>
+        <p>Each camera learns its own usual activity level by hour of day and day of week, so sensitivity can rise during the foggy months and relax during monsoon vegetation movement. "Normal" becomes local to each post rather than one global setting.</p>
+        <p class="why"><b>Why it fits</b> It's the only way to reduce false alarms across thousands of very different cameras without hand-tuning each one. The brief asks for <em>scalable</em>.</p>
+        <p class="risk"><b>Hard restriction</b> Aggregate counts per camera only — <b>never per-person behaviour profiles</b>. That line is not crossed.</p>
+      </div></div>
+      <div class="frow"><div class="frow-id">15</div><div class="frow-b">
+        <h5>A "second look" queue</h5>
+        <p>Uncertain and suppressed detections go into a short review list rather than vanishing. What the operator decides becomes training data.</p>
+        <p class="why"><b>Why it fits</b> It's the safety net that makes <span class="fid">#12</span>'s suppression defensible, and it slowly builds the India-specific dataset that doesn't currently exist.</p>
+        <p class="risk"><b>Risk</b> It adds operator work — the exact thing we're reducing. Hard cap on queue length; idle-time work, never an obligation.</p>
+      </div></div>
+    </div>
+
+    <!-- P2 -->
+    <div class="fgroup">
+      <div class="fgroup-hd"><h4>Night and fog</h4><span class="tag">P2 · the threat window</span></div>
+      <div class="frow"><div class="frow-id">16</div><div class="frow-b">
+        <h5>Brighten the picture before looking at it</h5>
+        <p>A standard contrast-enhancement technique applied to dark frames before detection runs. Cheap, and only switched on when the picture is actually dark — running it in daylight wastes effort for nothing.</p>
+      </div></div>
+      <div class="frow"><div class="frow-id">17</div><div class="frow-b">
+        <h5>Say out loud when you've gone blind</h5>
+        <p>The system continuously measures how much it can actually see. When visibility collapses, the screen <b>says so</b> — <em>"Camera 14: DEGRADED — confidence ceiling 0.55"</em> — instead of quietly missing people.</p>
+        <p>It also steps down through defined stages rather than failing silently: full analysis → motion only → recording only. Every step is announced.</p>
+        <p class="why"><b>Why it fits</b> The documented failure of existing systems is <em>silent</em> capability loss during exactly the window infiltrators exploit. Knowing where you are blind <b>is</b> situational awareness, which is what the brief asks us to improve.</p>
+        <p class="risk"><b>The honest part</b> Contrast enhancement recovers very little in genuinely zero-visibility fog. That's physics, not tuning. <b>We do not claim to solve fog.</b> We claim to detect and declare our own blindness so the operator knows to send a foot patrol. Smaller claim, far more credible.</p>
+      </div></div>
+    </div>
+
+    <!-- P3 -->
+    <div class="fgroup">
+      <div class="fgroup-hd"><h4>The operator's screen</h4><span class="tag">P3 · UI/UX only</span></div>
+      <div class="frow"><div class="frow-id">18</div><div class="frow-b">
+        <h5>Show incidents, not cameras — the design inversion</h5>
+        <p>Every competing team will build a grid of sixteen camera tiles. A three-person control room cannot watch sixteen tiles. So the default screen is a <b>ranked list of open incidents</b>, each expandable to its video. The camera grid becomes a secondary tab.</p>
+        <p>Acknowledge, escalate and dismiss are keyboard keys, so an operator never hunts for a small target with a mouse at 3 a.m.</p>
+      </div></div>
+      <div class="frow"><div class="frow-id">19</div><div class="frow-b">
+        <h5>Group related detections into one incident</h5>
+        <p>One person crossing one fence generates dozens of raw detections. Those get bundled into a single incident. The operator sees roughly <b>eight incidents a shift</b>, not four thousand events.</p>
+        <p class="risk"><b>Risk</b> Over-aggressive grouping could merge two genuinely separate intrusions. Grouping is capped by individual track, and the underlying events always remain inspectable.</p>
+      </div></div>
+      <div class="frow"><div class="frow-id">20</div><div class="frow-b">
+        <h5>Three severity levels, not an on/off alarm</h5>
+        <p>Info, Warning, Critical — so attention can be rationed. Most teams build a binary alarm.</p>
+      </div></div>
+      <div class="frow"><div class="frow-id">21</div><div class="frow-b">
+        <h5>Always show <em>why</em> the alarm fired</h5>
+        <p>Every alert displays the box around the subject, the path they walked, the zone they crossed, the named rule that triggered, and how confident the system was.</p>
+        <p class="why"><b>Why it fits</b> Technical expertise isn't evenly available across the force. An alert nobody can explain is an alert that gets ignored. This is also the structural answer to "black-box AI at the border."</p>
+      </div></div>
+      <div class="frow"><div class="frow-id">22</div><div class="frow-b">
+        <h5>A live status board of posts and cameras</h5>
+        <p>What's up, what's degraded, what's blind right now.</p>
+      </div></div>
+      <div class="frow"><div class="frow-id">23</div><div class="frow-b">
+        <h5>Shift handover summary</h5>
+        <p>An automatic end-of-shift digest: what fired, what was acknowledged, what's still open, which cameras degraded. Tiny feature; disproportionate credibility with anyone who knows what a round-the-clock three-person room actually feels like.</p>
+      </div></div>
+    </div>
+
+    <!-- P6 -->
+    <div class="fgroup">
+      <div class="fgroup-hd"><h4>Runs without the internet</h4><span class="tag">P6 · cloud-independent</span></div>
+      <div class="frow"><div class="frow-id">24</div><div class="frow-b">
+        <h5>Zero cloud dependency — a hard architectural commitment, not a "mode"</h5>
+        <p>No cloud service anywhere in the working path. No external AI service, no internet-based login, no hosted database. A post with no connectivity runs the <b>complete</b> feature set locally — detection, alerts, dashboard, storage, permissions.</p>
+        <p class="why"><b>Why it fits</b> The brief says "remote border locations." <span class="pid">P6</span> says many posts have neither mains power nor usable mobile signal. A cloud-dependent design fails the brief on its own terms — and it's the only defensible posture for a border security system regardless.</p>
+      </div></div>
+      <div class="frow"><div class="frow-id">25</div><div class="frow-b">
+        <h5>Think locally, send summaries</h5>
+        <p>The analysis happens at the post. What travels upward is a short text record plus a thumbnail — never a live video stream. Full clips stay on local disk and are fetched only if someone asks.</p>
+      </div></div>
+      <div class="frow"><div class="frow-id">26</div><div class="frow-b">
+        <h5>Queue and forward</h5>
+        <p>If the link to headquarters drops, events pile up locally and sync when it returns. Nothing is lost, nothing duplicated.</p>
+      </div></div>
+      <div class="frow"><div class="frow-id">27</div><div class="frow-b">
+        <h5>Every post declares what it's running</h5>
+        <p>Each node periodically reports its software version, its configuration and its active zones — so headquarters can answer "what is actually deployed out there?" rather than assuming. Any drift becomes visible instead of invisible.</p>
+      </div></div>
+    </div>
+
+    <!-- P9 -->
+    <div class="fgroup">
+      <div class="fgroup-hd"><h4>Drones</h4><span class="tag">P9 · two reachable angles</span></div>
+      <div class="col-wide" style="margin-bottom:14px">
+        <p style="font-family:var(--sans);font-size:14.5px;line-height:1.62;color:var(--ink-2)">The honest starting position: <b>a ground-facing CCTV camera cannot see a sub-1&nbsp;kg drone.</b> It's a handful of pixels against a cluttered sky, and the cameras point at the ground anyway. Claiming otherwise in front of people who deal with this weekly would be a credibility disaster. Two things we <em>can</em> do:</p>
+      </div>
+      <div class="frow"><div class="frow-id">28</div><div class="frow-b">
+        <h5>Spot the pickup, not the aircraft</h5>
+        <p>A drone drops a packet; a person on this side has to go and collect it. That produces a recognisable ground pattern: <b>travel to an unusual spot → pause briefly → return along the same path.</b> That is visible to a ground camera, and it's a plain rule — explainable, adjustable, no training data needed.</p>
+      </div></div>
+      <div class="frow"><div class="frow-id">29</div><div class="frow-b">
+        <h5>Accept alerts from equipment that <em>can</em> see drones — the clever one</h5>
+        <p>Forces already deploy radio-frequency drone detectors and radar. We don't compete with those sensors; we <b>absorb</b> them. Their alert arrives into our system as an ordinary event, in the same format as a camera detection, and gets stitched to the ground video into a <em>single</em> incident:</p>
+        <p style="font-family:var(--mono);font-size:12.5px;background:var(--plate-2);border:1px solid var(--rule);padding:11px 13px;color:var(--ink)">RF contact 02:14 grid&nbsp;4B → person detected grid&nbsp;4B 02:19 → retrieval pattern confirmed 02:21</p>
+        <p class="why"><b>Why it fits</b> This is precisely what the brief's "integration with existing command and control systems" line is for. It also demonstrates the value of the shared data model better than any single feature could — and it lets us speak credibly about the force's biggest current worry without claiming a capability we don't have.</p>
+        <p class="risk"><b>Risk</b> We have no real RF sensor to connect to, so the demonstration uses a <b>clearly labelled simulated</b> sensor. Never implied to be real.</p>
+      </div></div>
+      <div class="frow"><div class="frow-id">30</div><div class="frow-b">
+        <h5>Map the drop hotspots</h5>
+        <p>Over time, aggregate past events into a map of where consignments tend to land. Zone-level patterns only — never individual profiles.</p>
+      </div></div>
+    </div>
+  </section>
+
+  <hr class="div">
+
+  <!-- ============================================ LAYER 2 -->
+  <section id="layer2">
+    <p class="eyebrow">Layer 2</p>
+    <h2>The platform layer</h2>
+
+    <div class="col">
+      <p>This is the part that makes the project distinctive. It's justified on <em>capability</em> — it makes the system genuinely more useful — not on ethics or presentation.</p>
+    </div>
+
+    <!-- ontology -->
+    <div class="fgroup">
+      <div class="fgroup-hd"><h4>A shared, typed data model</h4><span class="tag">the good idea worth borrowing</span></div>
+      <div class="frow"><div class="frow-id">31</div><div class="frow-b">
+        <h5>Connected objects instead of flat log lines</h5>
+        <p>Most systems write log entries: <em>"person detected, Camera 7, 02:14."</em> Useful once, useless afterwards. Instead, everything becomes a linked object with a defined type — organisation, site, camera, zone, tracked thing, event, incident, alert, action.</p>
+        <p>The difference in practice: <em>"this tracked figure crossed this zone on this camera, was seen again on Camera 9 four minutes later, is linked to this vehicle, produced this incident, which this operator escalated at 02:19 for this stated reason."</em> That is answerable across cameras and across time. A log line is not.</p>
+        <p class="risk"><b>Scope discipline</b> Eight object types. Not a knowledge-graph platform. And one <b>hard restriction: no permanent "person" record.</b> A tracked thing is a track with a beginning and an end, not a person with a history. Adding a durable person record would quietly turn this into a face-recognition database.</p>
+      </div></div>
+      <div class="frow"><div class="frow-id">32</div><div class="frow-b">
+        <h5>Search the history</h5>
+        <p>Investigators need to look backwards, not only watch live. <em>"Show me everything at Camera 14 between 2 and 4 a.m. last Tuesday."</em></p>
+      </div></div>
+      <div class="frow"><div class="frow-id">33</div><div class="frow-b">
+        <h5>Every human decision is recorded, with a reason</h5>
+        <p>Each acknowledgement, escalation, dismissal, zone edit, sensitivity change and history search is stored as its own object with <b>who</b>, <b>when</b> and <b>why</b>. Incidents don't get quietly edited — their state is derived from these recorded decisions.</p>
+        <p class="why"><b>Why it fits</b> Accountability stops being a promise on a slide and becomes a side effect of how the database is shaped. Cheap to build. It's much of what separates this from a demo.</p>
+      </div></div>
+      <div class="frow"><div class="frow-id">34</div><div class="frow-b">
+        <h5>Different views for different roles</h5>
+        <p>An operator sees live incidents. A supervisor can additionally search history — and <b>every history search is itself recorded</b> as a decision. Most competing teams build a single all-access dashboard.</p>
+      </div></div>
+      <div class="frow"><div class="frow-id">35</div><div class="frow-b">
+        <h5>Follow one person across two cameras</h5>
+        <p>When someone walks out of Camera A's view and into Camera B's, the system recognises them as the same figure using their overall appearance, and keeps the same identity. It answers the operator's actual next question: <em>which way did they go?</em></p>
+        <p class="why"><b>Why it fits</b> A genuine capability upgrade, and the working embodiment of the brief's "existing CCTV, not siloed" framing. Also the most visually impressive moment available.</p>
+        <p class="risk"><b>Risk</b> Accuracy collapses at night, in fog and on low-resolution feeds — exactly the <span class="pid">P2</span> conditions that matter most. Build it, demonstrate it in good light, say plainly that it degrades.</p>
+        <p class="risk"><b>Hard restriction</b> Matching happens only against figures currently being tracked, in a short time window — <b>never against a stored library of past individuals</b>. A permanent library is face recognition wearing a different hat.</p>
+      </div></div>
+      <div class="frow"><div class="frow-id">36</div><div class="frow-b">
+        <h5>Check plates against a watchlist</h5>
+        <p>Turns "we saw a vehicle" into "we saw a <em>flagged</em> vehicle," which is the actual operational value.</p>
+        <p class="risk"><b>Two honest caveats</b> There's no real registry to connect to, so this runs against a <b>clearly labelled mock list</b>. And it's only ever as accurate as the plate reading beneath it — strong at a controlled crossing point, weak on an open road at night.</p>
+      </div></div>
+    </div>
+
+    <!-- multi-force -->
+    <div class="fgroup">
+      <div class="fgroup-hd"><h4>Usable by any force</h4><span class="tag">the thesis</span></div>
+      <div class="frow"><div class="frow-id">37</div><div class="frow-b">
+        <h5>Each organisation's data stays its own</h5>
+        <p>Every record belongs to an organisation, and permissions are enforced at that boundary. Several forces can use the same platform without seeing each other's data.</p>
+      </div></div>
+      <div class="frow"><div class="frow-id">38</div><div class="frow-b">
+        <h5>Zones that mean nothing in particular — deliberately</h5>
+        <p>A zone is a shape plus a label describing what kind of place it is: <span class="chip olive">fence line</span><span class="chip olive">gate</span><span class="chip slate">waterline</span><span class="chip slate">perimeter</span><span class="chip ochre">pass</span><span class="chip ochre">restricted area</span></p>
+        <p>So a border fence line and a naval jetty perimeter are the <em>same primitive</em> with a different label. No force-specific code anywhere.</p>
+        <p class="why"><b>Why it fits</b> The brief says "strategic installations," not just "border."</p>
+        <p class="risk"><b>Risk</b> Generality is a discipline problem. The temptation will be to special-case one force to make a demo work. Give in once and the whole thesis collapses.</p>
+      </div></div>
+      <div class="frow"><div class="frow-id">39</div><div class="frow-b">
+        <h5>Everything specific lives in one configuration file</h5>
+        <p>Zones, which things to look for, rule thresholds, how long to keep data, which severity means what. Adapting to a new force or a new site means writing a file — and the change itself is recorded as a decision.</p>
+      </div></div>
+      <div class="frow"><div class="frow-id">40</div><div class="frow-b">
+        <h5>Posts sync to headquarters, and stay in charge of their own data</h5>
+        <p>Each site is the authority on its own records; headquarters aggregates. If they ever disagree, the originating site wins — so headquarters can never corrupt what a post recorded.</p>
+        <p class="why"><b>Note</b> Designed this way because it must survive being disconnected, not because distributed systems are elegant.</p>
+      </div></div>
+    </div>
+
+    <!-- privacy -->
+    <div class="fgroup">
+      <div class="fgroup-hd"><h4>Privacy posture</h4><span class="tag">built anyway</span></div>
+      <div class="col-wide" style="margin-bottom:14px">
+        <p style="font-family:var(--sans);font-size:14.5px;line-height:1.62;color:var(--ink-2)">Worth knowing the context: roughly <b>21,500 acres of private farmland lies beyond the Punjab border fence</b>. Farmers cross daily through gates on fixed schedules. The overwhelming majority of people these cameras see are villagers and farmers whose cooperation the force depends on. Face recognition applied to them is a legal, ethical <em>and</em> operational liability.</p>
+      </div>
+      <div class="frow"><div class="frow-id">41</div><div class="frow-b">
+        <h5>Faces detected, then blurred by default</h5>
+        <p>Faces are found — the brief asks for that — and then de-identified before anything is stored. No link to any identity database. Full recognition exists as a separately authorised module that <b>ships switched off</b>.</p>
+        <p class="why"><b>The pre-empt</b> The brief's capability list says "face detection" but its outcomes section says "support facial recognition." The answer to that gap: the platform is <em>architecturally capable</em> of recognition and deliberately ships it disabled, because a border recognition system with no lawful matching database and no privacy assessment is a liability, not a capability. Stronger than either building it or ignoring the line.</p>
+      </div></div>
+      <div class="frow"><div class="frow-id">42</div><div class="frow-b">
+        <h5>Data expires on a schedule</h5>
+        <p>A defined retention window per organisation, with automatic deletion. Not a policy document — a running job.</p>
+      </div></div>
+    </div>
+  </section>
+
+  <hr class="div">
+
+  <!-- ============================================ NOT BUILDING -->
+  <section id="notbuilding">
+    <p class="eyebrow">Deliberate omissions</p>
+    <h2>What we are not building, and why saying so helps</h2>
+
+    <div class="col">
+      <p>A team that states clearly what it chose not to build reads as more experienced than one claiming all eight capabilities work perfectly. Each of these is a decision, not an oversight.</p>
+    </div>
+
+    <div class="tw" style="max-width:1000px">
+      <table>
+        <thead><tr><th style="width:31%">Not building</th><th>Reason</th></tr></thead>
+        <tbody>
+          <tr><td class="k no">Seeing drones on camera</td><td>Cameras point at the ground; a sub-1&nbsp;kg drone is a few pixels against sky clutter. Radio and radar are the right sensors and forces already buy them. <span class="fid">#29</span> absorbs them instead — better answer, honest claim.</td></tr>
+          <tr><td class="k no">A learned "suspicion" classifier</td><td>No border-specific training data exists, the output can't be explained, and the first question — "trained on what?" — has no answer. Named rules instead.</td></tr>
+          <tr><td class="k no">Face matching against an identity database</td><td>The brief asks for face <em>detection</em>. There is no lawful matching database available. And ordinary CCTV resolution won't support reliable recognition at realistic distance and angle anyway.</td></tr>
+          <tr><td class="k no">A stored library of people's appearances</td><td>It would quietly turn <span class="fid">#35</span> into face recognition. Only currently-active tracks are matched.</td></tr>
+          <tr><td class="k no">Searching by age, gender or clothing</td><td>Sounds impressive; slides directly into profiling. <span class="fid">#35</span> gives continuity without any demographic labelling.</td></tr>
+          <tr><td class="k no">Threat scores on individuals</td><td>Indefensible and unnecessary. <span class="fid">#14</span> gives zone-level aggregate patterns instead.</td></tr>
+          <tr><td class="k no">Full thermal / infrared night pipeline</td><td>High effort, low feasibility on this timeline and hardware. <span class="fid">#16</span> and <span class="fid">#17</span> capture most of the value for a fraction of the cost.</td></tr>
+          <tr><td class="k no">Merging social media, phone records, immigration status</td><td>Outside a video-analytics brief, no data access, and the genuine ethical third rail. Single-modality is a stated scoping decision. Note <span class="fid">#29</span> is <em>sensor</em> fusion — a different thing entirely.</td></tr>
+          <tr><td class="k no">A cloud or SaaS architecture</td><td>Fails the brief's own "remote border locations" line. <span class="fid">#24</span> is a hard commitment against it.</td></tr>
+          <tr><td class="k no">Streaming all video to headquarters</td><td>Bandwidth reality makes it impossible. Summaries up, clips on request.</td></tr>
+          <tr><td class="k no">Weapon detection</td><td>Poor accuracy at CCTV distances, and a false positive here has severe consequences.</td></tr>
+          <tr><td class="k no">Tunnel detection</td><td>Physically invisible to a camera. Stated once, confidently — mentioning it unprompted shows we know the threat landscape.</td></tr>
+          <tr><td class="k no">A camera-grid-first screen</td><td>The default every team will build, and unusable by a three-person room. <span class="fid">#18</span> inverts it on purpose.</td></tr>
+          <tr><td class="k no">Training a detector from scratch</td><td>No time, no data. Pre-trained models with targeted fine-tuning only.</td></tr>
+          <tr><td class="k no">Separate builds per force</td><td>Contradicts the entire thesis. One program, many configuration files.</td></tr>
+          <tr><td class="k no">Claiming all eight capabilities work perfectly</td><td>Four deep capabilities plus an honest, specific roadmap beats eight shallow ones.</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <hr class="div">
+
+  <!-- ============================================ HLD -->
+  <section id="hld">
+    <p class="eyebrow">High-level design</p>
+    <h2>How it's actually built</h2>
+
+    <div class="col">
+      <p>The rest of this document is diagrams. Each plate has a caption explaining what its parts do — enough to understand the shape of the system without reading code.</p>
+    </div>
+
+    <h3>The five rules everything follows</h3>
+    <div class="cards three">
+      <div class="card"><div class="card-k"><span>Rule 1</span></div><h5>No cloud, anywhere important</h5><p>Local database, local files, local login, local AI models. A disconnected post runs everything.</p></div>
+      <div class="card"><div class="card-k"><span>Rule 2</span></div><h5>A post is a whole system, not a sensor</h5><p>Every post analyses, decides, stores, alerts and serves its own screen. Headquarters only adds; removing it breaks nothing locally.</p></div>
+      <div class="card"><div class="card-k"><span>Rule 3</span></div><h5>The data model is the only doorway</h5><p>Nothing bypasses it. Camera detections, outside sensors, operator decisions and syncing all become the same kinds of object.</p></div>
+      <div class="card"><div class="card-k"><span>Rule 4</span></div><h5>Force-specific means configuration</h5><p>No "if this is the Navy" anywhere in the code. Zones, rules and thresholds are loaded from a file.</p></div>
+      <div class="card"><div class="card-k"><span>Rule 5</span></div><h5>Operator attention is the budget</h5><p>Output target is roughly eight incidents a shift. Anything that adds to what a human must look at has to justify itself.</p></div>
+      <div class="card"><div class="card-k"><span>Rule 6</span></div><h5>A graphics card is a bonus, never a requirement</h5><p>Runs on an ordinary processor. No feature may depend on special hardware to exist at all.</p></div>
+    </div>
+
+    <!-- PLATE: context -->
+    <div class="plate">
+      <div class="plate-hd"><b>Plate 03</b><span>What connects to what</span></div>
+      <div class="plate-body">
+        <div class="dg" style="display:grid;grid-template-columns:auto 1fr auto;gap:14px;align-items:center;min-width:720px">
+
+          <div style="display:flex;flex-direction:column;gap:9px">
+            <div class="box"><div class="box-t">Existing IP CCTV</div><div class="box-s">standard RTSP / ONVIF</div></div>
+            <div class="box"><div class="box-t">Outside sensors</div><div class="box-s">anti-drone radio, radar,<br>fence vibration</div></div>
+          </div>
+
+          <div style="display:flex;flex-direction:column;align-items:center;gap:6px">
+            <div class="arw" style="font-size:13px">→ &nbsp; →</div>
+            <div class="box" style="border-color:var(--olive);background:var(--olive-soft);width:100%;text-align:center;padding:20px 16px">
+              <div class="box-t" style="font-size:14px;color:var(--olive)">IBVAP EDGE NODE</div>
+              <div class="box-s" style="margin-top:5px">one per post</div>
+              <div style="margin-top:11px">
+                <span class="chip">read</span><span class="chip">analyse</span><span class="chip">decide</span><span class="chip">store</span><span class="chip">alert</span><span class="chip">serve</span><span class="chip">queue</span>
+              </div>
+            </div>
+            <div class="arw">↓</div>
+            <div class="box-s" style="text-align:center">summaries only · queues if link drops</div>
+            <div class="arw">↓</div>
+            <div class="box" style="border-color:var(--slate);background:var(--slate-soft);width:100%;text-align:center">
+              <div class="box-t" style="color:var(--slate)">AGGREGATION NODE</div>
+              <div class="box-s">sector / frontier HQ · same code, no analysis</div>
+            </div>
+          </div>
+
+          <div style="display:flex;flex-direction:column;gap:9px">
+            <div class="box"><div class="box-t">Local operator screen</div><div class="box-s">works with no network</div></div>
+            <div class="box"><div class="box-t">Existing control room</div><div class="box-s">their software, our feed</div></div>
+            <div class="box"><div class="box-t">Cross-post view</div><div class="box-s">from HQ only</div></div>
+          </div>
+
+        </div>
+      </div>
+      <div class="plate-ft"><b>Two roles, one program.</b> A headquarters node is simply an edge node with the analysis part switched off — a configuration difference, not different software. Note what does <em>not</em> cross the link: video. Only short records and thumbnails travel; clips stay on the post's own disk.</div>
+    </div>
+
+    <!-- PLATE: master architecture -->
+    <div class="plate">
+      <div class="plate-hd"><b>Plate 04</b><span>The architecture — every component, and what flows between them</span></div>
+      <div class="plate-body">
+
+        <div class="pipe dg" style="min-width:1080px">
+
+          <div class="pipe-col src">
+            <p class="pipe-l">Input</p>
+            <div class="pipe-n">Existing IP cameras</div>
+            <div class="pipe-p"><i>RTSP / ONVIF</i><i>already installed</i></div>
+          </div>
+
+          <div class="pipe-arw"><b>→</b><em>video<br>25–30/sec</em></div>
+
+          <div class="pipe-col ingest">
+            <p class="pipe-l">L0 · Feeds</p>
+            <div class="pipe-n">Getting video in</div>
+            <div class="pipe-p">
+              <i>stream readers</i><i>frame scheduler</i><i>rolling buffer</i><i>feed health</i>
+            </div>
+          </div>
+
+          <div class="pipe-arw"><b>→</b><em>chosen<br>frames</em></div>
+
+          <div class="pipe-col ingest">
+            <p class="pipe-l">L1 · Seeing</p>
+            <div class="pipe-n">Understanding the picture</div>
+            <div class="pipe-p">
+              <i>detector</i><i>tracker</i><i>animal + plant filter</i><i>visibility meter</i><i>appearance signature</i>
+            </div>
+          </div>
+
+          <div class="pipe-arw"><b>→</b><em>findings<br><b>discarded</b></em></div>
+
+          <div class="pipe-col ingest">
+            <p class="pipe-l">L2 · Judgement</p>
+            <div class="pipe-n">Deciding what matters</div>
+            <div class="pipe-p">
+              <i>zone crossing<br>+ direction</i><i>named rules</i><i>confirm delay</i><i>severity</i>
+            </div>
+          </div>
+
+          <div class="pipe-arw"><b>→</b><em>EVENTS<br>first thing<br>kept</em></div>
+
+          <div class="pipe-col api">
+            <p class="pipe-l">L3 · Meaning</p>
+            <div class="pipe-n">The shared data model</div>
+            <div class="pipe-p">
+              <i>incident grouper</i><i>decision recorder</i><i>expiry sweeper</i>
+            </div>
+          </div>
+
+          <div class="pipe-arw"><b>→</b><em>incidents</em></div>
+
+          <div class="pipe-col api">
+            <p class="pipe-l">L4 · Hooks</p>
+            <div class="pipe-n">Everything in and out</div>
+            <div class="pipe-p">
+              <i>inbound adapters</i><i>outbound adapters</i><i>sync agent</i><i>retry queue</i>
+            </div>
+          </div>
+
+          <div class="pipe-arw"><b>→</b><em>alerts</em></div>
+
+          <div class="pipe-col web">
+            <p class="pipe-l">L5 · Screen</p>
+            <div class="pipe-n">What the operator sees</div>
+            <div class="pipe-p">
+              <i>incident queue</i><i>explain overlay</i><i>status board</i><i>shift digest</i>
+            </div>
+          </div>
+
+        </div>
+
+        <div class="legend">
+          <span><i style="border-color:var(--olive)"></i> analysis engine — its own program, eats the processor</span>
+          <span><i style="border-color:var(--slate)"></i> service — data, hooks, logins</span>
+          <span><i style="border-color:var(--ochre)"></i> web screen</span>
+          <span><i style="border-color:var(--rule-2);border-top-style:dashed"></i> outside the system</span>
+        </div>
+
+        <!-- off-pipeline connections -->
+        <div class="dg" style="margin-top:20px;min-width:1000px">
+          <div class="box-s" style="letter-spacing:.1em;text-transform:uppercase;margin-bottom:9px">Everything that does not travel along that line</div>
+          <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:12px">
+
+            <div class="box" style="border-color:var(--slate)">
+              <div class="box-t" style="color:var(--slate)">Outside sensors come in at L3</div>
+              <div class="box-s" style="margin-top:6px">
+                anti-drone radio · radar · fence vibration<br><br>
+                <b style="color:var(--ink)">→ arrive via L4, skipping L0–L2 completely</b><br>
+                They never touch the camera pipeline. They become the same kind of event and join the same grouping logic.
+              </div>
+            </div>
+
+            <div class="box" style="border-color:var(--olive)">
+              <div class="box-t" style="color:var(--olive)">Storage hangs off L3</div>
+              <div class="box-s" style="margin-top:6px">
+                <b style="color:var(--ink)">the database</b> — events, incidents, decisions. L3 writes it, L5 reads it.<br><br>
+                <b style="color:var(--ink)">evidence files</b> — thumbnails always; video clips cut from L0's rolling buffer <em>only when asked for</em>.
+              </div>
+            </div>
+
+            <div class="box" style="border-color:var(--ochre)">
+              <div class="box-t" style="color:var(--ochre)">Outputs leave from L4</div>
+              <div class="box-s" style="margin-top:6px">
+                existing control room · security log · handheld<br>
+                <b style="color:var(--ink)">↕ syncing to headquarters</b><br><br>
+                All of it in one shared message format — see Plate 09.
+              </div>
+            </div>
+
+          </div>
+        </div>
+
+      </div>
+      <div class="plate-ft">
+        <b>Read the arrow labels, not just the boxes — the data changes shape five times, and that is the actual design.</b>
+        Video becomes chosen frames (most are skipped, which is what makes this run on ordinary hardware), frames become findings, findings become <em>events</em>, events become <em>incidents</em>, incidents become alerts. Note where the funnel narrows: millions of findings a day, and roughly <b>eight incidents a shift</b> reaching a human.
+        <br><br>
+        <b>Two things in this picture matter more than they look.</b> First, <b>findings are thrown away</b> — an event is the earliest thing written to disk, which is why the database stays small enough for a remote post. Second, outside sensors <b>enter at L3, not at the front</b>: because information only ever moves upward and no layer may skip another, a radar alert can be dropped straight into the shared data model without any part of the camera pipeline knowing it exists. That single property is what makes the drone answer possible at all.
+        <br><br>
+        <b>Why the boxes are coloured in three groups:</b> those are three separate running programs. Analysis is kept apart from the service on purpose — it is the part that consumes the processor, and it must never be slowed down by someone opening a dashboard page.
+      </div>
+    </div>
+
+    <!-- PLATE: layer stack -->
+    <div class="plate">
+      <div class="plate-hd"><b>Plate 05</b><span>Inside one node — six layers</span></div>
+      <div class="plate-body">
+        <div class="stack dg" style="min-width:600px">
+
+          <div class="layer"><div class="layer-id">L5<small>Screen</small></div><div class="layer-body">
+            <h5>What the operator sees</h5>
+            <p>Incident list first, camera grid second. Live updates pushed from the server. The "why did this fire" overlay is drawn in the browser from the stored evidence, so it costs nothing to produce and works at any zoom.</p>
+            <div><span class="chip">incident queue</span><span class="chip">explain overlay</span><span class="chip">status board</span><span class="chip">shift digest</span></div>
+          </div></div>
+
+          <div class="layer"><div class="layer-id">L4<small>Hooks</small></div><div class="layer-body">
+            <h5>Everything in and out</h5>
+            <p>Outside sensors coming in, control-room feeds going out, and post-to-HQ syncing. All three use one shared message format. See Plate 09.</p>
+            <div><span class="chip slate">inbound adapters</span><span class="chip slate">outbound adapters</span><span class="chip slate">sync agent</span><span class="chip slate">retry queue</span></div>
+          </div></div>
+
+          <div class="layer"><div class="layer-id">L3<small>Meaning</small></div><div class="layer-body">
+            <h5>The shared data model</h5>
+            <p>Where raw findings become connected records. Two workers live here: one groups related events into incidents (including matching a camera event to an outside sensor event), and one records every human decision.</p>
+            <div><span class="chip olive">incident grouper</span><span class="chip olive">decision recorder</span><span class="chip olive">expiry sweeper</span></div>
+          </div></div>
+
+          <div class="layer"><div class="layer-id">L2<small>Judgement</small></div><div class="layer-body">
+            <h5>Deciding what matters</h5>
+            <p>Zone crossing with direction — outbound and inbound are different events. Named rules over movement history. A wait-and-confirm step. Then a severity level.</p>
+            <div><span class="chip">zone crossing</span><span class="chip">named rules</span><span class="chip">confirm delay</span><span class="chip">severity</span></div>
+          </div></div>
+
+          <div class="layer"><div class="layer-id">L1<small>Seeing</small></div><div class="layer-body">
+            <h5>Understanding the picture</h5>
+            <p>Detect objects, follow them frame to frame, filter out animals and moving vegetation, measure how well we can see, and — when useful — compute an appearance signature for cross-camera matching.</p>
+            <div><span class="chip">detector</span><span class="chip">tracker</span><span class="chip">animal filter</span><span class="chip">visibility meter</span><span class="chip">appearance signature</span></div>
+          </div></div>
+
+          <div class="layer"><div class="layer-id">L0<small>Feeds</small></div><div class="layer-body">
+            <h5>Getting the video in</h5>
+            <p>One supervised reader per camera. A scheduler that decides which frames get analysed. A rolling short-term memory of recent frames — so a clip can include the seconds <em>before</em> the alarm.</p>
+            <div><span class="chip">stream readers</span><span class="chip">frame scheduler</span><span class="chip">rolling buffer</span><span class="chip">feed health</span></div>
+          </div></div>
+
+        </div>
+      </div>
+      <div class="plate-ft"><b>Information only moves upward, and no layer may skip another.</b> That constraint is what lets the hook layer inject an outside sensor's alert straight into the data model without touching any of the camera-processing layers beneath it. Running alongside all six: the configuration loader, permissions, the blindness ladder, and organisation separation.</div>
+    </div>
+
+    <!-- PLATE: compute tiers -->
+    <div class="plate">
+      <div class="plate-hd"><b>Plate 06</b><span>Ordinary processor vs graphics card</span></div>
+      <div class="plate-body">
+        <div class="dg" style="display:grid;grid-template-columns:1fr 1fr;gap:14px;min-width:640px">
+          <div class="box" style="border-color:var(--ochre)">
+            <div class="box-t" style="color:var(--ochre)">CPU — the floor we design to</div>
+            <div style="margin-top:11px;display:flex;flex-direction:column;gap:7px">
+              <div class="box-s" style="color:var(--ink)">Small detector model · about <b>1.5–2 pictures/second per camera</b></div>
+              <div class="box-s" style="color:var(--ink)">Cameras taken in turn, one at a time</div>
+              <div class="box-s" style="color:var(--ink)">Face detection only while an incident is open</div>
+              <div class="box-s" style="color:var(--ink)">Cross-camera matching <b>off by default</b></div>
+            </div>
+          </div>
+          <div class="box" style="border-color:var(--olive)">
+            <div class="box-t" style="color:var(--olive)">GPU — an optimisation, never required</div>
+            <div style="margin-top:11px;display:flex;flex-direction:column;gap:7px">
+              <div class="box-s" style="color:var(--ink)">Larger detector · about <b>5 pictures/second per camera</b></div>
+              <div class="box-s" style="color:var(--ink)">All cameras processed together in one pass</div>
+              <div class="box-s" style="color:var(--ink)">Face detection continuous</div>
+              <div class="box-s" style="color:var(--ink)">Cross-camera matching <b>on</b></div>
+            </div>
+          </div>
+        </div>
+        <div class="dg" style="margin-top:16px;text-align:center">
+          <div class="box" style="background:var(--plate-2);border-style:dashed">
+            <div class="box-t">Everything above the seeing layer behaves identically either way</div>
+            <div class="box-s" style="margin-top:4px">Switching between them is <b>one line in a configuration file</b></div>
+          </div>
+        </div>
+      </div>
+      <div class="plate-ft"><b>One subtle but important consequence.</b> Wait-and-confirm thresholds are written in <em>seconds</em>, not in numbers of frames. If they were counted in frames, the same setting would silently mean four times longer on a slower machine — and each force would need its own tuning, breaking Rule 4. Two planning consequences follow: cross-camera matching becomes a bonus rather than the headline demo, and the <b>configuration switch becomes the primary showcase</b>, since it needs no computation at all.</div>
+    </div>
+
+    <!-- PLATE: ladder -->
+    <div class="plate">
+      <div class="plate-hd"><b>Plate 07</b><span>The blindness ladder — how the system fails out loud</span></div>
+      <div class="plate-body">
+        <div class="dg" style="min-width:700px">
+          <div style="display:grid;grid-template-columns:repeat(5,1fr);gap:8px;align-items:stretch">
+            <div class="box" style="border-color:var(--green)"><div class="box-t" style="color:var(--green)">FULL</div><div class="box-s">everything working</div></div>
+            <div class="box" style="border-color:var(--amber)"><div class="box-t" style="color:var(--amber)">DEGRADED</div><div class="box-s">visibility low; a confidence limit is applied and shown</div></div>
+            <div class="box" style="border-color:var(--amber)"><div class="box-t" style="color:var(--amber)">MOTION ONLY</div><div class="box-s">too dark to identify things; movement still reported</div></div>
+            <div class="box" style="border-color:var(--brick)"><div class="box-t" style="color:var(--brick)">RECORD ONLY</div><div class="box-s">analysis unusable; still saving video</div></div>
+            <div class="box" style="border-color:var(--brick)"><div class="box-t" style="color:var(--brick)">DEAD</div><div class="box-s">no picture at all</div></div>
+          </div>
+          <div style="margin-top:10px;border-top:1px dashed var(--rule-2);padding-top:9px;text-align:center" class="box-s">
+            ◀ recovery happens automatically, and is announced the same way
+          </div>
+        </div>
+      </div>
+      <div class="plate-ft"><b>The point is not that it never degrades — it's that degrading is visible.</b> Existing field systems lose capability <em>silently</em> during exactly the foggy window infiltrators use. Every step here is announced on screen, shown on the status board, and included in the shift summary. An operator who knows Camera 14 is blind can send a foot patrol. An operator who doesn't, can't.</div>
+    </div>
+
+    <!-- PLATE: data model -->
+    <div class="plate">
+      <div class="plate-hd"><b>Plate 08</b><span>The data model — eight kinds of object</span></div>
+      <div class="plate-body">
+        <div class="dg" style="min-width:700px;display:flex;flex-direction:column;gap:16px">
+
+          <div>
+            <div class="box-s" style="margin-bottom:7px;letter-spacing:.1em;text-transform:uppercase">Where things are</div>
+            <div style="display:flex;align-items:center;gap:8px;flex-wrap:nowrap">
+              <div class="box"><div class="box-t">Organisation</div><div class="box-s">BSF, ITBP, Navy…</div></div>
+              <div class="arw">→</div>
+              <div class="box"><div class="box-t">Site</div><div class="box-s">one post or installation</div></div>
+              <div class="arw">→</div>
+              <div class="box"><div class="box-t">Camera</div><div class="box-s">one video feed</div></div>
+              <div class="arw">→</div>
+              <div class="box" style="border-color:var(--olive)"><div class="box-t" style="color:var(--olive)">Zone</div><div class="box-s">shape + kind of place</div></div>
+            </div>
+          </div>
+
+          <div>
+            <div class="box-s" style="margin-bottom:7px;letter-spacing:.1em;text-transform:uppercase">What happened</div>
+            <div style="display:flex;align-items:center;gap:8px;flex-wrap:nowrap">
+              <div class="box"><div class="box-t">Tracked thing</div><div class="box-s">a track, <b>not a person</b></div></div>
+              <div class="arw">→</div>
+              <div class="box" style="border-color:var(--slate)"><div class="box-t" style="color:var(--slate)">Event</div><div class="box-s">one fact, from camera<br><b>or outside sensor</b></div></div>
+              <div class="arw">→</div>
+              <div class="box"><div class="box-t">Incident</div><div class="box-s">grouped events —<br>the operator's unit of work</div></div>
+              <div class="arw">→</div>
+              <div class="box"><div class="box-t">Alert</div><div class="box-s">one delivery of it</div></div>
+            </div>
+          </div>
+
+          <div>
+            <div class="box-s" style="margin-bottom:7px;letter-spacing:.1em;text-transform:uppercase">Who did what</div>
+            <div style="display:flex;align-items:center;gap:8px;flex-wrap:nowrap">
+              <div class="box"><div class="box-t">User</div><div class="box-s">operator or supervisor</div></div>
+              <div class="arw">→</div>
+              <div class="box" style="border-color:var(--ochre)"><div class="box-t" style="color:var(--ochre)">Action</div><div class="box-s">who · when · why</div></div>
+              <div class="arw">→</div>
+              <div class="box-s" style="max-width:22ch">points at an incident, zone, camera or history search</div>
+            </div>
+          </div>
+
+        </div>
+      </div>
+      <div class="plate-ft"><b>Three of these fields carry most of the weight.</b> An event records <em>where it came from</em> — which is why an anti-drone sensor's alert lands in the same table, feeds the same grouping logic and appears on the same screen as a camera detection, with no parallel plumbing. An event also records <em>whether its source was simulated</em>, set once per adapter so it can't be forgotten. And a tracked thing can point at an earlier track it turned out to be the same as — which is how cross-camera following works without ever building a library of people.</div>
+    </div>
+
+    <div class="note">
+      <span class="note-k">A quiet but important choice: what is <em>not</em> stored</span>
+      <p>Analysing eight cameras produces millions of raw observations a day with almost no lasting value. Those stay in memory and are thrown away. What gets saved is an <b>event</b> plus a small evidence bundle — a thumbnail, the path walked, the zone, the rule name, the confidence. Video clips are cut from the rolling buffer only when someone asks for one.</p>
+      <p>The result: the database stays small enough to live on modest hardware at a remote post — which Rule 1 requires.</p>
+    </div>
+
+    <!-- PLATE: hook bus -->
+    <div class="plate">
+      <div class="plate-hd"><b>Plate 09</b><span>The connection layer — one mechanism, three directions</span></div>
+      <div class="plate-body">
+        <div class="dg" style="min-width:760px;display:grid;grid-template-columns:1fr auto 1fr;gap:16px;align-items:center">
+
+          <div style="display:flex;flex-direction:column;gap:7px">
+            <div class="box-s" style="letter-spacing:.1em;text-transform:uppercase;color:var(--slate)">Coming in</div>
+            <div class="box"><div class="box-t">Anti-drone radio detector</div></div>
+            <div class="box"><div class="box-t">Radar</div></div>
+            <div class="box"><div class="box-t">Fence vibration sensor</div></div>
+            <div class="box"><div class="box-t">Third-party plate reader</div></div>
+            <div class="box"><div class="box-t">Operator's own report</div></div>
+            <div class="arw" style="text-align:right;font-size:17px">→</div>
+          </div>
+
+          <div style="display:flex;flex-direction:column;align-items:center;gap:9px;min-width:210px">
+            <div class="box" style="border-color:var(--olive);background:var(--olive-soft);text-align:center;width:100%">
+              <div class="box-t" style="color:var(--olive)">SHARED DATA MODEL</div>
+              <div class="box-s" style="margin-top:4px">every arrival becomes the<br>same kind of object</div>
+            </div>
+            <div class="box-s" style="text-align:center;max-width:24ch">one message format · one login method · one retry method</div>
+            <div class="box" style="border-color:var(--slate);background:var(--slate-soft);text-align:center;width:100%">
+              <div class="box-t" style="color:var(--slate)">↕ SYNC TO HQ</div>
+              <div class="box-s" style="margin-top:3px">same format, both ways</div>
+            </div>
+          </div>
+
+          <div style="display:flex;flex-direction:column;gap:7px">
+            <div class="box-s" style="letter-spacing:.1em;text-transform:uppercase;color:var(--slate)">Going out</div>
+            <div class="arw" style="text-align:left;font-size:17px">→</div>
+            <div class="box"><div class="box-t">Existing control room</div><div class="box-s">push, or let them poll us</div></div>
+            <div class="box"><div class="box-t">Security log system</div></div>
+            <div class="box"><div class="box-t">Handheld device</div></div>
+            <div class="box" style="border-style:dashed"><div class="box-t">Retry queue</div><div class="box-s">deliveries are stored rows,<br>not fire-and-forget calls</div></div>
+          </div>
+
+        </div>
+      </div>
+      <div class="plate-ft"><b>This is the central design claim of the whole build.</b> Taking data in, sending data out, and syncing between posts are <em>the same mechanism pointed in different directions</em>. One message format to document, one to keep versioned. Which means "connect to the existing control room" and "accept an anti-drone sensor" are literally the same code path reversed — so the integration story is one page instead of three separate connectors hidden behind one slide.<br><br>Two practical details worth noticing: there is a <b>poll</b> option as well as a push option, because assuming an existing control-room system can receive messages is optimistic. And outgoing deliveries are stored as records with retries, because the link <em>will</em> drop — that's the whole premise of <span class="pid">P6</span>.</div>
+    </div>
+
+    <!-- PLATE: envelope -->
+    <div class="plate">
+      <div class="plate-hd"><b>Plate 10</b><span>Anatomy of one message</span></div>
+      <div class="plate-body">
+        <div class="dg" style="min-width:620px;display:grid;grid-template-columns:auto 1fr;gap:0">
+          <div style="display:contents">
+            <div class="box" style="border-right:0"><span style="color:var(--ink-3)">version</span></div><div class="box" style="border-left:0"><span class="box-s">so the format can change safely later</span></div>
+            <div class="box" style="border-right:0;border-top:0"><span style="color:var(--ink-3)">organisation · site</span></div><div class="box" style="border-left:0;border-top:0"><span class="box-s">who this belongs to, enforced everywhere</span></div>
+            <div class="box" style="border-right:0;border-top:0;background:var(--slate-soft);border-color:var(--slate)"><span style="color:var(--slate)"><b>source</b> · type, id, <b>is simulated</b></span></div><div class="box" style="border-left:0;border-top:0;background:var(--slate-soft);border-color:var(--slate)"><span class="box-s" style="color:var(--slate)">camera? outside sensor? another post? an operator? — and honestly flagged if it isn't real</span></div>
+            <div class="box" style="border-right:0;border-top:0;background:var(--olive-soft);border-color:var(--olive)"><span style="color:var(--olive)"><b>sequence number</b></span></div><div class="box" style="border-left:0;border-top:0;background:var(--olive-soft);border-color:var(--olive)"><span class="box-s" style="color:var(--olive)">counts up, never repeats — the field that makes reconnection cheap</span></div>
+            <div class="box" style="border-right:0;border-top:0"><span style="color:var(--ink-3)">when it happened · when we got it</span></div><div class="box" style="border-left:0;border-top:0"><span class="box-s">two separate times, because they differ when a link was down</span></div>
+            <div class="box" style="border-right:0;border-top:0"><span style="color:var(--ink-3)">kind</span></div><div class="box" style="border-left:0;border-top:0"><span class="box-s">event · incident · decision · health · configuration</span></div>
+            <div class="box" style="border-right:0;border-top:0"><span style="color:var(--ink-3)">contents</span></div><div class="box" style="border-left:0;border-top:0"><span class="box-s">the actual details, shaped by the kind above</span></div>
+            <div class="box" style="border-right:0;border-top:0"><span style="color:var(--ink-3)">evidence</span></div><div class="box" style="border-left:0;border-top:0"><span class="box-s">thumbnail links with checksums — never the video itself</span></div>
+            <div class="box" style="border-right:0;border-top:0"><span style="color:var(--ink-3)">signature</span></div><div class="box" style="border-left:0;border-top:0"><span class="box-s">proof it wasn't tampered with in transit</span></div>
+          </div>
+        </div>
+      </div>
+      <div class="plate-ft"><b>Why the sequence number earns its place.</b> After a link comes back, the receiver simply says <em>"give me everything after number 18,423"</em> and gets an exact, ordered replay. No guessing at time ranges, no gaps, no duplicates. The store-and-forward requirement falls out of this one field almost for free.</div>
+    </div>
+
+    <!-- PLATE: drone flow -->
+    <div class="plate">
+      <div class="plate-hd"><b>Plate 11</b><span>A real incident, start to finish</span></div>
+      <div class="plate-body">
+        <div class="dg" style="min-width:660px;display:flex;flex-direction:column;gap:0">
+
+          <div style="display:grid;grid-template-columns:74px 1fr;gap:0;border:1px solid var(--rule-2)">
+            <div style="padding:12px 10px;background:var(--slate-soft);border-right:1px solid var(--rule-2);font-weight:700;color:var(--slate);font-variant-numeric:tabular-nums">02:14</div>
+            <div class="box" style="border:0">
+              <div class="box-t">Radio sensor reports a drone contact at grid 4B</div>
+              <div class="box-s" style="margin-top:5px">Arrives through the inbound hook → becomes an <b>event</b>, marked as coming from an outside sensor and flagged simulated → a new <b>incident</b> opens at Warning → appears on the operator's screen</div>
+            </div>
+          </div>
+
+          <div style="display:grid;grid-template-columns:74px 1fr;gap:0;border:1px solid var(--rule-2);border-top:0">
+            <div style="padding:12px 10px;background:var(--olive-soft);border-right:1px solid var(--rule-2);font-weight:700;color:var(--olive);font-variant-numeric:tabular-nums">02:19</div>
+            <div class="box" style="border:0">
+              <div class="box-t">Camera 7 sees a person enter grid 4B</div>
+              <div class="box-s" style="margin-top:5px">Detected, tracked, zone crossing noted, held for two seconds to confirm → becomes an <b>event</b> from the camera → the grouper spots the same zone within the time window and <b>attaches it to the existing incident</b>, raising it to Critical</div>
+            </div>
+          </div>
+
+          <div style="display:grid;grid-template-columns:74px 1fr;gap:0;border:1px solid var(--rule-2);border-top:0">
+            <div style="padding:12px 10px;background:var(--olive-soft);border-right:1px solid var(--rule-2);font-weight:700;color:var(--olive);font-variant-numeric:tabular-nums">02:21</div>
+            <div class="box" style="border:0">
+              <div class="box-t">The pickup pattern completes</div>
+              <div class="box-s" style="margin-top:5px">Went out, paused briefly, came back the same way → a third <b>event</b> joins the same incident, with its evidence attached</div>
+            </div>
+          </div>
+
+          <div style="display:grid;grid-template-columns:74px 1fr;gap:0;border:1px solid var(--rule-2);border-top:0">
+            <div style="padding:12px 10px;background:var(--ochre-soft);border-right:1px solid var(--rule-2);font-weight:700;color:var(--ochre);font-variant-numeric:tabular-nums">02:22</div>
+            <div class="box" style="border:0">
+              <div class="box-t">Operator acknowledges and escalates</div>
+              <div class="box-s" style="margin-top:5px">Recorded as a <b>decision</b> — who, when, and the stated reason → pushed outward to the existing control room → queued for syncing to headquarters as a summary</div>
+            </div>
+          </div>
+
+        </div>
+      </div>
+      <div class="plate-ft"><b>One incident. Three different sources. One searchable record. A complete chain of accountability.</b> And at no point did we claim to have seen the drone.</div>
+    </div>
+
+    <!-- PLATE: deployment -->
+    <div class="plate">
+      <div class="plate-hd"><b>Plate 12</b><span>How it's actually deployed for the demonstration</span></div>
+      <div class="plate-body">
+        <div class="dg" style="min-width:720px">
+          <div class="box" style="border-color:var(--rule-2);border-style:dashed;padding:18px">
+            <div class="box-s" style="letter-spacing:.1em;text-transform:uppercase;margin-bottom:14px">One computer</div>
+            <div style="display:grid;grid-template-columns:1fr 1fr;gap:14px">
+
+              <div class="box" style="border-color:var(--olive)">
+                <div class="box-t" style="color:var(--olive)">EDGE NODE (the post)</div>
+                <div class="box-s" style="margin-top:3px">private network</div>
+                <div style="margin-top:10px;display:flex;flex-direction:column;gap:5px">
+                  <div class="chip" style="margin:0">analysis engine &nbsp;— feeds, seeing, judgement</div>
+                  <div class="chip" style="margin:0">service &nbsp;— data model, hooks, logins</div>
+                  <div class="chip" style="margin:0">web screen</div>
+                  <div class="chip olive" style="margin:0">its own database</div>
+                  <div class="chip" style="margin:0">evidence files on disk</div>
+                  <div class="chip" style="margin:0">sensor message broker</div>
+                </div>
+              </div>
+
+              <div class="box" style="border-color:var(--slate)">
+                <div class="box-t" style="color:var(--slate)">AGGREGATION NODE (HQ)</div>
+                <div class="box-s" style="margin-top:3px">separate private network</div>
+                <div style="margin-top:10px;display:flex;flex-direction:column;gap:5px">
+                  <div class="chip" style="margin:0;opacity:.45;text-decoration:line-through">analysis engine</div>
+                  <div class="chip" style="margin:0">service &nbsp;— data model, hooks, logins</div>
+                  <div class="chip" style="margin:0">web screen</div>
+                  <div class="chip slate" style="margin:0">its own separate database</div>
+                  <div class="chip" style="margin:0">thumbnails only</div>
+                </div>
+              </div>
+
+            </div>
+            <div class="box" style="margin-top:14px;text-align:center;border-color:var(--ochre);background:var(--ochre-soft)">
+              <div class="box-t" style="color:var(--ochre)">↕ the sync network — the only thing the two share</div>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div class="plate-ft"><b>Two completely separate databases is the non-negotiable part.</b> Sharing one would make the whole distributed design a fiction — syncing would quietly become an internal database query, and the disconnection demonstration below would prove nothing at all. Each node owns its own storage, and the only thing crossing between them is messages.<br><br><b>Why the analysis engine is a separate program from the service:</b> analysis is the part that eats the processor, and it must never be slowed down by someone loading a dashboard page.</div>
+    </div>
+
+    <!-- PLATE: two demos -->
+    <div class="plate">
+      <div class="plate-hd"><b>Plate 13</b><span>The two moments worth watching</span></div>
+      <div class="plate-body">
+        <div class="dg" style="min-width:700px;display:grid;grid-template-columns:1fr 1fr;gap:16px">
+
+          <div>
+            <div class="box-s" style="letter-spacing:.1em;text-transform:uppercase;color:var(--brick);margin-bottom:9px">Pull the cable · ~20 seconds</div>
+            <div style="display:flex;flex-direction:column;gap:7px">
+              <div class="box" style="border-color:var(--brick)"><div class="box-t" style="color:var(--brick)">Sync network disconnected</div><div class="box-s">HQ goes dark</div></div>
+              <div class="arw">↓</div>
+              <div class="box"><div class="box-s" style="color:var(--ink)">The post <b>keeps reading, detecting, alerting</b> and serving its own screen. The waiting-to-send count climbs, visibly, on the post's own display.</div></div>
+              <div class="arw">↓</div>
+              <div class="box" style="border-color:var(--green)"><div class="box-t" style="color:var(--green)">Reconnected</div><div class="box-s">HQ asks for everything after its last number → the backlog drains → no gaps, no duplicates</div></div>
+            </div>
+          </div>
+
+          <div>
+            <div class="box-s" style="letter-spacing:.1em;text-transform:uppercase;color:var(--olive);margin-bottom:9px">Change one file · ~30 seconds</div>
+            <div style="display:flex;flex-direction:column;gap:7px">
+              <div class="box" style="border-color:var(--olive)"><div class="box-t" style="color:var(--olive)">Border fence setup</div><div class="box-s">zones: fence line, gate<br>watching for: person, vehicle, tractor, animal</div></div>
+              <div class="arw">↓ reload, no restart</div>
+              <div class="box" style="border-color:var(--slate)"><div class="box-t" style="color:var(--slate)">Naval waterline setup</div><div class="box-s">zones: waterline, perimeter<br>watching for: person, boat, vehicle</div></div>
+              <div class="arw">↓</div>
+              <div class="box" style="background:var(--plate-2)"><div class="box-s" style="color:var(--ink)">Same program. Same database. Same screen. Only the file changed — and <b>the change itself is recorded as a decision</b>.</div></div>
+            </div>
+          </div>
+
+        </div>
+      </div>
+      <div class="plate-ft"><b>The disconnection is genuine, not staged</b> — the post really cannot reach headquarters, and really keeps working. The honest caveat to state out loud: it's one computer, so this proves the <em>software</em> tolerates being cut off, not that the hardware does.<br><br><b>The configuration switch is the safer of the two showcases</b>, because it needs no AI computation at all — so it works identically on any machine, whatever hardware turns up on the day.</div>
+    </div>
+
+    <!-- PLATE: data layer -->
+    <div class="plate">
+      <div class="plate-hd"><b>Plate 14</b><span>Two languages, one database</span></div>
+      <div class="plate-body">
+        <div class="dg" style="min-width:640px;display:flex;flex-direction:column;align-items:center;gap:9px">
+          <div class="box" style="border-color:var(--olive);background:var(--olive-soft);text-align:center">
+            <div class="box-t" style="color:var(--olive)">One schema file — the single source of truth</div>
+            <div class="box-s" style="margin-top:3px">defines every table; the only thing allowed to change the database structure</div>
+          </div>
+          <div class="arw">↓</div>
+          <div class="box" style="text-align:center"><div class="box-t">The database</div></div>
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:14px;width:100%;margin-top:4px">
+            <div class="box"><div class="box-t">Web side — reading</div><div class="box-s" style="margin-top:4px">the dashboard and history searches, plus writing down operator decisions (kept in one place on purpose)</div></div>
+            <div class="box"><div class="box-t">Analysis side — writing</div><div class="box-s" style="margin-top:4px">events, tracked things, camera health</div></div>
+          </div>
+        </div>
+      </div>
+      <div class="plate-ft"><b>The risk this creates, stated plainly:</b> two different languages describing the same tables can drift apart. Two cheap defences. First, the analysis side's table definitions are <em>generated</em> from the real database rather than hand-written. Second, the analysis program checks its expected columns against the real ones <b>at startup and refuses to run on a mismatch</b> — a problem caught at startup is trivial, whereas the same problem caught later corrupts events silently.</div>
+    </div>
+
+    <!-- PLATE: runtime topology -->
+    <div class="plate">
+      <div class="plate-hd"><b>Plate 15</b><span>Runtime topology — what every box actually is</span></div>
+      <div class="plate-body">
+
+        <div class="legend" style="margin:0 0 20px;padding:0 0 12px;border-top:0;border-bottom:1px dashed var(--rule-2)">
+          <span><i style="border-color:var(--olive)"></i> <b style="color:var(--olive)">PROCESS</b> — a running program</span>
+          <span><i style="border-color:var(--slate);border-top-width:4px"></i> <b style="color:var(--slate)">DATABASE</b> — thick left edge</span>
+          <span><i style="border-color:var(--ochre);border-top-style:dashed"></i> <b style="color:var(--ochre)">BROKER</b> — message relay</span>
+          <span><i style="border-color:var(--rule-2);border-top-width:4px"></i> <b>VOLUME</b> — disk storage</span>
+          <span><i style="border-color:var(--rule-2);border-top-style:dashed"></i> <b>EXTERNAL</b> — not ours</span>
+        </div>
+
+        <div class="dg" style="min-width:1000px;display:grid;grid-template-columns:236px 1fr;gap:18px;align-items:start">
+
+          <!-- externals -->
+          <div style="display:flex;flex-direction:column;gap:9px">
+            <div class="box-s" style="letter-spacing:.1em;text-transform:uppercase;margin-bottom:1px">Outside the system</div>
+
+            <div class="rtbox t-ext">
+              <div class="rth"><span class="rtn">IP cameras</span><span class="rtt">external</span></div>
+              <div class="rtm"><i>protocol <b>RTSP</b> over TCP <b>554</b></i><i>we <b>pull</b>, they don't push</i><i>4 streams for the demo</i></div>
+            </div>
+
+            <div class="rtbox t-ext">
+              <div class="rth"><span class="rtn">anti-drone sensor</span><span class="rtt">external</span></div>
+              <div class="rtm"><i><b>MQTT</b> publish, or <b>HTTPS POST</b></i><i>signed with a shared key</i><i style="color:var(--brick)"><b>simulated for the demo</b></i></div>
+            </div>
+
+            <div class="rtbox t-ext">
+              <div class="rth"><span class="rtn">existing control room</span><span class="rtt">external</span></div>
+              <div class="rtm"><i>we <b>POST</b> to their webhook</i><i>or they <b>GET</b> from ours</i><i>whichever they support</i></div>
+            </div>
+          </div>
+
+          <!-- host -->
+          <div class="rtnet" style="border-style:solid;border-color:var(--ink);padding-top:20px">
+            <span class="rtnetl" style="color:var(--ink)">host — one machine · docker compose</span>
+
+            <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px">
+
+              <!-- EDGE -->
+              <div class="rtnet">
+                <span class="rtnetl" style="color:var(--olive)">docker network: edge_net</span>
+
+                <div class="rtbox t-proc">
+                  <div class="rth"><span class="rtn">ibvap-ingest</span><span class="rtt">process</span></div>
+                  <div class="rtm">
+                    <i>runtime <b>Python 3.11</b></i>
+                    <i>libs <b>PyAV · OpenCV · ONNX Runtime</b></i>
+                    <i>holds <b>L0 · L1 · L2</b></i>
+                    <i>ports <b>none exposed</b></i>
+                    <i>bound by <b>CPU</b> (GPU optional)</i>
+                  </div>
+                </div>
+
+                <div class="rtc"><b>│</b><em>writes via <u>SQLAlchemy</u> → TCP <u>5432</u><br>events · tracked things · health<br>then fires <u>NOTIFY 'ibvap_events'</u></em></div>
+
+                <div class="rtbox t-db">
+                  <div class="rth"><span class="rtn">postgres-edge</span><span class="rtt">database</span></div>
+                  <div class="rtm">
+                    <i>engine <b>PostgreSQL 16</b></i>
+                    <i>port <b>5432</b> (internal only)</i>
+                    <i>volume <b>pgdata-edge</b></i>
+                    <i>schema owner <b>Prisma migrate</b></i>
+                  </div>
+                </div>
+
+                <div class="rtc"><b>│</b><em>reads via <u>Prisma Client</u> → TCP <u>5432</u><br>plus <u>LISTEN 'ibvap_events'</u> for live push</em></div>
+
+                <div class="rtbox t-proc">
+                  <div class="rth"><span class="rtn">ibvap-api</span><span class="rtt">process</span></div>
+                  <div class="rtm">
+                    <i>runtime <b>FastAPI on uvicorn</b></i>
+                    <i>holds <b>L3 · L4</b> · logins · queries</i>
+                    <i>port <b>8000</b> — HTTP + <b>SSE</b></i>
+                    <i>hook routes <b>/hooks/ingress/*</b></i>
+                  </div>
+                </div>
+
+                <div class="rtc"><b>│</b><em>browser gets HTML from web,<br>live events straight from api over <u>SSE</u></em></div>
+
+                <div class="rtbox t-proc">
+                  <div class="rth"><span class="rtn">ibvap-web</span><span class="rtt">process</span></div>
+                  <div class="rtm">
+                    <i>runtime <b>Next.js on Node 20</b></i>
+                    <i>holds <b>L5</b> — the operator screen</i>
+                    <i>port <b>3000</b></i>
+                  </div>
+                </div>
+
+                <div style="display:grid;grid-template-columns:1fr 1fr;gap:9px;margin-top:12px">
+                  <div class="rtbox t-brk">
+                    <div class="rth"><span class="rtn">mosquitto</span><span class="rtt">broker</span></div>
+                    <div class="rtm"><i><b>MQTT</b> port <b>1883</b></i><i>sensor inputs only</i><i>optional</i></div>
+                  </div>
+                  <div class="rtbox t-vol">
+                    <div class="rth"><span class="rtn">evidence-edge</span><span class="rtt">volume</span></div>
+                    <div class="rtm"><i>bind mount on disk</i><i>thumbnails <b>+ clips</b></i></div>
+                  </div>
+                </div>
+              </div>
+
+              <!-- HQ -->
+              <div class="rtnet">
+                <span class="rtnetl" style="color:var(--slate)">docker network: hq_net</span>
+
+                <div class="rtbox t-ext" style="border-color:var(--rule-2);opacity:.5">
+                  <div class="rth"><span class="rtn" style="text-decoration:line-through">ibvap-ingest</span><span class="rtt">omitted</span></div>
+                  <div class="rtm"><i>headquarters does no analysis —<br>this container simply isn't started</i></div>
+                </div>
+
+                <div class="rtc"><b>&nbsp;</b><em>&nbsp;</em></div>
+
+                <div class="rtbox t-db">
+                  <div class="rth"><span class="rtn">postgres-hq</span><span class="rtt">database</span></div>
+                  <div class="rtm">
+                    <i>engine <b>PostgreSQL 16</b></i>
+                    <i>volume <b>pgdata-hq</b></i>
+                    <i style="color:var(--brick)"><b>a separate instance —<br>nothing is shared</b></i>
+                  </div>
+                </div>
+
+                <div class="rtc"><b>│</b><em>same access pattern as the edge side</em></div>
+
+                <div class="rtbox t-proc">
+                  <div class="rth"><span class="rtn">ibvap-api</span><span class="rtt">process</span></div>
+                  <div class="rtm">
+                    <i>runtime <b>FastAPI on uvicorn</b></i>
+                    <i>holds <b>L3 · L4</b>, sync <b>inbound</b></i>
+                    <i>port <b>8001</b> on the host</i>
+                  </div>
+                </div>
+
+                <div class="rtc"><b>│</b><em>same as edge</em></div>
+
+                <div class="rtbox t-proc">
+                  <div class="rth"><span class="rtn">ibvap-web</span><span class="rtt">process</span></div>
+                  <div class="rtm">
+                    <i>runtime <b>Next.js on Node 20</b></i>
+                    <i>cross-post views</i>
+                    <i>port <b>3001</b> on the host</i>
+                  </div>
+                </div>
+
+                <div class="rtbox t-vol" style="margin-top:12px">
+                  <div class="rth"><span class="rtn">evidence-hq</span><span class="rtt">volume</span></div>
+                  <div class="rtm"><i>bind mount on disk</i><i><b>thumbnails only</b> — clips are<br>fetched back from the post on request</i></div>
+                </div>
+              </div>
+
+            </div>
+
+            <!-- sync net -->
+            <div class="rtnet" style="margin-top:16px;border-color:var(--ochre)">
+              <span class="rtnetl" style="color:var(--ochre)">docker network: sync_net — the only network both sides join</span>
+              <div class="dg" style="display:flex;align-items:center;gap:14px;flex-wrap:wrap">
+                <div class="box-s" style="color:var(--ink);font-weight:600">ibvap-api (edge)</div>
+                <div style="flex:1;min-width:150px;border-top:1px solid var(--ochre);height:0"></div>
+                <div class="box-s" style="text-align:center;color:var(--ink)">
+                  <b>HTTPS</b> · one shared message format · signed with a shared key<br>
+                  resume by <b>sequence number</b> · <b>summaries only, never video</b>
+                </div>
+                <div style="flex:1;min-width:150px;border-top:1px solid var(--ochre);height:0"></div>
+                <div class="box-s" style="color:var(--ink);font-weight:600">ibvap-api (hq)</div>
+              </div>
+              <div class="box-s" style="margin-top:10px;text-align:center;color:var(--brick)">
+                cutting this one network is the disconnection test — see Plate 13
+              </div>
+            </div>
+
+          </div>
+        </div>
+
+        <!-- absent by design -->
+        <div class="dg" style="margin-top:22px;min-width:1000px">
+          <div class="box-s" style="letter-spacing:.1em;text-transform:uppercase;margin-bottom:9px">Deliberately absent</div>
+          <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:10px">
+            <div class="box" style="border-style:dashed"><div class="box-t" style="color:var(--brick)">No Redis</div><div class="box-s" style="margin-top:5px">Live updates ride Postgres' own <b>NOTIFY / LISTEN</b>. The database is already there and already reliable; a second store to run and monitor buys nothing.</div></div>
+            <div class="box" style="border-style:dashed"><div class="box-t" style="color:var(--brick)">No Kafka or queue service</div><div class="box-s" style="margin-top:5px">Retry queues are ordinary database <b>tables</b>. Durable, inspectable with a query, and one less thing to keep alive at a remote post.</div></div>
+            <div class="box" style="border-style:dashed"><div class="box-t" style="color:var(--brick)">No object storage service</div><div class="box-s" style="margin-top:5px">Evidence is files on a mounted disk. An S3-style service is swappable in later, but it is not needed and would be one more moving part.</div></div>
+            <div class="box" style="border-style:dashed"><div class="box-t" style="color:var(--brick)">No cloud anything</div><div class="box-s" style="margin-top:5px">No hosted database, no external AI service, no internet login, no managed queue. Not a setting — an architectural commitment.</div></div>
+          </div>
+        </div>
+
+      </div>
+      <div class="plate-ft">
+        <b>Six running pieces per node, and that is the entire stack:</b> three programs, one database, one optional message broker, one disk volume. Nothing else has to be installed, licensed, kept patched, or explained to whoever inherits the post.
+        <br><br>
+        <b>The one clever substitution.</b> Most systems shaped like this reach for Redis to push live updates to the screen. Here the analysis program writes an event and immediately fires Postgres' built-in <code>NOTIFY</code>; the service program is already sitting on a <code>LISTEN</code> and forwards it to the browser. Same result, <b>zero extra infrastructure in the path that matters</b>. If throughput ever demands a real queue, adding one is a local change — but starting with one would have meant a component to power, monitor and repair at a post that may not have mains electricity.
+        <br><br>
+        <b>Why the analysis program is separate from the service program.</b> It is the part that consumes the processor, and it must never be slowed by someone loading a dashboard page. It also means camera capacity and screen capacity can grow independently.
+        <br><br>
+        <b>Two databases, not one — the load-bearing detail.</b> Sharing a single database between post and headquarters would make the whole distributed design a fiction: syncing would silently become an internal query, and the disconnection test would prove nothing. Each side owns its own storage, and the only thing that ever crosses between them is messages.
+      </div>
+    </div>
+
+    <h3>What this design deliberately leaves out</h3>
+    <div class="col-wide">
+      <p>Listed so the gaps read as decisions rather than oversights:</p>
+      <ul class="tight">
+        <li><b>No dispatch or patrol routing.</b> Getting the right team to the right place is the real operational gap, but it's outside our five chosen problems. The post-local architecture makes it a clean addition later.</li>
+        <li><b>No fixing broken cameras.</b> The system <em>notices</em> a dead or frozen feed, because the blindness ladder needs that. Doing anything about it is out of scope.</li>
+        <li><b>No seeing drones.</b> The connection layer is the answer instead.</li>
+        <li><b>No cloud, no managed services.</b> Rule 1 is a commitment, not a setting.</li>
+        <li><b>No force-specific code paths.</b> Rule 4.</li>
+      </ul>
+    </div>
+  </section>
+
+  <hr class="div">
+
+  <!-- ============================================ DECISIONS -->
+  <section id="decisions">
+    <p class="eyebrow">Status</p>
+    <h2>Settled, and still open</h2>
+
+    <h4>Settled</h4>
+    <div class="cards two">
+      <div class="card">
+        <div class="card-k"><span>Hardware</span><em>undecided → design to the floor</em></div>
+        <p>No graphics card committed, so the design targets an <b>ordinary processor</b> and treats a graphics card as a bonus. Two knock-on effects worth knowing: cross-camera following drops from headline to bonus, and face detection becomes incident-triggered rather than continuous on a slower machine.</p>
+        <p>If a graphics card does turn up, it's <b>one line of configuration</b> and nothing else changes.</p>
+      </div>
+      <div class="card">
+        <div class="card-k"><span>Cameras at once</span><em>four</em></div>
+        <p>Enough to demonstrate following someone between cameras and to run a two-configuration deployment, without needing heavy optimisation work.</p>
+      </div>
+      <div class="card">
+        <div class="card-k"><span>Layout</span><em>one computer, two nodes</em></div>
+        <p>Two genuinely separate databases with one shared connection between them — which is what makes cutting that connection a real test rather than a mock-up.</p>
+      </div>
+      <div class="card">
+        <div class="card-k"><span>Database</span><em>one schema, two writers</em></div>
+        <p>A single schema file governs structure; the web side reads through it and the analysis side writes directly. Drift is the risk, handled by generating definitions and checking them at startup.</p>
+      </div>
+    </div>
+
+    <h4>Still open</h4>
+    <div class="cards two">
+      <div class="card">
+        <div class="card-k"><span>Second scenario footage</span><em>highest remaining risk</em></div>
+        <p>Because the configuration switch is now the <b>primary</b> showcase, the stakes on this went up. It needs a fence-line scenario <em>and</em> a waterline or perimeter scenario to be something you can watch rather than something you claim.</p>
+        <p>The fallback — running the second configuration against a still scene — still shows the switch, but the "same code, different force" point lands considerably softer.</p>
+      </div>
+      <div class="card">
+        <div class="card-k"><span>Power budget at the post</span></div>
+        <p>Some posts have no mains electricity at all, so "runs at the post" needs a real number attached. Designing for an ordinary processor makes this <em>easier</em> to answer honestly than a graphics-card machine would.</p>
+      </div>
+      <div class="card">
+        <div class="card-k"><span>Timeline and who builds what</span></div>
+        <p>The four-way split maps cleanly onto the six layers, but one person's share — judgement, data model and connections together — is visibly heavier than the others. If time gets tight, post-to-HQ syncing is the first thing to drop, since the disconnection demonstration works on the retry queue alone.</p>
+      </div>
+    </div>
+
+    <div class="note warn">
+      <span class="note-k">Two things that must stay visibly labelled</span>
+      <p>The anti-drone sensor feed and the vehicle watchlist both run against invented data. Both are flagged as simulated in the data itself — not by remembering to mention it — and both must be stated plainly when shown. A made-up sensor feed or registry presented as real is the single thing that would sink an otherwise strong project.</p>
+    </div>
+  </section>
+
+  <hr class="div">
+
+  <!-- ============================================ GLOSSARY -->
+  <section id="glossary">
+    <p class="eyebrow">Reference</p>
+    <h2>Plain-language glossary</h2>
+
+    <dl class="gloss" style="max-width:900px">
+      <div><dt>BOP</dt><dd>Border Out Post — a small manned post along the international border.</dd></div>
+      <div><dt>Check post</dt><dd>A controlled crossing point on a road, where traffic stops and is inspected.</dd></div>
+      <div><dt>CCTV</dt><dd>Ordinary security cameras. In this context, network-connected ones already installed.</dd></div>
+      <div><dt>RTSP / ONVIF</dt><dd>The standard, universal languages IP cameras use to send video and be controlled. Speaking these is what makes "no special hardware" possible.</dd></div>
+      <div><dt>ANPR</dt><dd>Automatic Number Plate Recognition — reading a vehicle's registration plate from video.</dd></div>
+      <div><dt>Detection</dt><dd>Finding a thing in a single frame and drawing a box round it.</dd></div>
+      <div><dt>Tracking</dt><dd>Keeping the same identity on that thing across many frames, so it's understood as one moving object rather than a new object each frame.</dd></div>
+      <div><dt>Virtual fence</dt><dd>A line or shape drawn on the camera's view. Crossing it is an event. No physical sensor involved.</dd></div>
+      <div><dt>False positive</dt><dd>An alarm for something that didn't matter — a cow, wind in the grass, rain. The main thing this project is built to reduce.</dd></div>
+      <div><dt>Edge</dt><dd>Doing the computing at the post itself rather than sending video somewhere central. Necessary when there's no reliable connection.</dd></div>
+      <div><dt>Cloud-independent</dt><dd>Nothing depends on an internet service. Everything — analysis, storage, screen, logins — runs on local equipment.</dd></div>
+      <div><dt>Data model</dt><dd>The fixed set of object types the system knows about, and how they connect. Here it's the only way anything enters the system.</dd></div>
+      <div><dt>Hook</dt><dd>A defined connection point for sending data in or out. This project uses one shared format for all of them.</dd></div>
+      <div><dt>Store-and-forward</dt><dd>When the link is down, keep records locally and send them when it returns.</dd></div>
+      <div><dt>Cross-camera matching</dt><dd>Recognising that the figure now on Camera B is the one who just left Camera A, using overall appearance rather than face.</dd></div>
+      <div><dt>Configuration profile</dt><dd>A file describing one site's zones, what to watch for, and how sensitive to be. Adapting to a new force means writing one of these.</dd></div>
+      <div><dt>Incident</dt><dd>Many related detections grouped into one thing a human deals with. The unit of work on the operator's screen.</dd></div>
+      <div><dt>Action</dt><dd>A recorded human decision — who did what, when, and why. Stored as a first-class object, not a side note.</dd></div>
+    </dl>
+
+    <div class="foot">
+      IBVAP — Intelligent Border Video Analytics Platform<br>
+      Problem Statement 26187 · Ministry of Home Affairs · Software · Smart Automation<br>
+      Scope in this brief: five selected problems (P1, P2, P3, P6, P9) · Layers 0–2 · high-level design
+    </div>
+  </section>
+
+</div>
+
+</body>
+</html>
