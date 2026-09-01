@@ -1,0 +1,16 @@
+# test/demo video footage -- large binaries, never belongs in git history
+data/
+
+# model weights -- download scripts / instructions live in code comments
+*.pt
+*.onnx
+
+# python
+__pycache__/
+*.pyc
+.venv/
+venv/
+
+# editor / OS
+.idea/
+.DS_Store

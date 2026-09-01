@@ -1,0 +1,5 @@
+data/
+venv/
+*.mp4
+*.pt
+*.onnx
