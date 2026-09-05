@@ -137,15 +137,32 @@ export const ATTARI_SECTOR: SiteGeography = {
 
 // ------------------------------------------------------------------ maths
 
-const M_PER_DEG_LAT = 110_574;
-const M_PER_DEG_LON_AT = (lat: number) => 111_320 * Math.cos((lat * Math.PI) / 180);
+/**
+ * Metres per degree on WGS84, as a function of latitude.
+ *
+ * A single constant is the equatorial value and overshoots by roughly half a
+ * percent at 31°N -- five metres in every kilometre, in a system whose whole
+ * job is saying which side of a fence someone is on. These are the standard
+ * series expansions; they cost two lines and remove the error.
+ */
+const M_PER_DEG_LAT_AT = (lat: number) => {
+  const p = (lat * Math.PI) / 180;
+  return (
+    111_132.92 - 559.82 * Math.cos(2 * p) + 1.175 * Math.cos(4 * p) - 0.0023 * Math.cos(6 * p)
+  );
+};
+
+const M_PER_DEG_LON_AT = (lat: number) => {
+  const p = (lat * Math.PI) / 180;
+  return 111_412.84 * Math.cos(p) - 93.5 * Math.cos(3 * p) + 0.118 * Math.cos(5 * p);
+};
 
 /** Width and height of the sector in metres. Drives the scale bar. */
 export function sectorSpanM(geo: SiteGeography): { width: number; height: number } {
   const midLat = (geo.bounds.north + geo.bounds.south) / 2;
   return {
     width: (geo.bounds.east - geo.bounds.west) * M_PER_DEG_LON_AT(midLat),
-    height: (geo.bounds.north - geo.bounds.south) * M_PER_DEG_LAT,
+    height: (geo.bounds.north - geo.bounds.south) * M_PER_DEG_LAT_AT(midLat),
   };
 }
 
@@ -184,7 +201,7 @@ export function gridRef(point: GeoPoint, geo: SiteGeography): string {
 export function offset(from: GeoPoint, bearingDeg: number, metres: number): GeoPoint {
   const radians = (bearingDeg * Math.PI) / 180;
   return {
-    lat: from.lat + (Math.cos(radians) * metres) / M_PER_DEG_LAT,
+    lat: from.lat + (Math.cos(radians) * metres) / M_PER_DEG_LAT_AT(from.lat),
     lon: from.lon + (Math.sin(radians) * metres) / M_PER_DEG_LON_AT(from.lat),
   };
 }

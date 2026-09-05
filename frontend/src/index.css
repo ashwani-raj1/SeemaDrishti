@@ -22,3 +22,39 @@
     font-variant-numeric: tabular-nums;
   }
 }
+
+/*
+ * Leaflet ships its own light-only chrome. These rules make the map wear the
+ * app's tokens instead, so it does not read as a third-party widget dropped
+ * into the console.
+ */
+@layer components {
+  .leaflet-container {
+    @apply bg-muted font-sans text-foreground;
+  }
+
+  .leaflet-tooltip {
+    @apply rounded-md border border-border bg-popover px-2 py-1 text-xs text-popover-foreground shadow-md;
+  }
+
+  .leaflet-tooltip::before {
+    @apply hidden;
+  }
+
+  .leaflet-tooltip.ibvap-label {
+    @apply border-none bg-transparent px-1 py-0 text-[10px] font-medium text-foreground shadow-none;
+  }
+
+  .leaflet-control-attribution {
+    @apply bg-background/80 text-[10px] text-muted-foreground;
+  }
+
+  .leaflet-control-zoom a {
+    @apply border-border bg-background text-foreground;
+  }
+
+  /* A control room at 3 a.m. should not be lit by a white map. */
+  .dark .leaflet-tile-pane {
+    filter: invert(1) hue-rotate(180deg) brightness(0.92) contrast(0.9);
+  }
+}

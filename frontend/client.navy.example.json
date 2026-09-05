@@ -9,5 +9,11 @@
   "sections": {
     "watchlist": false,
     "simulator": false
+  },
+  "basemap": {
+    "kind": "none",
+    "url": "",
+    "attribution": "Geometry only \u2014 no external imagery (Rule 1)",
+    "maxZoom": 19
   }
 }
