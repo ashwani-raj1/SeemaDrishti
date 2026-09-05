@@ -13,12 +13,20 @@ import { PageShell } from "@/components/ibvap/page-shell";
 import { SeverityBadge } from "@/components/ibvap/badges";
 import { LoadingRows, NothingHere } from "@/components/ibvap/states";
 import { ReasonDialog } from "@/components/ibvap/reason-dialog";
+import { SectorMap } from "@/components/ibvap/sector-map";
+import { ATTARI_SECTOR, gridRef } from "@/client/geography";
 import { api, needsReason } from "@/lib/api";
 import { clockTime, relative } from "@/lib/format";
 import type { Decision, Incident } from "@/lib/types";
 import { cn } from "@/lib/utils";
 import { useIncidents } from "./use-incidents";
 import { IncidentSheet } from "./sheet";
+
+/** Where an incident happened, spoken the way a radio call would say it. */
+const incidentGrid = (incident: Incident) => {
+  const placement = incident.cameraId ? ATTARI_SECTOR.cameras[incident.cameraId] : undefined;
+  return placement ? gridRef(placement.at, ATTARI_SECTOR) : "—";
+};
 
 const STATUS_STYLE: Record<string, string> = {
   OPEN: "bg-destructive/10 text-destructive border-destructive/30",
@@ -183,11 +191,13 @@ export function IncidentsScreen() {
       )}
 
       {!loading && incidents.length > 0 && (
-        <div className="rounded-md border">
+        <div className="grid gap-4 2xl:grid-cols-[minmax(0,1fr)_400px]">
+          <div className="rounded-md border">
           <Table>
             <TableHeader>
               <TableRow>
                 <TableHead className="w-24">Severity</TableHead>
+                <TableHead className="w-16">Grid</TableHead>
                 <TableHead>Incident</TableHead>
                 <TableHead className="w-28">Status</TableHead>
                 <TableHead className="w-20 text-right">Events</TableHead>
@@ -208,6 +218,9 @@ export function IncidentsScreen() {
                 >
                   <TableCell>
                     <SeverityBadge severity={incident.severity} />
+                  </TableCell>
+                  <TableCell className="font-mono text-xs text-muted-foreground">
+                    {incidentGrid(incident)}
                   </TableCell>
                   <TableCell className="font-medium">{incident.title}</TableCell>
                   <TableCell>
@@ -239,6 +252,17 @@ export function IncidentsScreen() {
               ))}
             </TableBody>
           </Table>
+          </div>
+
+          <SectorMap
+            incidents={incidents}
+            selectedId={selected?.id ?? null}
+            onSelect={(id) => {
+              const index = incidents.findIndex((incident) => incident.id === id);
+              if (index >= 0) setCursor(index);
+            }}
+            className="h-[460px] 2xl:sticky 2xl:top-16 2xl:h-[calc(100vh-10rem)]"
+          />
         </div>
       )}
 
