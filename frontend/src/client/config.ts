@@ -22,6 +22,8 @@ import type { Severity } from "@/lib/types";
  * geometry, and simply has no imagery underneath.
  */
 export interface BasemapConfig {
+  id: string;
+  label: string;
   kind: "xyz" | "wms" | "none";
   url: string;
   attribution: string;
@@ -44,7 +46,8 @@ export interface ClientConfig {
     /** Auto-refresh interval for screens with no live push of their own. */
     pollMs: number;
   };
-  basemap: BasemapConfig;
+  /** Offered in the map's layer switcher. The first is the default. */
+  basemaps: BasemapConfig[];
 }
 
 export const FALLBACK_CONFIG: ClientConfig = {
@@ -52,13 +55,35 @@ export const FALLBACK_CONFIG: ClientConfig = {
   apiBase: "http://localhost:8000",
   sections: {},
   defaults: { incidentSeverityFloor: "INFO", pollMs: 15_000 },
-  basemap: {
-    kind: "xyz",
-    url: "https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png",
-    attribution: "© OpenStreetMap contributors",
-    maxZoom: 19,
-    subdomains: "abc",
-  },
+  basemaps: [
+    {
+      id: "satellite",
+      label: "Satellite",
+      kind: "xyz",
+      // Imagery first: a border sector is fields, tracks and a fence line, and
+      // none of that is legible on a street map.
+      url: "https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}",
+      attribution: "Imagery © Esri, Maxar, Earthstar Geographics",
+      maxZoom: 19,
+    },
+    {
+      id: "street",
+      label: "Street",
+      kind: "xyz",
+      url: "https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png",
+      attribution: "© OpenStreetMap contributors",
+      maxZoom: 19,
+      subdomains: "abc",
+    },
+    {
+      id: "none",
+      label: "Geometry only",
+      kind: "none",
+      url: "",
+      attribution: "No external imagery — offline posture",
+      maxZoom: 19,
+    },
+  ],
 };
 
 /** Shallow-merge one level deep; a client file may specify only what it changes. */
@@ -68,7 +93,9 @@ export function mergeConfig(base: ClientConfig, patch: Partial<ClientConfig>): C
     apiBase: patch.apiBase ?? base.apiBase,
     sections: { ...base.sections, ...patch.sections },
     defaults: { ...base.defaults, ...patch.defaults },
-    basemap: { ...base.basemap, ...patch.basemap },
+    // Replaced wholesale, not merged: a client offering two layers must not
+    // silently inherit a third from the defaults.
+    basemaps: patch.basemaps ?? base.basemaps,
   };
 }
 

@@ -1,4 +1,5 @@
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
+import { useSearchParams } from "react-router-dom";
 import { SaveIcon } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
@@ -16,6 +17,7 @@ import { Spinner } from "@/components/ibvap/spinner";
 import { useClient } from "@/client/context";
 import { api } from "@/lib/api";
 import { humanise } from "@/lib/format";
+import { cn } from "@/lib/utils";
 import type { Direction, Severity, Zone, ZoneKind } from "@/lib/types";
 
 const KINDS: ZoneKind[] = [
@@ -33,6 +35,8 @@ const SEVERITIES: Severity[] = ["INFO", "WARNING", "CRITICAL"];
  */
 export function ZonesScreen() {
   const { cameras, refreshServer } = useClient();
+  const [params] = useSearchParams();
+  const wanted = params.get("zone");
 
   return (
     <PageShell
@@ -47,6 +51,7 @@ export function ZonesScreen() {
               zone={zone}
               cameraName={camera.name}
               onSaved={refreshServer}
+              focused={zone.id === wanted}
             />
           )),
         )}
@@ -59,11 +64,19 @@ function ZoneCard({
   zone,
   cameraName,
   onSaved,
+  focused,
 }: {
   zone: Zone;
   cameraName: string;
   onSaved: () => Promise<void>;
+  focused?: boolean;
 }) {
+  const card = useRef<HTMLDivElement | null>(null);
+
+  useEffect(() => {
+    if (focused) card.current?.scrollIntoView({ behavior: "smooth", block: "center" });
+  }, [focused]);
+
   const [draft, setDraft] = useState(zone);
   const [reason, setReason] = useState("");
   const [saving, setSaving] = useState(false);
@@ -102,7 +115,7 @@ function ZoneCard({
     value.split(",").map((item) => item.trim()).filter(Boolean);
 
   return (
-    <Card>
+    <Card ref={card} className={cn(focused && "ring-2 ring-primary")}>
       <CardHeader>
         <CardTitle className="flex items-center gap-2 text-base">
           <span className="truncate">{zone.name}</span>

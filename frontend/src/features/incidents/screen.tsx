@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
+import { useSearchParams } from "react-router-dom";
 import { CheckIcon, InboxIcon, SirenIcon, TriangleAlertIcon, XIcon } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
@@ -44,6 +45,7 @@ const STATUS_STYLE: Record<string, string> = {
  * be hunting a small target with a mouse at 3 a.m.
  */
 export function IncidentsScreen() {
+  const [params, setParams] = useSearchParams();
   const [showClosed, setShowClosed] = useState(false);
   const { incidents, loading, error, reload, merge } = useIncidents(showClosed);
 
@@ -54,6 +56,18 @@ export function IncidentsScreen() {
   const [reasonError, setReasonError] = useState<string | null>(null);
 
   const selected = incidents[Math.min(cursor, incidents.length - 1)] ?? null;
+
+  // Arrived from the sector map: open the incident that was clicked, and put
+  // the cursor on it so the keyboard picks up from there.
+  const deepLink = params.get("incident");
+  useEffect(() => {
+    if (!deepLink) return;
+    const index = incidents.findIndex((incident) => incident.id === deepLink);
+    if (index < 0) return;
+    setCursor(index);
+    setOpenId(deepLink);
+    setParams({}, { replace: true });
+  }, [deepLink, incidents, setParams]);
 
   useEffect(() => {
     if (cursor > incidents.length - 1) setCursor(Math.max(0, incidents.length - 1));

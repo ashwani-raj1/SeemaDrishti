@@ -3,7 +3,8 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Badge } from "@/components/ui/badge";
 import { PageShell } from "@/components/ibvap/page-shell";
 import { CameraStatusPill, SeverityBadge, SimulatedBadge } from "@/components/ibvap/badges";
-import { EvidenceOverlay } from "@/components/ibvap/evidence-overlay";
+import { CameraMap } from "@/components/ibvap/camera-map";
+import { EvidenceMap } from "@/components/ibvap/evidence-map";
 import { useClient } from "@/client/context";
 import { onStream } from "@/lib/stream";
 import { clockTime, humanise } from "@/lib/format";
@@ -58,13 +59,12 @@ export function LiveCamerasScreen() {
                 </CardDescription>
               </CardHeader>
               <CardContent className="flex flex-col gap-3">
-                {/* Live geometry: the newest event's evidence, else the zones at rest. */}
-                <EvidenceOverlay
-                  evidence={
-                    latest?.evidence ?? { zone: camera.zones[0] ? { ...camera.zones[0] } : undefined }
-                  }
-                  className="aspect-video w-full"
-                />
+                {/* The newest track if there is one, else the ground at rest. */}
+                {latest ? (
+                  <EvidenceMap event={latest} className="aspect-video w-full" />
+                ) : (
+                  <CameraMap camera={camera} className="aspect-video w-full" />
+                )}
 
                 <div className="flex flex-col gap-1.5">
                   {events.length === 0 && (
