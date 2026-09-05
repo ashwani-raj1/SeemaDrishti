@@ -15,7 +15,9 @@
   "type": "commonjs",
   "main": "index.js",
   "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1", 
-    "run":"", 
+    "setup": "cd backend && bun install && cd ../frontend && bun install",
+    "dev": "trap 'kill 0' INT TERM; (cd backend && bun run dev) & (cd frontend && bun run dev) & wait",
+    "start": "trap 'kill 0' INT TERM; (cd backend && bun run start) & (cd frontend && bun run start) & wait",
+    "test": "(cd backend && bun test) && (cd frontend && bun test)"
   }
 }

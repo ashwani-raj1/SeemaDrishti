@@ -1,0 +1,19 @@
+{
+  "_comment": "Indian-hosted basemap via ISRO Bhuvan WMS. Swapping OSM for this is this file changing, not any component. Verify the exact layer name against the current Bhuvan WMS GetCapabilities before relying on it.",
+  "brand": {
+    "name": "IBVAP",
+    "short": "IB",
+    "tagline": "Border Video Analytics"
+  },
+  "apiBase": "http://localhost:8000",
+  "sections": {},
+  "basemap": {
+    "kind": "wms",
+    "url": "https://bhuvan-vec1.nrsc.gov.in/bhuvan/wms",
+    "attribution": "\u00a9 ISRO Bhuvan / NRSC",
+    "layers": "india3",
+    "format": "image/png",
+    "transparent": false,
+    "maxZoom": 18
+  }
+}

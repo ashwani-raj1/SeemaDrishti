@@ -5,47 +5,56 @@
     @apply font-sans;
   }
 
-  body {
-    @apply grid place-items-center min-w-[320px] min-h-screen relative m-0 bg-background text-foreground;
+  /*
+   * A dashboard fills the viewport. The template centred the body, which is
+   * right for a splash card and wrong for a control room.
+   */
+  html,
+  body,
+  #root {
+    @apply m-0 h-full min-h-screen w-full bg-background text-foreground;
   }
 }
 
-/* cool Bun background animation 😎 */
-body::before {
-  content: "";
-  position: fixed;
-  inset: 0;
-  z-index: -1;
-  opacity: 0.05;
-  background: url("./logo.svg");
-  background-size: 256px;
-  transform: rotate(-12deg) scale(1.35);
-  animation: slide 30s linear infinite;
-  pointer-events: none;
-}
-
-@keyframes slide {
-  from {
-    background-position: 0 0;
-  }
-  to {
-    background-position: 256px 224px;
+/* Numbers that line up when a column of them is being scanned. */
+@layer utilities {
+  .tabular-nums {
+    font-variant-numeric: tabular-nums;
   }
 }
 
-@keyframes spin {
-  from {
-    transform: rotate(0);
+/*
+ * Leaflet ships its own light-only chrome. These rules make the map wear the
+ * app's tokens instead, so it does not read as a third-party widget dropped
+ * into the console.
+ */
+@layer components {
+  .leaflet-container {
+    @apply bg-muted font-sans text-foreground;
   }
-  to {
-    transform: rotate(360deg);
-  }
-}
 
-@media (prefers-reduced-motion) {
-  *,
-  ::before,
-  ::after {
-    animation: none !important;
+  .leaflet-tooltip {
+    @apply rounded-md border border-border bg-popover px-2 py-1 text-xs text-popover-foreground shadow-md;
+  }
+
+  .leaflet-tooltip::before {
+    @apply hidden;
+  }
+
+  .leaflet-tooltip.ibvap-label {
+    @apply border-none bg-transparent px-1 py-0 text-[10px] font-medium text-foreground shadow-none;
+  }
+
+  .leaflet-control-attribution {
+    @apply bg-background/80 text-[10px] text-muted-foreground;
+  }
+
+  .leaflet-control-zoom a {
+    @apply border-border bg-background text-foreground;
+  }
+
+  /* A control room at 3 a.m. should not be lit by a white map. */
+  .dark .leaflet-tile-pane {
+    filter: invert(1) hue-rotate(180deg) brightness(0.92) contrast(0.9);
   }
 }

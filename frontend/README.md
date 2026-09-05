@@ -1,21 +1,13 @@
-# bun-react-tailwind-shadcn-template
+# IBVAP operator console
 
-To install dependencies:
+The screen. All data comes from the edge node in `backend/`.
 
 ```bash
 bun install
+bun run dev      # http://localhost:3000
+bun test
+bun run build    # static bundle into dist/
 ```
 
-To start a development server:
-
-```bash
-bun dev
-```
-
-To run for production:
-
-```bash
-bun start
-```
-
-This project was created using `bun init` in bun v1.3.8. [Bun](https://bun.com) is a fast all-in-one JavaScript runtime.
+Setup and configuration: [`../README.md`](../README.md).
+Design rules: [`../docs/UI_GUIDELINES.md`](../docs/UI_GUIDELINES.md).

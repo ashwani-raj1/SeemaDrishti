@@ -1,0 +1,20 @@
+{
+  "brand": {
+    "name": "IBVAP",
+    "short": "IB",
+    "tagline": "Border Video Analytics"
+  },
+  "apiBase": "http://localhost:8000",
+  "sections": {},
+  "defaults": {
+    "incidentSeverityFloor": "INFO",
+    "pollMs": 15000
+  },
+  "basemap": {
+    "kind": "xyz",
+    "url": "https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png",
+    "attribution": "\u00a9 OpenStreetMap contributors",
+    "maxZoom": 19,
+    "subdomains": "abc"
+  }
+}
