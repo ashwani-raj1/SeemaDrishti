@@ -1,0 +1,13 @@
+{
+  "brand": {
+    "name": "IBVAP",
+    "short": "IB",
+    "tagline": "Border Video Analytics"
+  },
+  "apiBase": "http://localhost:8000",
+  "sections": {},
+  "defaults": {
+    "incidentSeverityFloor": "INFO",
+    "pollMs": 15000
+  }
+}

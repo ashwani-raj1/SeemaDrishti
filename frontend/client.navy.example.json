@@ -1,0 +1,13 @@
+{
+  "_comment": "A second deployment. Same image, same database schema, same screens -- only this file differs. Run with IBVAP_CLIENT_CONFIG=./client.navy.example.json bun src/index.ts",
+  "brand": {
+    "name": "Coastal Watch",
+    "short": "CW",
+    "tagline": "Jetty & waterline surveillance"
+  },
+  "apiBase": "http://localhost:8000",
+  "sections": {
+    "watchlist": false,
+    "simulator": false
+  }
+}
