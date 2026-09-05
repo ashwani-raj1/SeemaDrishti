@@ -2,10 +2,12 @@
 
 Border video analytics that runs **at the post, not in a cloud**.
 
-Two processes: an **edge node** (`backend/`) that judges detections against zones, turns
-what matters into incidents and records every human decision, and an **operator console**
-(`frontend/`). One local SQLite file holds everything — a post with a dead uplink runs
-the complete feature set.
+Three processes: an **edge node** (`backend/`) that judges detections against zones, turns
+what matters into incidents and records every human decision, an **operator console**
+(`frontend/`), and an **L1 vision pipeline** (`ibvap/`) — CPU-only YOLO11n + ByteTrack
+person tracking with cascaded YuNet face detection — that posts real detections into the
+same ingress hook the simulator uses. One local SQLite file holds everything — a post with
+a dead uplink runs the complete feature set.
 
 - [`docs/CODE_GUIDELINES.md`](docs/CODE_GUIDELINES.md) — architecture and code rules
 - [`docs/UI_GUIDELINES.md`](docs/UI_GUIDELINES.md) — console design rules
@@ -13,8 +15,9 @@ the complete feature set.
 
 ## Setup
 
-Needs [Bun](https://bun.com) 1.3+ and nothing else — it's the runtime, bundler, test
-runner and package manager, and SQLite is built in.
+The node and console need [Bun](https://bun.com) 1.3+ and nothing else — it's the
+runtime, bundler, test runner and package manager, and SQLite is built in. The vision
+pipeline (`ibvap/`) is a separate Python process; see below.
 
 ```bash
 curl -fsSL https://bun.com/install | bash   # if you don't have it
@@ -45,6 +48,24 @@ and dismiss need a written reason; the node rejects them without one.
 bun test                        # both packages
 curl localhost:8000/api/health
 ```
+
+## Running the real detector
+
+`ibvap/` is a separate Python 3.11 process — not part of `bun run setup`/`dev`. Needs
+`opencv-python` and `ultralytics` (`pip install opencv-python ultralytics`); `yolo11n.pt`
+auto-downloads on first run.
+
+```bash
+cd ibvap
+python run.py --source data/test1.mp4 --show --post-url http://localhost:8000
+```
+
+`--post-url` is off by default (the demo runs fully standalone otherwise) — set it to feed
+real person-tracking detections into the node instead of the simulator, through the exact
+same `/hooks/ingress/detections` seam, unset `simulated` this time. `--camera-id` must
+match one already seeded in `backend/src/db/seed.ts` (default `cam_fence_north`). See
+`ibvap/claude.md` for the full CPU-budget tuning knobs and known limitations (no
+re-identification across long occlusion, face detection needs a close/choke-point range).
 
 ## Configuration
 
@@ -79,6 +100,13 @@ frontend/
   src/components/   ui/ = shadcn, ibvap/ = ours
   src/client/       per-deployment config, geography, profiles
   src/lib/          api client, SSE stream, types, formatting
+ibvap/      L1 -- Python, separate process, posts through the same ingress hook
+  run.py            demo/production CLI: source, tuning flags, --post-url
+  core/ingest.py    RTSP/file/webcam ingest, source-aware frame policy
+  core/person.py    YOLO11n + ByteTrack, movement trails
+  core/face.py      cascaded YuNet, scoped to each tracked person's head region
+  core/ingress_client.py   DetectionFrame shape + POST, backgrounded so a
+                            down node can never stall the detection loop
 ```
 
 ## Troubleshooting
