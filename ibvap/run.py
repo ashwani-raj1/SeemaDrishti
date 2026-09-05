@@ -29,6 +29,7 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from core.ingest import StreamReader
 from core.person import PersonTracker, TrackHistory
 from core.face import FaceDetector, BestFacePerTrack
+from core.ingress_client import IngressClient
 
 
 def color_for(tid):
@@ -90,6 +91,15 @@ def main():
                      help="max points kept per movement trail; 0 = unlimited "
                           "(fine for a bounded demo clip -- set a finite value "
                           "for a long-running live/RTSP source)")
+    ap.add_argument("--post-url", default=None,
+                     help="backend base URL (e.g. http://localhost:8000) -- "
+                          "when set, posts person detections to its "
+                          "/hooks/ingress/detections seam every detector call. "
+                          "Off by default; the demo runs standalone otherwise.")
+    ap.add_argument("--camera-id", default="cam_fence_north",
+                     help="must match a camera already seeded in the backend "
+                          "db (see backend/src/db/seed.ts); the backend "
+                          "rejects frames for an unknown camera_id")
     ap.add_argument("--loop", action="store_true",
                     help="restart a file source at EOF (demo convenience)")
     args = ap.parse_args()
@@ -108,6 +118,8 @@ def main():
             face_det = FaceDetector(args.face_model)
         except FileNotFoundError as e:
             print(f"[warn] face stage disabled:\n{e}\n")
+
+    ingress = IngressClient(args.post_url, args.camera_id) if args.post_url else None
 
     writer = None
     frame_idx = 0
@@ -136,6 +148,8 @@ def main():
                 infer_time_total += time.time() - t0
                 infer_calls += 1
                 history.update(persons, frame_idx)
+                if ingress:
+                    ingress.send(persons, frame.shape)
 
             if face_det and persons and frame_idx % args.face_every == 0:
                 faces = face_det.detect_for_persons(frame, persons)
@@ -179,6 +193,8 @@ def main():
         pass
     finally:
         reader.stop()
+        if ingress:
+            ingress.stop()
         if writer:
             writer.release()
         if args.show:
@@ -195,6 +211,9 @@ def main():
     print(f"unique track ids : {len(history.trails)}")
     print(f"face crops saved : {len(saved)}")
     print(f"source stats     : {reader.stats()}")
+    if ingress:
+        print(f"backend ingress  : {ingress.sent} sent, {ingress.failed} failed "
+              f"-> {ingress.url} (camera_id={ingress.camera_id})")
 
 
 if __name__ == "__main__":
