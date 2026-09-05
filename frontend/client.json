@@ -10,11 +10,31 @@
     "incidentSeverityFloor": "INFO",
     "pollMs": 15000
   },
-  "basemap": {
-    "kind": "xyz",
-    "url": "https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png",
-    "attribution": "\u00a9 OpenStreetMap contributors",
-    "maxZoom": 19,
-    "subdomains": "abc"
-  }
+  "basemaps": [
+    {
+      "id": "satellite",
+      "label": "Satellite",
+      "kind": "xyz",
+      "url": "https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}",
+      "attribution": "Imagery \u00a9 Esri, Maxar, Earthstar Geographics",
+      "maxZoom": 19
+    },
+    {
+      "id": "street",
+      "label": "Street",
+      "kind": "xyz",
+      "url": "https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png",
+      "attribution": "\u00a9 OpenStreetMap contributors",
+      "maxZoom": 19,
+      "subdomains": "abc"
+    },
+    {
+      "id": "none",
+      "label": "Geometry only",
+      "kind": "none",
+      "url": "",
+      "attribution": "No external imagery \u2014 offline posture",
+      "maxZoom": 19
+    }
+  ]
 }

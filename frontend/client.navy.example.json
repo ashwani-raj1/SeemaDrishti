@@ -10,10 +10,14 @@
     "watchlist": false,
     "simulator": false
   },
-  "basemap": {
-    "kind": "none",
-    "url": "",
-    "attribution": "Geometry only \u2014 no external imagery (Rule 1)",
-    "maxZoom": 19
-  }
+  "basemaps": [
+    {
+      "id": "none",
+      "label": "Geometry only",
+      "kind": "none",
+      "url": "",
+      "attribution": "No external imagery \u2014 offline posture",
+      "maxZoom": 19
+    }
+  ]
 }

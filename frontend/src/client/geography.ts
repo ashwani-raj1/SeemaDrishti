@@ -14,6 +14,8 @@
  * they are not a survey, and nothing here is derived from restricted data.
  */
 
+import type { Point } from "@/lib/types";
+
 export interface GeoPoint {
   lat: number;
   lon: number;
@@ -222,3 +224,50 @@ export function fovPolygon(placement: CameraPlacement, steps = 12): GeoPoint[] {
 
 export const formatLatLon = (point: GeoPoint) =>
   `${point.lat.toFixed(4)}°N ${point.lon.toFixed(4)}°E`;
+
+// ------------------------------------------------- frame space -> the ground
+
+/**
+ * Put a point from the camera's picture onto the map.
+ *
+ * Detections, tracks and zones are all stored normalised 0..1 against the
+ * frame. To draw them on a map they have to become ground positions, and that
+ * needs to know where the camera is and where it is pointed -- which is
+ * exactly what CameraPlacement carries.
+ *
+ * `x` sweeps across the field of view. `y` runs from the top of the frame
+ * (far) to the bottom (near); the squared term is a nod to perspective, since
+ * equal pixel steps cover far more ground near the horizon than at your feet.
+ *
+ * ponytail: an approximate ground projection from declared bearing/FOV/range,
+ * not a calibrated homography. It is right enough to show which field someone
+ * crossed and which way they walked; it is not a survey fix. Replace with a
+ * four-point homography per camera when someone can stand in the frame with a
+ * GPS and give us the corners.
+ */
+export function frameToGround(point: Point, placement: CameraPlacement): GeoPoint {
+  const [x, y] = point;
+  const clamp = (value: number) => Math.min(1, Math.max(0, value));
+
+  const across = clamp(x);
+  const depth = clamp(y);
+
+  const bearing = placement.bearing - placement.fovDeg / 2 + across * placement.fovDeg;
+
+  // Nothing useful sits at zero metres, and the far edge is the stated range.
+  const NEAR_FRACTION = 0.18;
+  const far = 1 - depth;
+  const distance = placement.rangeM * (NEAR_FRACTION + (1 - NEAR_FRACTION) * far * far);
+
+  return offset(placement.at, bearing, distance);
+}
+
+/** A whole track, zone edge or path, moved from frame space onto the ground. */
+export const framePathToGround = (points: Point[], placement: CameraPlacement): GeoPoint[] =>
+  points.map((point) => frameToGround(point, placement));
+
+/** The camera's own placement, if this deployment knows where that camera is. */
+export const placementOf = (
+  cameraId: string | null | undefined,
+  geo: SiteGeography = ATTARI_SECTOR,
+): CameraPlacement | undefined => (cameraId ? geo.cameras[cameraId] : undefined);

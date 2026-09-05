@@ -4,7 +4,7 @@ import { Badge } from "@/components/ui/badge";
 import { Separator } from "@/components/ui/separator";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { SeverityBadge, SimulatedBadge, SuppressedBadge } from "@/components/ibvap/badges";
-import { EvidenceOverlay } from "@/components/ibvap/evidence-overlay";
+import { EvidenceMap } from "@/components/ibvap/evidence-map";
 import { ErrorState, LoadingRows } from "@/components/ibvap/states";
 import { api } from "@/lib/api";
 import { useResource } from "@/lib/use-resource";
@@ -108,10 +108,11 @@ function EventCard({ event }: { event: IbvapEvent }) {
         </div>
       </div>
 
-      <EvidenceOverlay evidence={evidence} className="aspect-video w-full" />
+      <EvidenceMap event={event} className="aspect-video w-full" />
       <p className="text-xs text-muted-foreground">
-        Geometry only — no frame is stored. Thumbnails and clips are cut from the
-        node's rolling buffer on request.
+        Track and crossing point projected onto the ground from the camera's bearing and
+        range. No frame is stored — thumbnails and clips are cut from the node's rolling
+        buffer on request.
       </p>
 
       <dl className="grid grid-cols-2 gap-x-4 gap-y-1 text-xs sm:grid-cols-3">

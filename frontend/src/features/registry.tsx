@@ -9,7 +9,7 @@
  */
 import type { LucideIcon } from "lucide-react";
 import {
-  ActivityIcon, CarFrontIcon, CctvIcon, ClipboardListIcon,
+  ActivityIcon, CarFrontIcon, CctvIcon, ClipboardListIcon, MapIcon,
   EyeIcon, FileClockIcon, GaugeIcon, HistoryIcon, LayersIcon, PlugIcon,
   RefreshCwIcon, ScrollTextIcon, ShieldCheckIcon, SirenIcon, SlidersHorizontalIcon,
   UsersIcon,
@@ -28,6 +28,7 @@ import { ZonesScreen } from "./zones/screen";
 import { SiteProfileScreen } from "./profile/screen";
 import { CamerasScreen } from "./cameras/screen";
 import { SimulatorScreen } from "./simulator/screen";
+import { SectorMapScreen } from "./map/screen";
 
 export type { SectionGroup };
 export { GROUP_ORDER, canUse };
@@ -52,6 +53,16 @@ export const SECTIONS: Section[] = [
     minRole: "operator",
     backed: true,
     element: <IncidentsScreen />,
+  },
+  {
+    id: "map",
+    group: "Operations",
+    label: "Sector map",
+    icon: MapIcon,
+    path: "/map",
+    minRole: "operator",
+    backed: true,
+    element: <SectorMapScreen />,
   },
   {
     id: "live",
