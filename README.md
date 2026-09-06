@@ -12,6 +12,39 @@ a dead uplink runs the complete feature set.
 - [`docs/CODE_GUIDELINES.md`](docs/CODE_GUIDELINES.md) — architecture and code rules
 - [`docs/UI_GUIDELINES.md`](docs/UI_GUIDELINES.md) — console design rules
 - [`backend/README.md`](backend/README.md) — what the node serves, route by route
+- [`media/README.md`](media/README.md) — the video hub, clips, and where footage comes from
+- [`plans/IBVAP_live_feed_path.html`](plans/IBVAP_live_feed_path.html) — why the live path is shaped this way
+
+## Live video
+
+Four modules, and each can run on a different machine — every address comes
+from one `.env`, so moving one is editing a line, not editing code.
+
+```
+source ──RTSP──> MediaMTX ──┬──RTSP──> vision service ──HTTP──> edge node ──SSE──┐
+  clip loop      media hub   │           (detection)             (the record)     │
+  or camera                  │                │                                   ▼
+                             └──WHEP──────────┴──────WS (boxes)───────────────> console
+                                video, hub straight to the browser
+```
+
+Three channels to the console, deliberately unmuxed: **video** (WHEP, from the
+hub), **boxes** (WS, from the vision service, ephemeral), **the record** (SSE,
+from the edge node, durable). None can take the others down — the detector
+restarting freezes the boxes and leaves the picture live.
+
+```powershell
+Copy-Item .env.example .env
+python media/fetch.py --synthetic      # or point cameras.yml at real footage
+python media/configure.py
+media/bin/mediamtx.exe media/mediamtx.yml   # terminal 1
+bun run dev                                  # terminal 2 — node + console
+python ibvap/service.py                      # terminal 3 — detection
+```
+
+Adding a camera is one block in [`media/cameras.yml`](media/cameras.yml).
+Which cameras *this* machine runs detection on is `IBVAP_WORKER_CAMERAS` in
+`.env` — one worker per laptop is how four cameras fit on team hardware.
 
 ## Setup
 
@@ -35,7 +68,7 @@ separately (cleaner logs): `cd backend && bun run dev`, `cd frontend && bun run 
 ## First run
 
 The node creates and seeds `backend/ibvap.db` — BSF, BOP Attari, four cameras, their
-zones, three users. It's gitignored; a post never ships its data.
+zones, two users. It's gitignored; a post never ships its data.
 
 The queue starts empty because nothing has happened. Open **Simulator** in the sidebar
 and start it — it posts through the same hook a real detector would, and everything it

@@ -1,0 +1,29 @@
+# Vision service dependencies.
+#
+# claude.md §9: no new dependency without justification -- each one is a laptop
+# that fails to set up the night before submission. Every line here carries the
+# reason it is not removable.
+
+# YOLO11n + the ByteTrack integration. Pulls torch (CPU wheels) with it.
+ultralytics>=8.3
+
+# Frame decode, RTSP ingest, and YuNet face detection (cv2.FaceDetectorYN).
+opencv-python>=4.10
+
+# Required BY ByteTrack for its linear-assignment step. ultralytics auto-installs
+# it on first track() call, which works but happens mid-run and prints a
+# "restart runtime" warning -- pinning it here means the machine is ready before
+# the demo rather than during it.
+lap>=0.5.12
+
+# The box channel (core/box_channel.py). Ships with no transitive dependencies.
+websockets>=12.0
+
+# Reading media/cameras.yml. Already present as an ultralytics dependency;
+# named explicitly so it is not silently lost if that changes.
+PyYAML>=6.0
+
+# NOT listed, on purpose:
+#   python-dotenv  -- core/settings.py reads .env in fifteen lines
+#   numpy          -- arrives with opencv and ultralytics; pinning it here
+#                     invites a version fight between the two

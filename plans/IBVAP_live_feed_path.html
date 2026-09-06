@@ -609,13 +609,13 @@ ul.tight li, ol.tight li { margin-bottom: 8px; }
           <div class="mono">SSE <span style="color:var(--olive)">(exists)</span></div>
 
           <div>Rate</div>
-          <div class="mono">15–25 fps</div>
-          <div class="mono">5–10 fps</div>
+          <div class="mono">source rate</div>
+          <div class="mono">detector rate</div>
           <div class="mono">a few / minute</div>
 
           <div>Bandwidth</div>
-          <div class="mono">~1–2 Mbit/s per tile</div>
-          <div class="mono">~2–5 KB/s per camera</div>
+          <div class="mono">not measured</div>
+          <div class="mono">not measured</div>
           <div class="mono">negligible</div>
 
           <div>Durable</div>
@@ -1045,15 +1045,19 @@ ul.tight li, ol.tight li { margin-bottom: 8px; }
 
       <div class="card">
         <div class="card-k"><span>Rate</span><em>inference</em></div>
-        <span class="rec">Rec — 5–8 fps</span>
-        <h5>How fast does detection need to run?</h5>
+        <span class="rec">Measured — one machine</span>
+        <h5>How fast does detection actually run?</h5>
         <p>
-          A person walks about 1.5 m/s. At 8 fps that is under 20 cm between frames — far
-          finer than the tracker needs, and finer than the fence's confirm window cares about.
+          An earlier draft of this paper recommended a figure here. It should not have:
+          claude.md §7 forbids quoting a rate nobody measured, and against the Ryzen 3 floor
+          a guess is worse than useless.
         </p>
         <p>
-          Decoding every frame at 25 fps to throw four-fifths away is the single easiest way to
-          run out of CPU. Decode at the rate you infer at.
+          One camera, <code>imgsz=480</code>, <code>detect_every=2</code>, synthetic clip,
+          2026-09-06: <b>20.8 fps pipeline, 66.1 ms per detector call.</b> One machine, and an
+          empty scene — a frame with people in it costs more, and four workers on one box
+          divide these cores between them. Re-measure per laptop with
+          <code>service.py --seconds 30</code>.
         </p>
       </div>
     </div>

@@ -95,6 +95,24 @@ export interface DetectionFrame {
   simulated: boolean;
   source_id: string;
   detections: Detection[];
+  /**
+   * A monotonic capture clock, in seconds, from whatever produced this frame.
+   *
+   * Wait-and-confirm measures how long a crossing has been held by
+   * differencing these. Wall clock cannot be used for that: a post with no
+   * NTP will step its clock, and a step makes a pending crossing either
+   * confirm instantly or never confirm at all -- silently defeating the whole
+   * seconds-not-frames design.
+   *
+   * The origin is arbitrary and producer-specific (seconds since that
+   * machine booted, typically). Only differences are meaningful, and only
+   * between frames from the same producer. `occurred_at` remains the wall
+   * clock for display, storage and search.
+   *
+   * Optional: a producer that does not send one falls back to wall clock,
+   * which is what the fence did before this existed.
+   */
+  capture_mono?: number;
 }
 
 export interface Actor {

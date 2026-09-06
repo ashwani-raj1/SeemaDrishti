@@ -210,6 +210,57 @@ describe("virtual fence", () => {
   });
 });
 
+describe("the capture clock", () => {
+  /**
+   * The fence measures how long a crossing has been held by differencing
+   * frame timestamps. Wall clock is the wrong ruler for that: a post with no
+   * NTP steps its clock, and a step makes a pending crossing either confirm
+   * instantly or never confirm at all.
+   *
+   * Every frame below carries the SAME occurred_at. If held time were still
+   * being taken from the wall clock it would always be zero and a 2s window
+   * could never elapse -- so a confirmed crossing here can only come from
+   * capture_mono.
+   */
+  function frozenFrame(mono: number, trackRef: string, x: number, y: number) {
+    return {
+      ...frameAt(0, "person", trackRef, x, y),
+      capture_mono: mono,
+    };
+  }
+
+  test("held time comes from capture_mono, not the wall clock", () => {
+    const track = "t-mono";
+    fence.processFrame(frozenFrame(50_000, track, 0.5, 0.30));
+    fence.processFrame(frozenFrame(50_000.1, track, 0.5, 0.90));
+    expect(crossingsFor(track)).toHaveLength(0); // held
+
+    fence.processFrame(frozenFrame(50_003, track, 0.5, 0.92));
+
+    const crossings = crossingsFor(track);
+    expect(crossings).toHaveLength(1);
+    expect(crossings[0]!.rule).toBe("zone.crossing.confirmed");
+    // ~2.9s of monotonic time, against a wall clock that never moved.
+    expect(crossings[0]!.evidence.heldSeconds).toBeGreaterThan(2);
+  });
+
+  test("a producer swapping clock basis mid-track does not confirm on the jump", () => {
+    // The hazard: monotonic and wall-clock values differ by ~9 orders of
+    // magnitude, so one frame of each would look like decades of held time.
+    const track = "t-basis";
+    fence.processFrame(frozenFrame(50_000, track, 0.5, 0.30));
+    fence.processFrame(frozenFrame(50_000.1, track, 0.5, 0.90));
+
+    // Same track, now without capture_mono -- the fence falls back to wall
+    // clock, which is ~1.7e9. A naive difference would be astronomically
+    // past any confirm window.
+    fence.processFrame(frameAt(0, "person", track, 0.5, 0.92));
+
+    // The pending crossing was discarded rather than confirmed on nonsense.
+    expect(crossingsFor(track)).toHaveLength(0);
+  });
+});
+
 describe("audit log", () => {
   const supervisor = { id: "usr_supervisor", name: "Shift Supervisor", role: "supervisor" as const };
 

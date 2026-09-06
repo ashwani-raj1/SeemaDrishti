@@ -1,0 +1,15 @@
+# The hub binary — 53 MB, and every machine fetches its own pinned copy.
+bin/
+
+# Footage. Never commit clips: licence terms vary per source, sizes are large,
+# and git history is the wrong place for either problem.
+clips/
+.work/
+
+# Generated from cameras.yml + .env by configure.py.
+mediamtx.yml
+
+# Self-signed TLS cert MediaMTX generated for its MoQ listener on the first
+# boot, before that listener was turned off. Regenerated if ever needed.
+auto.crt
+auto.key

@@ -4,10 +4,12 @@ import { Badge } from "@/components/ui/badge";
 import { PageShell } from "@/components/ibvap/page-shell";
 import { CameraStatusPill, SeverityBadge, SimulatedBadge } from "@/components/ibvap/badges";
 import { CameraMap } from "@/components/ibvap/camera-map";
+import { CameraFeed } from "@/components/ibvap/camera-feed";
 import { EvidenceMap } from "@/components/ibvap/evidence-map";
 import { useClient } from "@/client/context";
 import { onStream } from "@/lib/stream";
 import { clockTime, humanise } from "@/lib/format";
+import { cn } from "@/lib/utils";
 import type { IbvapEvent } from "@/lib/types";
 import { Link } from "react-router-dom";
 
@@ -21,8 +23,15 @@ const PER_CAMERA = 4;
  * it answers "what is happening on that feed right now", which the incident
  * list is not shaped to answer.
  */
+type View = "feed" | "ground";
+
 export function LiveCamerasScreen() {
-  const { cameras } = useClient();
+  const { cameras, media } = useClient();
+  // Per-tile, because an operator watching one feed still wants the others
+  // showing where they are. Defaults to the picture when there is one to
+  // show, and to the ground when there is not -- so a console with no media
+  // hub configured degrades to exactly what it did before.
+  const [view, setView] = useState<Record<string, View>>({});
   const [recent, setRecent] = useState<Record<string, IbvapEvent[]>>({});
 
   useEffect(
@@ -47,6 +56,7 @@ export function LiveCamerasScreen() {
         {cameras.map((camera) => {
           const events = recent[camera.id] ?? [];
           const latest = events[0];
+          const mode: View = view[camera.id] ?? (media ? "feed" : "ground");
 
           return (
             <Card key={camera.id}>
@@ -68,12 +78,42 @@ export function LiveCamerasScreen() {
                 </CardDescription>
               </CardHeader>
               <CardContent className="flex flex-col gap-3">
-                {/* The newest track if there is one, else the ground at rest. */}
-                {latest ? (
+                {mode === "feed" ? (
+                  <CameraFeed
+                    cameraId={camera.id}
+                    streamPath={camera.streamPath}
+                    whepBase={media?.whepBase}
+                    zones={camera.zones}
+                    className="w-full"
+                  />
+                ) : latest ? (
+                  /* The newest track if there is one, else the ground at rest. */
                   <EvidenceMap event={latest} className="aspect-video w-full" />
                 ) : (
                   <CameraMap camera={camera} className="aspect-video w-full" />
                 )}
+
+                {/* The picture answers "what is happening now"; the ground
+                    answers "where is that". Both are worth one click. */}
+                <div className="flex gap-1">
+                  {(["feed", "ground"] as View[]).map((option) => (
+                    <button
+                      key={option}
+                      type="button"
+                      onClick={() => setView((current) => ({ ...current, [camera.id]: option }))}
+                      aria-pressed={mode === option}
+                      className={cn(
+                        "rounded-sm border px-2 py-0.5 font-mono text-[10px] uppercase tracking-wide",
+                        "focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none",
+                        mode === option
+                          ? "border-foreground/30 bg-muted text-foreground"
+                          : "border-transparent text-muted-foreground hover:text-foreground",
+                      )}
+                    >
+                      {option === "feed" ? "picture" : "ground"}
+                    </button>
+                  ))}
+                </div>
 
                 <div className="flex flex-col gap-1.5">
                   {events.length === 0 && (

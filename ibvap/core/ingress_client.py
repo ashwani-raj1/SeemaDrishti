@@ -39,12 +39,56 @@ import urllib.request
 from datetime import datetime, timezone
 
 
+def normalise(person, width, height, run_id):
+    """
+    The ONE place a pixel box becomes the wire format. Both channels call it.
+
+    WHY IT IS SHARED: the hot path (core/box_channel.py -> browser overlay) and
+    the cold path (this file -> backend fence) carry the same detections. Two
+    functions producing "the box" is how a system ends up with two conventions,
+    and a wrongly-converted box still looks like a box — the failure is silent.
+    One function, one convention, both channels.
+
+    CONTRACT (backend/src/core/types.ts): [x, y, w, h], normalised 0..1,
+    top-left corner. Normalised is what lets detection run on a 480p substream
+    while the console displays 720p, and what lets a zone survive a camera swap.
+
+    WHY run_id PREFIXES THE REF: ByteTrack reuses integer ids once a track dies
+    and restarts from 1 when this process restarts. The backend keys its fence
+    memory on (camera_id, track_ref) and has a UNIQUE constraint on the pair
+    (backend/src/db/schema.sql), so a bare id means a new person can inherit a
+    dead one's pending zone crossing. Scoping the ref to this run makes that
+    impossible by construction rather than by luck.
+
+    Returns None for an unconfirmed detection — the tracker has not issued an
+    id yet, and the backend requires a non-empty track_ref.
+    """
+    track_id = person["track_id"]
+    if track_id is None:
+        return None
+    x1, y1, x2, y2 = person["bbox"]
+    return {
+        "track_ref": f"{run_id}:{track_id}",
+        "class": "person",
+        "confidence": round(float(person["conf"]), 4),
+        "bbox": [x1 / width, y1 / height,
+                 (x2 - x1) / width, (y2 - y1) / height],
+    }
+
+
 class IngressClient:
-    def __init__(self, url, camera_id, source_id="ibvap-ingest", timeout=1.0):
+    def __init__(self, url, camera_id, source_id="ibvap-ingest", timeout=1.0,
+                 run_id="r0", simulated=False):
         self.url = url.rstrip("/")
         self.camera_id = camera_id
         self.source_id = source_id
         self.timeout = timeout
+        self.run_id = run_id
+        # Honesty flag, set once at the adapter so it cannot be forgotten
+        # downstream. A looping clip is not a camera and the event says so;
+        # a real RTSP camera or webcam sets this False. Derived from the
+        # manifest's source kind, never hand-typed per call.
+        self.simulated = simulated
         self.sent = 0
         self.failed = 0
         self._warned = False
@@ -59,33 +103,37 @@ class IngressClient:
         return datetime.now(timezone.utc).isoformat(timespec="milliseconds") \
             .replace("+00:00", "Z")
 
-    def _to_detection(self, person, w, h):
-        tid = person["track_id"]
-        if tid is None:
-            return None
-        x1, y1, x2, y2 = person["bbox"]
-        return {
-            "track_ref": str(tid),
-            "class": "person",
-            "confidence": person["conf"],
-            "bbox": [x1 / w, y1 / h, (x2 - x1) / w, (y2 - y1) / h],
-        }
+    def send(self, persons, frame_shape, capture_mono=None, detections=None):
+        """
+        Non-blocking. persons: PersonTracker.update() output.
 
-    def send(self, persons, frame_shape):
-        """Non-blocking. persons: PersonTracker.update() output."""
-        h, w = frame_shape[:2]
-        detections = [d for d in (self._to_detection(p, w, h) for p in persons)
-                      if d is not None]
+        `detections` lets a caller that has ALREADY normalised (to feed the box
+        channel in the same tick) pass the result straight through instead of
+        converting the same boxes twice per frame.
+        """
+        if detections is None:
+            h, w = frame_shape[:2]
+            detections = [d for d in
+                          (normalise(p, w, h, self.run_id) for p in persons)
+                          if d is not None]
         if not detections:
             return
 
         payload = {
             "camera_id": self.camera_id,
             "occurred_at": self._occurred_at(),
-            "simulated": False,
+            "simulated": self.simulated,
             "source_id": self.source_id,
             "detections": detections,
         }
+        # A monotonic capture clock for the backend's wait-and-confirm maths.
+        # WHY: the fence measures how long a crossing has been held by
+        # differencing timestamps. Wall clock at a post with no NTP can step,
+        # and a step makes a pending crossing either confirm instantly or never
+        # confirm at all. occurred_at stays for display and storage; this is
+        # what the state machine should count on.
+        if capture_mono is not None:
+            payload["capture_mono"] = round(capture_mono, 3)
         # Superseding drop, not backpressure: the freshest frame always wins.
         try:
             self._queue.get_nowait()

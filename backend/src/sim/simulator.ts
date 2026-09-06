@@ -113,6 +113,10 @@ function tick(): void {
   }
 
   const occurredAt = nowIso();
+  // The same monotonic basis a real worker sends, so the fence measures held
+  // time the same way whichever produced the frame -- and so the simulator
+  // keeps exercising the path the real detector takes.
+  const captureMono = performance.now() / 1000;
   for (const [cameraId, group] of byCamera) {
     const frame: DetectionFrame = {
       camera_id: cameraId,
@@ -120,6 +124,7 @@ function tick(): void {
       simulated: true,
       source_id: SOURCE_ID,
       detections: group.map(toDetection),
+      capture_mono: captureMono,
     };
     try {
       ingestDetections(frame);

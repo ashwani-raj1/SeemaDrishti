@@ -42,6 +42,36 @@ const CAMERA_STYLES: Record<CameraStatus, string> = {
   DEAD: "border-transparent bg-destructive text-white",
 };
 
+/**
+ * Severity where a full badge would shout.
+ *
+ * Same fixed scale as SeverityBadge, quieter form -- a scanned column of
+ * twenty rows does not need twenty filled badges competing with the one
+ * incident that actually needs a decision. This is not a third colour system;
+ * it is the second rendering of the one we already have.
+ */
+const SEVERITY_DOT: Record<Severity, string> = {
+  INFO: "bg-muted-foreground/40",
+  WARNING: "bg-amber-500",
+  CRITICAL: "bg-destructive",
+};
+
+export function SeverityDot({
+  severity,
+  className,
+}: {
+  severity: Severity;
+  className?: string;
+}) {
+  return (
+    <span
+      aria-label={severity}
+      title={severity}
+      className={cn("inline-block size-1.5 shrink-0 rounded-full", SEVERITY_DOT[severity], className)}
+    />
+  );
+}
+
 export function CameraStatusPill({
   status,
   className,
