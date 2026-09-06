@@ -6,11 +6,23 @@ Resolve the manifest's clip sources into files the media hub can loop.
     python media/fetch.py --synthetic            # placeholder clips, no network
     python media/fetch.py --camera cam_farm_gate --url "https://..."
 
+    # footage you already have
+    python media/fetch.py --normalise                       # fix every clip in place
+    python media/fetch.py --camera cam_farm_gate --normalise
+    python media/fetch.py --camera cam_farm_gate --normalise ~/gate.mp4
+
 WHY NORMALISE EVERY CLIP: the hub publishes with `-c:v copy`, which only
 works if the file is already H.264. A clip that is VP9 or AV1 — which is
 what most video sites hand you — would force MediaMTX to transcode on every
 restart, spending exactly the CPU the detector needs. Encoding once here is
 the whole reason `-c:v copy` is safe at runtime.
+
+WHY --normalise EXISTS: dropping your own .mp4 into media/clips/ is the fastest
+way to get real footage in, and the file will almost always be the wrong shape
+for WebRTC. It publishes to RTSP, plays in VLC, negotiates in the browser, and
+then the tile stays black. This runs that file through the same encode a
+downloaded clip gets, and skips files that already conform so re-running it
+costs nothing.
 
 WHY CLIPS ARE TRIMMED BY DEFAULT: a two-hour source is gigabytes on disk for
 footage that loops anyway. Two minutes of the right camera angle demonstrates
@@ -28,6 +40,7 @@ STATUS: prototype.
 """
 
 import argparse
+import json
 import shutil
 import subprocess
 import sys
@@ -111,6 +124,72 @@ def normalise(src, dst, height, seconds):
     return run(cmd, f"encode -> {dst.name}")
 
 
+def probe(path):
+    """
+    What the runtime path actually cares about, straight from the file.
+
+    Cheaper than re-encoding to find out, and it is the difference between
+    "your clip is already fine" and a needless generation of quality loss.
+    """
+    if shutil.which("ffprobe") is None:
+        return None
+    result = subprocess.run(
+        ["ffprobe", "-v", "error", "-select_streams", "v:0",
+         "-show_entries", "stream=codec_name,profile,has_b_frames,pix_fmt",
+         "-of", "json", str(path)],
+        capture_output=True, text=True,
+    )
+    if result.returncode != 0:
+        return None
+    try:
+        streams = json.loads(result.stdout).get("streams") or []
+    except json.JSONDecodeError:
+        return None
+    return streams[0] if streams else None
+
+
+def conforms(path):
+    """
+    Is this file already what the hub can `-c:v copy` and a browser can play?
+
+    Three things, and B-frames is the one that costs a day: a clip with them
+    publishes to RTSP fine, plays in VLC fine, negotiates in the browser fine,
+    and then the session closes and the tile stays black.
+
+    Returns (ok, reason). `None` reason means we could not tell -- no ffprobe --
+    and the caller should encode rather than assume.
+    """
+    info = probe(path)
+    if info is None:
+        return False, None
+
+    wrong = []
+    if info.get("codec_name") != "h264":
+        wrong.append(f"codec is {info.get('codec_name')}, not h264")
+    if info.get("has_b_frames"):
+        wrong.append("has B-frames, which WebRTC cannot carry")
+    if info.get("pix_fmt") != "yuv420p":
+        wrong.append(f"pixel format is {info.get('pix_fmt')}, not yuv420p")
+
+    return (not wrong), ", ".join(wrong)
+
+
+def normalise_in_place(dst, height, seconds):
+    """
+    Re-encode a clip that is already sitting at its destination.
+
+    ffmpeg cannot read and write the same file, so this goes via a temp beside
+    it and replaces on success -- a failed encode must not destroy the footage
+    somebody just dropped in.
+    """
+    temp = dst.with_name(dst.stem + ".normalising.mp4")
+    if not normalise(dst, temp, height, seconds):
+        temp.unlink(missing_ok=True)
+        return False
+    temp.replace(dst)
+    return True
+
+
 def download(url, workdir):
     need("yt-dlp")
     workdir.mkdir(parents=True, exist_ok=True)
@@ -181,6 +260,11 @@ def main():
                     help="generate placeholder clips instead of downloading")
     ap.add_argument("--camera", help="operate on one camera only")
     ap.add_argument("--url", help="set this camera's source url, then fetch it")
+    ap.add_argument("--normalise", "--normalize", nargs="?", const=True, default=None,
+                    metavar="PATH", dest="normalise",
+                    help="re-encode footage you already have. With PATH, copies that "
+                         "file into the camera's slot; without, fixes the clip already "
+                         "in place. Skips files that already conform unless --force")
     ap.add_argument("--seconds", type=int, default=120,
                     help="trim to this many seconds (0 = keep all)")
     args = ap.parse_args()
@@ -189,6 +273,11 @@ def main():
         if not args.camera:
             raise SystemExit("[fetch] --url needs --camera")
         set_url(args.camera, args.url)
+
+    # A path names one file, so it needs one camera to be the destination.
+    # Bare --normalise is a sweep and is happy to do the whole manifest.
+    if isinstance(args.normalise, str) and not args.camera:
+        raise SystemExit("[fetch] --normalise PATH needs --camera")
 
     _, cameras = load_manifest()
     if args.camera:
@@ -208,6 +297,35 @@ def main():
         dst = MEDIA / source["path"]
         dst.parent.mkdir(parents=True, exist_ok=True)
         height = cam.get("height")
+
+        # --normalise runs before the have-it-already check: the whole point is
+        # that the file IS there and is the wrong shape.
+        if args.normalise is not None:
+            src = Path(args.normalise) if isinstance(args.normalise, str) else dst
+
+            if not src.exists():
+                print(f"[fetch] {cam['id']:<18} no file at {src}")
+                failed += 1
+                continue
+
+            ok, why = conforms(src)
+            if ok and not args.force:
+                print(f"[fetch] {cam['id']:<18} {src.name} already conforms - nothing to do")
+                skipped += 1
+                continue
+            if why:
+                print(f"[fetch] {cam['id']:<18} {why}")
+            elif why is None and not args.force:
+                print(f"[fetch] {cam['id']:<18} no ffprobe - encoding rather than assuming")
+
+            encoded = (
+                normalise_in_place(dst, height, args.seconds)
+                if src == dst
+                else normalise(src, dst, height, args.seconds)
+            )
+            done += encoded
+            failed += (not encoded)
+            continue
 
         if dst.exists() and not args.force:
             print(f"[fetch] {cam['id']:<18} have {dst.name}")

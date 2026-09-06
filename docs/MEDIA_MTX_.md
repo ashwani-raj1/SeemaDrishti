@@ -33,7 +33,7 @@ One thing to flag: those four files are still the synthetic test patterns I gene
 
 # drop your file in, then point the manifest at it
 copy my_gate_footage.mp4 media\clips\fence_north.mp4
-python media/fetch.py --camera cam_fence_north --force   # re-encodes to WebRTC-safe H.264
+python media/fetch.py --camera cam_fence_north --normalise   # re-encodes to WebRTC-safe H.264
 python media/configure.py
 
 The --force re-encode matters — it's what strips B-frames. A file copied in directly will publish to RTSP fine and show a black tile in the browser.
