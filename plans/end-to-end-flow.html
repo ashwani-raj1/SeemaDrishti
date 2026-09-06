@@ -1,0 +1,325 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Pixel to Audited Decision</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&amp;family=IBM+Plex+Sans+Condensed:wght@600;700&amp;family=IBM+Plex+Sans:wght@400;500&amp;display=swap">
+<style>
+:root{
+  --ground:#eef1f2; --surface:#fbfcfc; --sunk:#e3e8ea; --band:#e7ecee;
+  --ink:#131a1f; --ink-soft:#5a6873; --line:#c3ced4;
+  --hot:#b0501a; --hot-fill:#f7e5d8;
+  --cold:#136370; --cold-fill:#d9ebef;
+  --emph-fill:#dfe6e9;
+}
+@media (prefers-color-scheme: dark){
+  :root:not([data-theme="light"]){
+    --ground:#0f1418; --surface:#171f25; --sunk:#131a1f; --band:#141c22;
+    --ink:#dfe7ea; --ink-soft:#8b9aa4; --line:#2d3941;
+    --hot:#e08a4c; --hot-fill:#33231a;
+    --cold:#55b1be; --cold-fill:#0f2d33;
+    --emph-fill:#1e272e;
+  }
+}
+:root[data-theme="dark"]{
+  --ground:#0f1418; --surface:#171f25; --sunk:#131a1f; --band:#141c22;
+  --ink:#dfe7ea; --ink-soft:#8b9aa4; --line:#2d3941;
+  --hot:#e08a4c; --hot-fill:#33231a;
+  --cold:#55b1be; --cold-fill:#0f2d33;
+  --emph-fill:#1e272e;
+}
+
+*{box-sizing:border-box}
+body{
+  margin:0; background:var(--ground); color:var(--ink);
+  font:400 16px/1.6 'IBM Plex Sans','Segoe UI',system-ui,sans-serif;
+}
+code,.mono{font-family:'IBM Plex Mono','Cascadia Mono',Consolas,monospace}
+.wrap{max-width:1060px; margin:0 auto; padding:40px 28px 80px}
+
+.mast{display:grid; gap:14px; padding-bottom:26px; border-bottom:2px solid var(--ink)}
+.eyebrow{
+  font-family:'IBM Plex Mono',Consolas,monospace; font-size:11px;
+  letter-spacing:.16em; text-transform:uppercase; color:var(--ink-soft);
+  display:flex; flex-wrap:wrap; gap:8px 18px; align-items:center;
+}
+h1{
+  font-family:'IBM Plex Sans Condensed','Segoe UI',sans-serif; font-weight:700;
+  font-size:clamp(2.1rem,5.5vw,3.2rem); line-height:1.02; letter-spacing:-.015em;
+  margin:0; text-wrap:balance;
+}
+.thesis{max-width:64ch; color:var(--ink-soft); margin:0; font-size:1.05rem}
+.thesis b{color:var(--ink); font-weight:500}
+#themeBtn{
+  margin-left:auto; font-size:11px; letter-spacing:.14em; text-transform:uppercase;
+  font-family:'IBM Plex Mono',Consolas,monospace; background:none;
+  border:1px solid var(--line); color:var(--ink-soft); padding:5px 11px;
+  border-radius:2px; cursor:pointer;
+}
+#themeBtn:hover{color:var(--ink); border-color:var(--ink)}
+#themeBtn:focus-visible{outline:2px solid var(--hot); outline-offset:2px}
+
+section{margin-top:52px}
+h2{
+  font-family:'IBM Plex Sans Condensed','Segoe UI',sans-serif; font-weight:600;
+  font-size:1.6rem; line-height:1.15; margin:0 0 6px; letter-spacing:-.01em;
+}
+.lede{color:var(--ink-soft); max-width:66ch; margin:0 0 22px}
+
+figure{
+  margin:0; padding:24px 20px 16px; background:var(--surface);
+  border:1px solid var(--line); border-radius:3px; overflow-x:auto;
+}
+figure svg{display:block; width:100%; min-width:720px; height:auto; color:var(--ink)}
+figcaption{
+  margin-top:16px; padding-top:12px; border-top:1px solid var(--line);
+  font-size:.86rem; color:var(--ink-soft); min-width:720px;
+}
+figcaption b{color:var(--ink); font-weight:500}
+
+.lane{fill:var(--band)}
+.n{fill:var(--surface); stroke:currentColor; stroke-width:1.4}
+.n-emph{fill:var(--emph-fill); stroke:currentColor; stroke-width:2.2}
+.n-hot{fill:var(--hot-fill); stroke:var(--hot); stroke-width:1.6}
+.n-cold{fill:var(--cold-fill); stroke:var(--cold); stroke-width:1.6}
+.e{fill:none; stroke:currentColor; stroke-width:1.5}
+.e-hot{fill:none; stroke:var(--hot); stroke-width:1.8}
+.e-cold{fill:none; stroke:var(--cold); stroke-width:1.8}
+.e-dash{fill:none; stroke:currentColor; stroke-width:1.3; stroke-dasharray:4 3}
+.tm{fill:currentColor; font-family:'IBM Plex Mono',Consolas,monospace; font-size:12.5px}
+.ts{fill:var(--ink-soft); font-family:'IBM Plex Sans','Segoe UI',sans-serif; font-size:10.5px}
+.tl{fill:var(--ink-soft); font-family:'IBM Plex Mono',Consolas,monospace; font-size:10px; letter-spacing:.04em}
+.tl-hot{fill:var(--hot); font-family:'IBM Plex Mono',Consolas,monospace; font-size:10px; letter-spacing:.04em}
+.tl-cold{fill:var(--cold); font-family:'IBM Plex Mono',Consolas,monospace; font-size:10px; letter-spacing:.04em}
+.lane-t{fill:currentColor; font-family:'IBM Plex Sans Condensed','Segoe UI',sans-serif; font-weight:600; font-size:12px; letter-spacing:.06em}
+.lane-s{fill:var(--ink-soft); font-family:'IBM Plex Mono',Consolas,monospace; font-size:9.5px}
+
+ol.seq{counter-reset:s; list-style:none; margin:0; padding:0; display:grid; gap:0}
+ol.seq li{
+  counter-increment:s; display:grid; grid-template-columns:2.3rem 1fr; gap:16px;
+  padding:11px 0; border-bottom:1px solid var(--line); align-items:baseline;
+}
+ol.seq li::before{
+  content:counter(s,decimal-leading-zero);
+  font-family:'IBM Plex Mono',Consolas,monospace; font-size:.76rem;
+  color:var(--hot); letter-spacing:.08em;
+}
+ol.seq b{font-weight:500}
+ol.seq em{font-style:normal; color:var(--ink-soft)}
+
+pre{
+  background:var(--sunk); border:1px solid var(--line); border-radius:3px;
+  padding:16px 18px; overflow-x:auto; font-size:.84rem; line-height:1.7; margin:0;
+  font-family:'IBM Plex Mono',Consolas,monospace;
+}
+pre .c{color:var(--ink-soft)}
+
+.note{
+  margin-top:26px; padding:16px 20px; background:var(--sunk);
+  border-left:3px solid var(--hot); border-radius:0 3px 3px 0;
+  font-size:.92rem; color:var(--ink-soft); max-width:72ch;
+}
+.note b{color:var(--ink); font-weight:500}
+.note code{font-size:.86em; color:var(--ink)}
+
+footer{
+  margin-top:60px; padding-top:20px; border-top:1px solid var(--line);
+  font-family:'IBM Plex Mono',Consolas,monospace; font-size:11px;
+  letter-spacing:.06em; color:var(--ink-soft);
+  display:flex; flex-wrap:wrap; gap:6px 24px;
+}
+@media (prefers-reduced-motion:reduce){*{animation:none!important; transition:none!important}}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+<header class="mast">
+  <div class="eyebrow">
+    <span>SeemaDrishti &mdash; IBVAP</span><span>end-to-end</span><span>high level</span>
+    <button id="themeBtn" type="button">theme</button>
+  </div>
+  <h1>Pixel to Audited Decision</h1>
+  <p class="thesis">Four processes, each able to run on a different laptop.
+  A person walks past a camera and, if it mattered, a human decision about it ends up
+  <b>hash-chained in a log at the post</b> &mdash; with nothing leaving the building.</p>
+</header>
+
+<section>
+  <h2>The whole path, one picture</h2>
+  <p class="lede">Lanes are processes. Follow the solid line down the middle; the two
+  coloured lines are the channels that skip the queue and go straight to the screen.</p>
+
+  <figure>
+    <svg viewBox="0 0 920 650" role="img" aria-label="Swimlane diagram across four processes. A camera or clip publishes into the MediaMTX hub, which sends WHEP video to the console and RTSP to the vision service. The vision service sends ephemeral boxes to the console over WebSocket and posts detections to the edge node, where the virtual fence judges them, an event and incident are written, and SSE pushes the incident to the operator queue. The operator acknowledges, escalates or dismisses, which writes a hash-chained audit row that the incident status is derived from.">
+      <defs>
+        <marker id="a" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+          <path d="M0,0 L10,5 L0,10 z" fill="currentColor"/>
+        </marker>
+        <marker id="ah" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+          <path d="M0,0 L10,5 L0,10 z" fill="var(--hot)"/>
+        </marker>
+        <marker id="ac" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+          <path d="M0,0 L10,5 L0,10 z" fill="var(--cold)"/>
+        </marker>
+      </defs>
+
+      <rect class="lane" x="10" y="40" width="900" height="130" rx="3"/>
+      <rect class="lane" x="10" y="320" width="900" height="130" rx="3"/>
+
+      <text class="lane-t" x="22" y="100">MEDIA HUB</text>
+      <text class="lane-s" x="22" y="116">MediaMTX</text>
+      <text class="lane-s" x="22" y="130">:8554 &middot; :8889</text>
+
+      <text class="lane-t" x="22" y="240">VISION SERVICE</text>
+      <text class="lane-s" x="22" y="256">Python &mdash; ibvap/</text>
+      <text class="lane-s" x="22" y="270">:8100</text>
+
+      <text class="lane-t" x="22" y="380">EDGE NODE</text>
+      <text class="lane-s" x="22" y="396">Bun + SQLite</text>
+      <text class="lane-s" x="22" y="410">:8000</text>
+
+      <text class="lane-t" x="22" y="520">CONSOLE</text>
+      <text class="lane-s" x="22" y="536">browser</text>
+      <text class="lane-s" x="22" y="550">:3000</text>
+
+      <rect class="n" x="150" y="77" width="150" height="56" rx="2"/>
+      <text class="tm" x="225" y="101" text-anchor="middle">camera or clip</text>
+      <text class="ts" x="225" y="119" text-anchor="middle">swapping one is config</text>
+
+      <path class="e" d="M 300 105 H 386" marker-end="url(#a)"/>
+      <text class="tl" x="343" y="96" text-anchor="middle">RTSP in</text>
+
+      <rect class="n-emph" x="390" y="77" width="170" height="56" rx="2"/>
+      <text class="tm" x="475" y="101" text-anchor="middle">MediaMTX hub</text>
+      <text class="ts" x="475" y="119" text-anchor="middle">one puller, many readers</text>
+
+      <path class="e" d="M 475 133 V 213" marker-end="url(#a)"/>
+      <text class="tl" x="487" y="177">RTSP out</text>
+
+      <rect class="n-emph" x="390" y="217" width="170" height="56" rx="2"/>
+      <text class="tm" x="475" y="241" text-anchor="middle">detect + track</text>
+      <text class="ts" x="475" y="259" text-anchor="middle">YOLO11n + ByteTrack</text>
+
+      <path class="e-hot" d="M 560 245 H 800 V 515 H 306" marker-end="url(#ah)"/>
+      <text class="tl-hot" x="600" y="236">WS &mdash; boxes, ephemeral</text>
+
+      <path class="e-cold" d="M 560 105 H 855 V 535 H 306" marker-end="url(#ac)"/>
+      <text class="tl-cold" x="600" y="96">WHEP &mdash; video, hub straight to browser</text>
+
+      <path class="e" d="M 475 273 V 330 H 325 V 353" marker-end="url(#a)"/>
+      <text class="tl" x="487" y="300">HTTP POST &mdash; the only door</text>
+
+      <rect class="n" x="250" y="357" width="150" height="56" rx="2"/>
+      <text class="tm" x="325" y="381" text-anchor="middle">virtual fence</text>
+      <text class="ts" x="325" y="399" text-anchor="middle">direction + hold time</text>
+
+      <path class="e" d="M 400 385 H 446" marker-end="url(#a)"/>
+
+      <rect class="n" x="450" y="357" width="160" height="56" rx="2"/>
+      <text class="tm" x="530" y="381" text-anchor="middle">event &rarr; incident</text>
+      <text class="ts" x="530" y="399" text-anchor="middle">append-only, grouped</text>
+
+      <path class="e" d="M 530 413 V 465 H 445 V 493" marker-end="url(#a)"/>
+      <text class="tl" x="542" y="443">SSE &mdash; live push</text>
+
+      <rect class="n" x="650" y="357" width="180" height="56" rx="2"/>
+      <text class="tm" x="740" y="381" text-anchor="middle">audit log</text>
+      <text class="ts" x="740" y="399" text-anchor="middle">hash-chained, append-only</text>
+
+      <path class="e-dash" d="M 646 371 H 616" marker-end="url(#a)"/>
+      <text class="tl" x="631" y="435" text-anchor="middle">status is</text>
+      <text class="tl" x="631" y="447" text-anchor="middle">a view</text>
+
+      <rect class="n-cold" x="150" y="497" width="150" height="56" rx="2"/>
+      <text class="tm" x="225" y="521" text-anchor="middle">live tile</text>
+      <text class="ts" x="225" y="539" text-anchor="middle">video + boxes overlaid</text>
+
+      <rect class="n" x="360" y="497" width="170" height="56" rx="2"/>
+      <text class="tm" x="445" y="521" text-anchor="middle">incident queue</text>
+      <text class="ts" x="445" y="539" text-anchor="middle">one piece of work</text>
+
+      <path class="e" d="M 530 525 H 596" marker-end="url(#a)"/>
+
+      <rect class="n-emph" x="600" y="497" width="180" height="56" rx="2"/>
+      <text class="tm" x="690" y="521" text-anchor="middle">operator decides</text>
+      <text class="ts" x="690" y="539" text-anchor="middle">ack &middot; escalate &middot; dismiss</text>
+
+      <path class="e" d="M 690 553 V 600 H 880 V 385 H 836" marker-end="url(#a)"/>
+      <text class="tl" x="770" y="592" text-anchor="middle">decision + written reason</text>
+    </svg>
+    <figcaption><b>Three channels reach the console and none can take the others down.</b>
+    The detector restarting freezes the boxes and leaves the picture live; the node going
+    down stops the queue and leaves both. That separation is the whole reason they are not
+    muxed into one stream.</figcaption>
+  </figure>
+</section>
+
+<section>
+  <h2>Same thing in words</h2>
+  <ol class="seq">
+    <li><div><b>A source publishes.</b> <em>A looping clip or a real camera &mdash; one RTSP push into the hub. Nothing downstream can tell which.</em></div></li>
+    <li><div><b>The hub fans out.</b> <em>One process pulls each source once. Cheap IP cameras cap at 2&ndash;4 sessions, so everyone else reads from the hub, not the camera.</em></div></li>
+    <li><div><b>The browser gets WHEP.</b> <em>Browsers cannot play RTSP &mdash; no flag, no polyfill. Something has to repackage it, and this is the only transport fast enough for a live security screen.</em></div></li>
+    <li><div><b>A worker pulls RTSP and detects.</b> <em>YOLO11n + ByteTrack, person boxes with track ids. One worker per laptop; which cameras is <span class="mono">IBVAP_WORKER_CAMERAS</span>.</em></div></li>
+    <li><div><b>Boxes go straight to the screen.</b> <em>WebSocket, ephemeral, never stored. If nobody is looking at the tile, a box is worthless.</em></div></li>
+    <li><div><b>Detections go to the node.</b> <em>One POST to <span class="mono">/hooks/ingress/detections</span> &mdash; the only door a detection enters through, and the same one the simulator uses.</em></div></li>
+    <li><div><b>The fence judges.</b> <em>Inbound and outbound are different events, and a crossing must hold for the zone&rsquo;s confirm seconds before a critical alarm fires. A single frame&rsquo;s flicker is rejected, not shouted.</em></div></li>
+    <li><div><b>An event is written.</b> <em>Append-only, with a monotonic sequence number. Cattle are written down and never alerted on &mdash; that distinction is the whole false-alarm argument.</em></div></li>
+    <li><div><b>Events group into an incident.</b> <em>Same camera, same zone, inside a bounded window. The operator&rsquo;s unit of work is &ldquo;someone crossed the fence&rdquo;, not forty detections.</em></div></li>
+    <li><div><b>SSE pushes it to the queue.</b> <em>Live, over the same HTTP port. No Redis, no queue service &mdash; nothing extra to power at a post that may not have mains electricity.</em></div></li>
+    <li><div><b>The operator decides.</b> <em>Acknowledge, escalate or dismiss. Escalate and dismiss are refused without a written reason.</em></div></li>
+    <li><div><b>The decision is the record.</b> <em>One hash-chained audit row: who, when, why. <span class="mono">incident</span> has no status column &mdash; its state is a SQL view over that log, so no code path can change it without leaving an attributed row behind.</em></div></li>
+  </ol>
+
+  <div class="note"><b>The whole path is local.</b> One SQLite file at the post holds
+  everything, and no cloud service sits anywhere in the working path &mdash; a post with a
+  dead uplink runs the complete feature set. Every address in the diagram comes from one
+  <code>.env</code>, so moving a process to another machine is editing a line, not editing
+  code.</div>
+</section>
+
+<section>
+  <h2>What you actually run</h2>
+  <p class="lede">Four terminals, in this order. Each box in the diagram is one of them.</p>
+<pre><span class="c"># once</span>
+Copy-Item .env.example .env
+python media/fetch.py --synthetic     <span class="c"># or point cameras.yml at real footage</span>
+python media/configure.py
+
+<span class="c"># then, one per terminal</span>
+media/bin/mediamtx.exe media/mediamtx.yml   <span class="c"># 1 — the hub</span>
+bun run dev                                 <span class="c"># 2 — node :8000 + console :3000</span>
+python ibvap/service.py                     <span class="c"># 3 — detection</span></pre>
+
+  <div class="note"><b>The synthetic clips are not a detection test.</b> They prove
+  hub &rarr; browser and hub &rarr; worker plumbing and will produce <b>zero detections</b> &mdash;
+  YOLO will not find a person in a test pattern, and it should not. Real footage is
+  required before any detection claim means anything.</div>
+</section>
+
+<footer>
+  <span>4 processes</span>
+  <span>3 channels to the console</span>
+  <span>1 SQLite file</span>
+  <span>local reference &mdash; not published</span>
+</footer>
+
+</div>
+<script>
+(function () {
+  var b = document.getElementById('themeBtn');
+  b.addEventListener('click', function () {
+    var r = document.documentElement;
+    var dark = r.getAttribute('data-theme') === 'dark' ||
+      (!r.hasAttribute('data-theme') &&
+        window.matchMedia('(prefers-color-scheme: dark)').matches);
+    r.setAttribute('data-theme', dark ? 'light' : 'dark');
+  });
+})();
+</script>
+</body>
+</html>
