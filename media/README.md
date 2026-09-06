@@ -140,3 +140,7 @@ One block in `cameras.yml`, then `python media/configure.py`:
 
 A typo in `id` shows up as a worker that runs fine and produces no events —
 the backend rejects frames for an unknown `camera_id`.
+
+
+# datasets
+> https://data.kitware.com/#collection/56f56db28d777f753209ba9f
