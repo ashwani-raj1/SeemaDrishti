@@ -124,6 +124,12 @@ export interface Camera {
   name: string;
   status: CameraStatus;
   zones: Zone[];
+  /**
+   * This camera's path on the media hub. Identical to `id` on purpose: whether
+   * the path is fed by a looping clip or a camera on a wall is invisible from
+   * here, so the console needs no notion of which it is watching.
+   */
+  streamPath?: string;
 }
 
 export interface Organisation {
@@ -148,11 +154,25 @@ export interface AppUser {
   role: Role;
 }
 
+/**
+ * Where live video and the live overlay come from.
+ *
+ * Addresses only. A real camera's RTSP URL carries credentials and stays on
+ * the hub machine -- the console never sees one, and never needs to.
+ */
+export interface MediaConfig {
+  /** Video: `${whepBase}/${streamPath}/whep`. WebRTC, hub straight to browser. */
+  whepBase: string;
+  /** Boxes: one socket, multiplexed by camera_id. Ephemeral, never stored. */
+  boxesUrl: string;
+}
+
 export interface ServerConfig {
   org: Organisation;
   site: Site;
   users: AppUser[];
   cameras: Camera[];
+  media?: MediaConfig;
 }
 
 /** What the explain overlay (#21) draws from. All coordinates normalised 0..1. */
@@ -289,6 +309,8 @@ export interface CameraDetail {
   id: string;
   siteId: string;
   name: string;
+  /** Where the media hub serves this camera's video. */
+  streamPath: string;
   streamUrl: string | null;
   status: CameraStatus;
   enabled: boolean;

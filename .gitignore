@@ -1,2 +1,9 @@
 .agents
 .claude
+# Per-machine module addresses. Copy from .env.example.
+.env
+
+# Model weights. Ultralytics downloads yolo11n.pt on first run, into whatever
+# the working directory is. ~5 MB of binary that every machine fetches itself.
+*.pt
+*.onnx

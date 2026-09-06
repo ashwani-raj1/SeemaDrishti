@@ -5,7 +5,10 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useState } from "react";
 import { api, configureApi, setActor } from "@/lib/api";
 import { connectStream, onStreamState, type StreamState } from "@/lib/stream";
-import type { AppUser, Camera, Organisation, Role, ServerConfig, Site } from "@/lib/types";
+import { connectBoxes } from "@/lib/boxes";
+import type {
+  AppUser, Camera, MediaConfig, Organisation, Role, ServerConfig, Site,
+} from "@/lib/types";
 import { FALLBACK_CONFIG, loadClientConfig, type ClientConfig } from "./config";
 
 interface ClientContextValue {
@@ -15,6 +18,7 @@ interface ClientContextValue {
   org: Organisation | null;
   site: Site | null;
   cameras: Camera[];
+  media: MediaConfig | null;
   users: AppUser[];
   actor: AppUser | null;
   role: Role;
@@ -84,6 +88,16 @@ export function ClientProvider({ children }: { children: React.ReactNode }) {
     };
   }, [ready, error]);
 
+  // The live overlay channel, kept separate from the event stream above on
+  // purpose: it comes from a different process, carries ephemeral data rather
+  // than the record, and must be able to die without taking the record with
+  // it. Its address arrives with the rest of the server config.
+  const boxesUrl = server?.media?.boxesUrl;
+  useEffect(() => {
+    if (!boxesUrl) return;
+    return connectBoxes(boxesUrl);
+  }, [boxesUrl]);
+
   const chooseActor = useCallback(
     (id: string) => {
       setActor(id);
@@ -112,6 +126,7 @@ export function ClientProvider({ children }: { children: React.ReactNode }) {
       org: server?.org ?? null,
       site: server?.site ?? null,
       cameras: server?.cameras ?? [],
+      media: server?.media ?? null,
       users: server?.users ?? [],
       actor,
       role: actor?.role ?? "operator",

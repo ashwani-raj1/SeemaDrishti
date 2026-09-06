@@ -1,0 +1,526 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>IBVAP Vision Service Flow</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&amp;family=IBM+Plex+Sans+Condensed:wght@600;700&amp;family=IBM+Plex+Sans:wght@400;500&amp;display=swap">
+<style>
+:root{
+  --ground:#eef1f2; --surface:#fbfcfc; --sunk:#e3e8ea;
+  --ink:#131a1f; --ink-soft:#5a6873; --line:#c3ced4;
+  --hot:#b0501a; --hot-fill:#f7e5d8;
+  --cold:#136370; --cold-fill:#d9ebef;
+  --emph:#2f3d46; --emph-fill:#dfe6e9;
+}
+@media (prefers-color-scheme: dark){
+  :root:not([data-theme="light"]){
+    --ground:#0f1418; --surface:#171f25; --sunk:#131a1f;
+    --ink:#dfe7ea; --ink-soft:#8b9aa4; --line:#2d3941;
+    --hot:#e08a4c; --hot-fill:#33231a;
+    --cold:#55b1be; --cold-fill:#0f2d33;
+    --emph:#a8b7c0; --emph-fill:#1e272e;
+  }
+}
+:root[data-theme="dark"]{
+  --ground:#0f1418; --surface:#171f25; --sunk:#131a1f;
+  --ink:#dfe7ea; --ink-soft:#8b9aa4; --line:#2d3941;
+  --hot:#e08a4c; --hot-fill:#33231a;
+  --cold:#55b1be; --cold-fill:#0f2d33;
+  --emph:#a8b7c0; --emph-fill:#1e272e;
+}
+
+*{box-sizing:border-box}
+html{-webkit-text-size-adjust:100%}
+body{
+  margin:0; background:var(--ground); color:var(--ink);
+  font:400 16px/1.6 'IBM Plex Sans','Segoe UI',system-ui,sans-serif;
+}
+code,.mono{font-family:'IBM Plex Mono','Cascadia Mono',Consolas,monospace}
+
+.wrap{max-width:1080px; margin:0 auto; padding:40px 28px 90px}
+
+/* ---- masthead ---- */
+.mast{
+  display:grid; gap:14px; padding-bottom:26px; margin-bottom:8px;
+  border-bottom:2px solid var(--ink);
+}
+.eyebrow{
+  font-family:'IBM Plex Mono',Consolas,monospace; font-size:11px;
+  letter-spacing:.16em; text-transform:uppercase; color:var(--ink-soft);
+  display:flex; flex-wrap:wrap; gap:8px 18px; align-items:center;
+}
+h1{
+  font-family:'IBM Plex Sans Condensed','Segoe UI',sans-serif;
+  font-weight:700; font-size:clamp(2.1rem,5.5vw,3.3rem); line-height:1.02;
+  letter-spacing:-.015em; margin:0; text-wrap:balance;
+}
+.thesis{max-width:62ch; color:var(--ink-soft); margin:0; font-size:1.05rem}
+.thesis b{color:var(--ink); font-weight:500}
+#themeBtn{
+  margin-left:auto; font-size:11px; letter-spacing:.14em;
+  text-transform:uppercase; font-family:'IBM Plex Mono',Consolas,monospace;
+  background:none; border:1px solid var(--line); color:var(--ink-soft);
+  padding:5px 11px; border-radius:2px; cursor:pointer;
+}
+#themeBtn:hover{color:var(--ink); border-color:var(--ink)}
+#themeBtn:focus-visible{outline:2px solid var(--hot); outline-offset:2px}
+
+/* ---- sections ---- */
+section{margin-top:56px}
+h2{
+  font-family:'IBM Plex Sans Condensed','Segoe UI',sans-serif;
+  font-weight:600; font-size:1.7rem; line-height:1.15; margin:0 0 6px;
+  letter-spacing:-.01em; display:flex; align-items:baseline; gap:14px;
+}
+h2 .step{
+  font-family:'IBM Plex Mono',Consolas,monospace; font-size:.8rem;
+  color:var(--hot); letter-spacing:.1em; flex:none;
+}
+.lede{color:var(--ink-soft); max-width:66ch; margin:0 0 22px}
+
+/* ---- figures ---- */
+figure{
+  margin:0; padding:26px 22px 18px; background:var(--surface);
+  border:1px solid var(--line); border-radius:3px; overflow-x:auto;
+}
+figure svg{display:block; width:100%; min-width:640px; height:auto; color:var(--ink)}
+figcaption{
+  margin-top:16px; padding-top:12px; border-top:1px solid var(--line);
+  font-size:.86rem; color:var(--ink-soft); min-width:640px;
+}
+figcaption b{color:var(--ink); font-weight:500}
+
+/* svg primitives */
+.n{fill:var(--surface); stroke:currentColor; stroke-width:1.4}
+.n-sunk{fill:var(--sunk); stroke:currentColor; stroke-width:1.4}
+.n-emph{fill:var(--emph-fill); stroke:currentColor; stroke-width:2.2}
+.n-hot{fill:var(--hot-fill); stroke:var(--hot); stroke-width:1.6}
+.n-cold{fill:var(--cold-fill); stroke:var(--cold); stroke-width:1.6}
+.grp{fill:none; stroke:currentColor; stroke-width:1; stroke-dasharray:5 4; opacity:.5}
+.e{fill:none; stroke:currentColor; stroke-width:1.4}
+.e-hot{fill:none; stroke:var(--hot); stroke-width:1.8}
+.e-cold{fill:none; stroke:var(--cold); stroke-width:1.8}
+.t{fill:currentColor; font-family:'IBM Plex Sans','Segoe UI',sans-serif; font-size:13px}
+.tm{fill:currentColor; font-family:'IBM Plex Mono',Consolas,monospace; font-size:12.5px}
+.ts{fill:var(--ink-soft); font-family:'IBM Plex Sans','Segoe UI',sans-serif; font-size:10.5px}
+.tl{fill:var(--ink-soft); font-family:'IBM Plex Mono',Consolas,monospace; font-size:10px; letter-spacing:.04em}
+.tl-hot{fill:var(--hot); font-family:'IBM Plex Mono',Consolas,monospace; font-size:10px; letter-spacing:.04em}
+.tl-cold{fill:var(--cold); font-family:'IBM Plex Mono',Consolas,monospace; font-size:10px; letter-spacing:.04em}
+.cap{fill:var(--ink-soft); font-family:'IBM Plex Mono',Consolas,monospace; font-size:9.5px; letter-spacing:.16em; text-transform:uppercase}
+.jn{fill:currentColor}
+
+/* ---- prose bits ---- */
+ol.seq{
+  counter-reset:s; list-style:none; margin:0; padding:0;
+  display:grid; gap:2px;
+}
+ol.seq li{
+  counter-increment:s; display:grid; grid-template-columns:2.4rem 1fr; gap:16px;
+  padding:12px 0; border-bottom:1px solid var(--line); align-items:baseline;
+}
+ol.seq li::before{
+  content:counter(s,decimal-leading-zero);
+  font-family:'IBM Plex Mono',Consolas,monospace; font-size:.78rem;
+  color:var(--hot); letter-spacing:.08em;
+}
+ol.seq li b{font-weight:500}
+ol.seq li span.d{color:var(--ink-soft); display:block; font-size:.92rem}
+
+table{border-collapse:collapse; width:100%; font-size:.9rem}
+caption{text-align:left; color:var(--ink-soft); font-size:.86rem; padding-bottom:12px}
+th,td{text-align:left; padding:9px 14px 9px 0; border-bottom:1px solid var(--line); vertical-align:top}
+th{
+  font-family:'IBM Plex Mono',Consolas,monospace; font-weight:500; font-size:.72rem;
+  letter-spacing:.12em; text-transform:uppercase; color:var(--ink-soft);
+}
+td.k{font-family:'IBM Plex Mono',Consolas,monospace; font-size:.84rem; white-space:nowrap}
+td.v{color:var(--ink-soft)}
+.tablewrap{overflow-x:auto}
+
+.note{
+  margin-top:26px; padding:16px 20px; background:var(--sunk);
+  border-left:3px solid var(--hot); border-radius:0 3px 3px 0;
+  font-size:.92rem; color:var(--ink-soft); max-width:72ch;
+}
+.note b{color:var(--ink); font-weight:500}
+.note code{font-size:.86em; color:var(--ink)}
+
+footer{
+  margin-top:64px; padding-top:20px; border-top:1px solid var(--line);
+  font-family:'IBM Plex Mono',Consolas,monospace; font-size:11px;
+  letter-spacing:.06em; color:var(--ink-soft);
+  display:flex; flex-wrap:wrap; gap:6px 24px;
+}
+@media (prefers-reduced-motion:reduce){*{animation:none!important; transition:none!important}}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+<header class="mast">
+  <div class="eyebrow">
+    <span>ibvap / service.py</span><span>L1 vision service</span><span>status: prototype</span>
+    <button id="themeBtn" type="button">theme</button>
+  </div>
+  <h1>IBVAP Vision Service Flow</h1>
+  <p class="thesis">One process. <b>Two threads plus three per camera.</b> Video goes in;
+  the same detections leave down two channels that agree on nothing except their contents &mdash;
+  one hot and disposable, one cold and durable. Nothing in here knows what a zone,
+  a severity or an incident is.</p>
+</header>
+
+<section>
+  <h2><span class="step">FIG 01</span>What runs, and where the boxes go</h2>
+  <p class="lede">The whole process at rest. Every arrow crosses a thread boundary,
+  which is why each one is either a queue or a thread-safe hand-off &mdash; never a plain call.</p>
+
+  <figure>
+    <svg viewBox="0 0 880 440" role="img" aria-label="Thread topology: a main thread starts one box channel thread and three threads per camera; the worker thread publishes to the box channel which serves the console over WebSocket, and hands payloads to the ingress thread which POSTs to the edge node.">
+      <defs>
+        <marker id="ar-a" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+          <path d="M0,0 L10,5 L0,10 z" fill="currentColor"/>
+        </marker>
+        <marker id="ar-a-hot" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+          <path d="M0,0 L10,5 L0,10 z" fill="var(--hot)"/>
+        </marker>
+        <marker id="ar-a-cold" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+          <path d="M0,0 L10,5 L0,10 z" fill="var(--cold)"/>
+        </marker>
+      </defs>
+
+      <rect class="n-emph" x="350" y="24" width="180" height="48" rx="2"/>
+      <text class="tm" x="440" y="45" text-anchor="middle">main thread</text>
+      <text class="ts" x="440" y="62" text-anchor="middle">supervises &middot; 0.5 s tick</text>
+
+      <path class="e" d="M 440 72 V 102 H 160 V 136" marker-end="url(#ar-a)"/>
+      <text class="tl" x="300" y="96" text-anchor="middle">start()</text>
+      <path class="e" d="M 440 72 V 102 H 590 V 126" marker-end="url(#ar-a)"/>
+      <text class="tl" x="672" y="96" text-anchor="middle">start() x N</text>
+
+      <rect class="n-hot" x="50" y="140" width="220" height="64" rx="2"/>
+      <text class="tm" x="160" y="167" text-anchor="middle">box channel thread</text>
+      <text class="ts" x="160" y="187" text-anchor="middle">asyncio loop &middot; ws :8100</text>
+
+      <rect class="grp" x="330" y="130" width="520" height="145" rx="3"/>
+      <text class="cap" x="346" y="150">per camera &mdash; 3 threads</text>
+
+      <rect class="n" x="350" y="170" width="130" height="52" rx="2"/>
+      <text class="tm" x="415" y="194" text-anchor="middle">reader</text>
+      <text class="ts" x="415" y="211" text-anchor="middle">StreamReader</text>
+
+      <rect class="n-emph" x="525" y="170" width="130" height="52" rx="2"/>
+      <text class="tm" x="590" y="194" text-anchor="middle">worker</text>
+      <text class="ts" x="590" y="211" text-anchor="middle">YOLO + ByteTrack</text>
+
+      <rect class="n-cold" x="700" y="170" width="130" height="52" rx="2"/>
+      <text class="tm" x="765" y="194" text-anchor="middle">ingress</text>
+      <text class="ts" x="765" y="211" text-anchor="middle">HTTP sender</text>
+
+      <path class="e" d="M 480 200 H 521" marker-end="url(#ar-a)"/>
+      <text class="tl" x="500" y="190" text-anchor="middle">frame</text>
+      <path class="e" d="M 655 200 H 696" marker-end="url(#ar-a)"/>
+      <text class="tl" x="675" y="190" text-anchor="middle">queue(1)</text>
+
+      <path class="e-hot" d="M 590 222 V 300 H 300 V 172 H 276" marker-end="url(#ar-a-hot)"/>
+      <text class="tl-hot" x="450" y="316" text-anchor="middle">publish() &mdash; call_soon_threadsafe, never blocks</text>
+
+      <path class="e-hot" d="M 160 204 V 356" marker-end="url(#ar-a-hot)"/>
+      <text class="tl-hot" x="172" y="252">ws JSON</text>
+      <text class="tl" x="172" y="266">every detector call</text>
+
+      <rect class="n-hot" x="50" y="360" width="220" height="60" rx="2"/>
+      <text class="tm" x="160" y="385" text-anchor="middle">console overlay</text>
+      <text class="ts" x="160" y="404" text-anchor="middle">ephemeral &mdash; never stored</text>
+
+      <path class="e-cold" d="M 765 222 V 356" marker-end="url(#ar-a-cold)"/>
+      <text class="tl-cold" x="753" y="278" text-anchor="end">POST</text>
+      <text class="tl" x="753" y="292" text-anchor="end">/hooks/ingress/detections</text>
+
+      <rect class="n-cold" x="660" y="360" width="190" height="60" rx="2"/>
+      <text class="tm" x="755" y="385" text-anchor="middle">edge node</text>
+      <text class="ts" x="755" y="404" text-anchor="middle">fence &rarr; events &rarr; SQLite</text>
+    </svg>
+    <figcaption><b>Two channels carry identical detections and are deliberately not muxed.</b>
+    The console needs boxes now and can lose them; the node needs every one and must keep them.
+    Share one socket and a dropped WebSocket frame silently loses a durable record.</figcaption>
+  </figure>
+
+  <div class="note"><b>Thread count is 2 + 3N.</b> Four cameras on one laptop is
+  <b>14 threads</b> &mdash; before <code>torch</code> spawns its own intra-op pool, which this
+  diagram does not draw and which is a real part of why workers on one box starve each other.
+  That is the whole reason <code>IBVAP_WORKER_CAMERAS</code> exists.</div>
+</section>
+
+<section>
+  <h2><span class="step">FIG 02</span>Where the config comes from</h2>
+  <p class="lede">Two files, two questions, never merged. Every laptop reads the same manifest
+  and a different <code>IBVAP_WORKER_CAMERAS</code> &mdash; that split is what makes
+  one-worker-per-machine work.</p>
+
+  <figure>
+    <svg viewBox="0 0 820 235" role="img" aria-label="cameras.yml is merged with defaults and filtered to detect true, then intersected with IBVAP_WORKER_CAMERAS; separately the .env file produces Settings; both feed N CameraWorkers.">
+      <defs>
+        <marker id="ar-b" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+          <path d="M0,0 L10,5 L0,10 z" fill="currentColor"/>
+        </marker>
+      </defs>
+
+      <text class="cap" x="30" y="20">what cameras exist &mdash; committed</text>
+      <rect class="n" x="30" y="30" width="190" height="58" rx="2"/>
+      <text class="tm" x="125" y="55" text-anchor="middle">media/cameras.yml</text>
+      <text class="ts" x="125" y="73" text-anchor="middle">shared by every machine</text>
+
+      <path class="e" d="M 220 59 H 271" marker-end="url(#ar-b)"/>
+      <rect class="n" x="275" y="30" width="200" height="58" rx="2"/>
+      <text class="tm" x="375" y="55" text-anchor="middle">merge defaults</text>
+      <text class="ts" x="375" y="73" text-anchor="middle">keep detect: true only</text>
+
+      <path class="e" d="M 475 59 H 526" marker-end="url(#ar-b)"/>
+      <rect class="n" x="530" y="30" width="250" height="58" rx="2"/>
+      <text class="tm" x="655" y="55" text-anchor="middle">&cap; IBVAP_WORKER_CAMERAS</text>
+      <text class="ts" x="655" y="73" text-anchor="middle">unknown name &rarr; SystemExit</text>
+
+      <text class="cap" x="30" y="140">where things run &mdash; per machine, gitignored</text>
+      <rect class="n-sunk" x="30" y="150" width="190" height="58" rx="2"/>
+      <text class="tm" x="125" y="175" text-anchor="middle">.env + IBVAP_*</text>
+      <text class="ts" x="125" y="193" text-anchor="middle">real env vars win</text>
+
+      <path class="e" d="M 220 179 H 271" marker-end="url(#ar-b)"/>
+      <rect class="n-sunk" x="275" y="150" width="200" height="58" rx="2"/>
+      <text class="tm" x="375" y="175" text-anchor="middle">Settings()</text>
+      <text class="ts" x="375" y="193" text-anchor="middle">rtsp &middot; backend &middot; budget</text>
+
+      <path class="e" d="M 475 179 H 526" marker-end="url(#ar-b)"/>
+      <path class="e" d="M 655 88 V 146" marker-end="url(#ar-b)"/>
+      <text class="tl" x="665" y="122">the list</text>
+
+      <rect class="n-emph" x="530" y="150" width="250" height="58" rx="2"/>
+      <text class="tm" x="655" y="175" text-anchor="middle">N &times; CameraWorker</text>
+      <text class="ts" x="655" y="193" text-anchor="middle">one thread, one tracker each</text>
+    </svg>
+    <figcaption><b>A camera with <span class="mono">detect: false</span> is not a failure.</b>
+    It still has video in the hub and a live tile in the console &mdash; it just has no boxes,
+    and the console shows that state honestly rather than hiding it.</figcaption>
+  </figure>
+</section>
+
+<section>
+  <h2><span class="step">FIG 03</span>The per-frame loop</h2>
+  <p class="lede">One camera&rsquo;s worker thread, from frame to both channels and back.
+  This is where the CPU budget is actually spent &mdash; and where two early exits
+  stop work before it starts.</p>
+
+  <figure>
+    <svg viewBox="0 0 780 745" role="img" aria-label="Flowchart of the per-frame worker loop: read a frame, exit early if it is None or if detect_every skips it, stamp a monotonic clock, run the tracker, normalise detections, then publish to the box channel and send to the ingress client, then loop until halt.">
+      <defs>
+        <marker id="ar-c" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+          <path d="M0,0 L10,5 L0,10 z" fill="currentColor"/>
+        </marker>
+        <marker id="ar-c-hot" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+          <path d="M0,0 L10,5 L0,10 z" fill="var(--hot)"/>
+        </marker>
+        <marker id="ar-c-cold" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+          <path d="M0,0 L10,5 L0,10 z" fill="var(--cold)"/>
+        </marker>
+      </defs>
+
+      <rect class="n" x="200" y="30" width="200" height="44" rx="2"/>
+      <text class="tm" x="300" y="57" text-anchor="middle">reader.read()</text>
+
+      <path class="e" d="M 300 74 V 96" marker-end="url(#ar-c)"/>
+      <polygon class="n" points="300,100 400,140 300,180 200,140"/>
+      <text class="t" x="300" y="145" text-anchor="middle">frame is None?</text>
+      <path class="e" d="M 400 140 H 700"/>
+      <text class="tl" x="548" y="132" text-anchor="middle">yes &mdash; sleep 2 ms, retry</text>
+      <circle class="jn" cx="700" cy="140" r="3.2"/>
+
+      <path class="e" d="M 300 180 V 206" marker-end="url(#ar-c)"/>
+      <rect class="n" x="200" y="210" width="200" height="42" rx="2"/>
+      <text class="tm" x="300" y="236" text-anchor="middle">frame_index += 1</text>
+
+      <path class="e" d="M 300 252 V 268" marker-end="url(#ar-c)"/>
+      <polygon class="n" points="300,272 410,320 300,368 190,320"/>
+      <text class="t" x="300" y="316" text-anchor="middle">frame_index %</text>
+      <text class="t" x="300" y="333" text-anchor="middle">detect_every &ne; 0?</text>
+      <path class="e" d="M 410 320 H 700"/>
+      <text class="tl" x="555" y="312" text-anchor="middle">yes &mdash; frame skipped entirely</text>
+      <circle class="jn" cx="700" cy="320" r="3.2"/>
+
+      <path class="e" d="M 300 368 V 396" marker-end="url(#ar-c)"/>
+      <rect class="n" x="170" y="400" width="260" height="42" rx="2"/>
+      <text class="tm" x="300" y="426" text-anchor="middle">capture_mono = monotonic()</text>
+      <text class="ts" x="446" y="417">cannot step backwards</text>
+      <text class="ts" x="446" y="431">under an NTP correction</text>
+
+      <path class="e" d="M 300 442 V 468" marker-end="url(#ar-c)"/>
+      <rect class="n-emph" x="160" y="472" width="280" height="54" rx="2"/>
+      <text class="tm" x="300" y="495" text-anchor="middle">tracker.update(frame)</text>
+      <text class="ts" x="300" y="514" text-anchor="middle">YOLO11n + ByteTrack &mdash; the whole cost</text>
+
+      <path class="e" d="M 300 526 V 552" marker-end="url(#ar-c)"/>
+      <rect class="n" x="170" y="556" width="260" height="44" rx="2"/>
+      <text class="tm" x="300" y="583" text-anchor="middle">normalise(p, w, h, run_id)</text>
+      <text class="ts" x="446" y="574">track_id is None &rarr; dropped</text>
+      <text class="ts" x="446" y="588">bbox &rarr; [x, y, w, h] in 0&ndash;1</text>
+
+      <path class="e" d="M 300 600 V 622"/>
+      <circle class="jn" cx="300" cy="622" r="3.2"/>
+      <path class="e-hot" d="M 300 622 H 185 V 646" marker-end="url(#ar-c-hot)"/>
+      <path class="e-cold" d="M 300 622 H 470 V 646" marker-end="url(#ar-c-cold)"/>
+
+      <rect class="n-hot" x="95" y="650" width="180" height="56" rx="2"/>
+      <text class="tm" x="185" y="675" text-anchor="middle">boxes.publish()</text>
+      <text class="ts" x="185" y="693" text-anchor="middle">sent even when empty</text>
+
+      <rect class="n-cold" x="380" y="650" width="180" height="56" rx="2"/>
+      <text class="tm" x="470" y="675" text-anchor="middle">ingress.send()</text>
+      <text class="ts" x="470" y="693" text-anchor="middle">skipped when empty</text>
+
+      <path class="e" d="M 185 706 V 728 H 700 V 52 H 404" marker-end="url(#ar-c)"/>
+      <path class="e" d="M 470 706 V 728"/>
+      <circle class="jn" cx="470" cy="728" r="3.2"/>
+      <text class="tl" x="612" y="720" text-anchor="middle">loop until _halt is set</text>
+    </svg>
+    <figcaption><b>The empty-list asymmetry is the point.</b> An empty list tells the overlay
+    a person <i>left</i> &mdash; skip it and the last box freezes on screen and reads as a dead
+    detector. An empty list tells the backend nothing, so it is never sent.</figcaption>
+  </figure>
+
+  <div class="note"><b>Read the two early exits as the CPU budget.</b> At
+  <code>detect_every=2</code>, half the decoded frames die at the second diamond having cost
+  only a decode. The detector &mdash; the one heavy box on this page &mdash; runs on what is
+  left. Everything below it is microseconds.</div>
+</section>
+
+<section>
+  <h2><span class="step">FIG 04</span>Why the reader drops frames</h2>
+  <p class="lede"><code>cv2.VideoCapture.read()</code> pulls sequentially from an internal
+  buffer. If inference is slower than the stream, that buffer grows and a &ldquo;live&rdquo;
+  feed silently goes stale &mdash; the failure that collapses demos on stage.</p>
+
+  <figure>
+    <svg viewBox="0 0 800 320" role="img" aria-label="The reader holds a single frame slot; on a live source a new frame overwrites the unconsumed one and counts a drop, on a file source the reader spins until the consumer takes it.">
+      <defs>
+        <marker id="ar-d" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+          <path d="M0,0 L10,5 L0,10 z" fill="currentColor"/>
+        </marker>
+        <marker id="ar-d-hot" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+          <path d="M0,0 L10,5 L0,10 z" fill="var(--hot)"/>
+        </marker>
+      </defs>
+
+      <rect class="n" x="30" y="30" width="170" height="48" rx="2"/>
+      <text class="tm" x="115" y="59" text-anchor="middle">cap.read()</text>
+      <path class="e" d="M 200 54 H 296" marker-end="url(#ar-d)"/>
+      <text class="tl" x="248" y="44" text-anchor="middle">decoded frame</text>
+
+      <rect class="n-emph" x="300" y="30" width="150" height="48" rx="2"/>
+      <text class="tm" x="375" y="59" text-anchor="middle">slot (holds 1)</text>
+
+      <path class="e" d="M 450 54 H 556" marker-end="url(#ar-d)"/>
+      <text class="tl" x="503" y="44" text-anchor="middle">read() consumes it</text>
+      <rect class="n" x="560" y="30" width="180" height="48" rx="2"/>
+      <text class="tm" x="650" y="59" text-anchor="middle">worker loop</text>
+
+      <path class="e" d="M 375 78 V 116" marker-end="url(#ar-d)"/>
+      <text class="ts" x="390" y="102">next frame arrives, slot still full</text>
+
+      <polygon class="n" points="375,120 500,165 375,210 250,165"/>
+      <text class="t" x="375" y="170" text-anchor="middle">source is live?</text>
+
+      <path class="e-hot" d="M 250 165 H 170 V 221" marker-end="url(#ar-d-hot)"/>
+      <text class="tl-hot" x="240" y="157" text-anchor="end">yes</text>
+      <path class="e" d="M 500 165 H 600 V 221" marker-end="url(#ar-d)"/>
+      <text class="tl" x="510" y="157">no</text>
+
+      <rect class="n-hot" x="60" y="225" width="220" height="70" rx="2"/>
+      <text class="tm" x="170" y="248" text-anchor="middle">drop = True</text>
+      <text class="ts" x="170" y="267" text-anchor="middle">overwrite &middot; frames_dropped++</text>
+      <text class="ts" x="170" y="284" text-anchor="middle">latency stays bounded</text>
+
+      <rect class="n" x="480" y="225" width="240" height="70" rx="2"/>
+      <text class="tm" x="600" y="248" text-anchor="middle">drop = False</text>
+      <text class="ts" x="600" y="267" text-anchor="middle">spin 2 ms until consumed</text>
+      <text class="ts" x="600" y="284" text-anchor="middle">zero frames lost</text>
+    </svg>
+    <figcaption><b><span class="mono">service.py</span> always takes the left branch</b> &mdash;
+    it pulls RTSP, so the source is live by definition. The right branch exists for
+    <span class="mono">run.py</span> against a file, where dropping would discard most of the
+    footage and corrupt any evaluation run. Do not &ldquo;simplify&rdquo; this to one
+    behaviour.</figcaption>
+  </figure>
+</section>
+
+<section>
+  <h2><span class="step">FIG 05</span>Shutdown</h2>
+  <p class="lede">Three things end a run: Ctrl-C, every worker dying, or the
+  <code>--seconds</code> deadline. All three land in the same path.</p>
+
+  <ol class="seq">
+    <li><div><b>Signal or deadline sets <span class="mono">stopping</span></b>
+      <span class="d">SIGINT and SIGTERM both only set an event &mdash; no work happens inside the handler. SIGTERM is wrapped in a try, because not every Windows console host has it.</span></div></li>
+    <li><div><b><span class="mono">worker.stop()</span> sets <span class="mono">_halt</span></b>
+      <span class="d">Named <span class="mono">_halt</span>, not <span class="mono">_stop</span>: Thread uses that name internally, and shadowing it breaks join() with a confusing TypeError.</span></div></li>
+    <li><div><b><span class="mono">join(timeout=5.0)</span> per worker</b>
+      <span class="d">The loop checks <span class="mono">_halt</span> once per frame, so a worker exits within roughly one detector call.</span></div></li>
+    <li><div><b>Each worker&rsquo;s finally block closes its own two children</b>
+      <span class="d"><span class="mono">reader.stop()</span> then <span class="mono">ingress.stop()</span>. Ownership stays local &mdash; the main thread never reaches into a worker&rsquo;s threads.</span></div></li>
+    <li><div><b><span class="mono">print_report()</span></b>
+      <span class="d">One row per camera. These are the only performance figures anyone on the team may quote.</span></div></li>
+    <li><div><b><span class="mono">boxes.stop()</span> last</b>
+      <span class="d">Sets an asyncio Event rather than stopping the loop, so <span class="mono">async with serve(...)</span> unwinds normally instead of trying to schedule its own close on a loop that is already gone.</span></div></li>
+  </ol>
+</section>
+
+<section>
+  <h2><span class="step">FIG 06</span>What the exit report actually measures</h2>
+  <p class="lede">Every number below is produced on the machine that ran it. Nothing else
+  about this pipeline&rsquo;s performance is quotable.</p>
+
+  <div class="tablewrap">
+  <table>
+    <caption>Per camera, printed by <span class="mono">print_report()</span> at exit.</caption>
+    <thead>
+      <tr><th>Column</th><th>Source</th><th>What it tells you</th></tr>
+    </thead>
+    <tbody>
+      <tr><td class="k">fps</td><td class="k">frames / elapsed</td><td class="v">Frames the worker <i>pulled</i> &mdash; not detector calls. Divide by <span class="mono">detect_every</span> for the inference rate.</td></tr>
+      <tr><td class="k">det ms</td><td class="k">detector_seconds / calls</td><td class="v">The single number that decides whether <span class="mono">--imgsz</span> has to drop.</td></tr>
+      <tr><td class="k">calls</td><td class="k">detector_calls</td><td class="v">How many frames survived both early exits.</td></tr>
+      <tr><td class="k">drop</td><td class="k">reader.frames_dropped</td><td class="v">Frames the decoder produced that inference never saw. High is expected and correct on a live source.</td></tr>
+      <tr><td class="k">recon</td><td class="k">reader.reconnects</td><td class="v">Camera dropouts. <b>Currently also counts a <span class="mono">--loop</span> restart</b> &mdash; worth fixing before this figure reaches a slide.</td></tr>
+      <tr><td class="k">posted / failed</td><td class="k">ingress counters</td><td class="v">Whether the edge node was actually reachable. Warns once, then stays silent.</td></tr>
+    </tbody>
+  </table>
+  </div>
+
+  <div class="note"><b>Not measured yet:</b> baseline FPS on any team laptop, the
+  face-detection working range in metres, and whether an occluded person keeps their track id.
+  Until those exist, this document describes a mechanism, not a performance.</div>
+</section>
+
+<footer>
+  <span>ibvap / service.py</span>
+  <span>2 + 3N threads</span>
+  <span>CPU-only &mdash; no CUDA path</span>
+  <span>local reference &mdash; not published</span>
+</footer>
+
+</div>
+<script>
+(function () {
+  var b = document.getElementById('themeBtn');
+  b.addEventListener('click', function () {
+    var r = document.documentElement;
+    var dark = r.getAttribute('data-theme') === 'dark' ||
+      (!r.hasAttribute('data-theme') &&
+        window.matchMedia('(prefers-color-scheme: dark)').matches);
+    r.setAttribute('data-theme', dark ? 'light' : 'dark');
+  });
+})();
+</script>
+</body>
+</html>

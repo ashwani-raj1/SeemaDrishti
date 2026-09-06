@@ -98,6 +98,13 @@ export function shapeCamera(row: CameraRow) {
     id: row.id,
     siteId: row.site_id,
     name: row.name,
+    // Where the console fetches this camera's video from the media hub. It is
+    // the camera id today, but the console must not have to know that -- the
+    // last two payload-shape bugs both came from a consumer inferring a field
+    // the endpoint could simply have sent.
+    streamPath: row.id,
+    // The RTSP address carries credentials and stays on the hub. This is the
+    // configured value for the settings form, never a path to the video.
     streamUrl: row.stream_url,
     status: row.status,
     enabled: row.enabled === 1,

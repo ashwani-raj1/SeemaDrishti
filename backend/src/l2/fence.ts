@@ -46,6 +46,19 @@ interface TrackMemory {
   lastSeen: number;
   path: Array<[number, number, number]>;
   zones: Map<string, ZoneMemory>;
+  /**
+   * Which clock the times on this track are measured against. Monotonic and
+   * wall-clock values differ by roughly nine orders of magnitude, so mixing
+   * them inside one track would make every pending crossing confirm instantly
+   * or never. Tracked so a change of producer can be detected and reset.
+   */
+  mono: boolean;
+  /** Carried from the frame so a track lost mid-crossing is flagged honestly. */
+  simulated: boolean;
+  /** Wall-clock time of the last frame, flushed to the row only when it matters. */
+  lastSeenIso: string;
+  /** Set when the row's path is behind what is held in memory. */
+  dirty: boolean;
 }
 
 const tracks = new Map<string, TrackMemory>();
@@ -97,12 +110,16 @@ function upsertTrack(
 
   if (existing) {
     existing.lastSeen = at;
+    existing.lastSeenIso = frame.occurred_at;
     existing.path.push([point[0], point[1], at]);
     if (existing.path.length > PATH_LIMIT) existing.path.shift();
-    run(
-      "UPDATE tracked_thing SET last_seen = $seen, path = $path WHERE id = $id",
-      { $seen: frame.occurred_at, $path: JSON.stringify(existing.path), $id: existing.trackedThingId },
-    );
+    // Deliberately NOT written to the row here. This runs once per detection
+    // per frame -- at a real detector's rate that is on the order of a hundred
+    // JSON re-serialisations and UPDATEs a second, and nothing reads either
+    // column in between: `evidence.path` is built from this in-memory array at
+    // emit time. The row is flushed by flushTrack() when a crossing is
+    // actually recorded, which is the only moment the stored copy matters.
+    existing.dirty = true;
     return existing;
   }
 
@@ -137,9 +154,34 @@ function upsertTrack(
     lastSeen: at,
     path: [[point[0], point[1], at]],
     zones: new Map(),
+    mono: frame.capture_mono !== undefined,
+    simulated: frame.simulated,
+    lastSeenIso: frame.occurred_at,
+    dirty: false,
   };
   tracks.set(key, fresh);
   return fresh;
+}
+
+/**
+ * Write the in-memory path back to the row.
+ *
+ * Called when a crossing is emitted rather than on every frame: that is the
+ * only point at which anything would ever want the stored copy, and doing it
+ * per frame costs roughly a hundred writes a second at a real detector's rate
+ * for columns nothing reads in between.
+ */
+function flushTrack(track: TrackMemory): void {
+  if (!track.dirty) return;
+  run(
+    "UPDATE tracked_thing SET last_seen = $seen, path = $path WHERE id = $id",
+    {
+      $seen: track.lastSeenIso,
+      $path: JSON.stringify(track.path),
+      $id: track.trackedThingId,
+    },
+  );
+  track.dirty = false;
 }
 
 // ------------------------------------------------------------------ judgement
@@ -185,6 +227,10 @@ interface EmitArgs {
  */
 function emitCrossing(args: EmitArgs) {
   const { zone, track, context, frame, detection, routing } = args;
+
+  // The stored path is only ever wanted alongside a recorded crossing, so
+  // this is where the row catches up with memory.
+  flushTrack(track);
 
   const alertable = routing.kind === "alert";
   const severity: Severity = routing.kind === "alert" ? routing.severity : "INFO";
@@ -344,12 +390,30 @@ export function processFrame(frame: DetectionFrame): FrameResult {
   }
 
   const zones = zonesForCamera(frame.camera_id);
-  const at = Date.parse(frame.occurred_at) / 1000;
+
+  // Wait-and-confirm measures held time by differencing these. Wall clock is
+  // the wrong ruler for that: a post with no NTP steps its clock, and a step
+  // makes a pending crossing confirm instantly or never -- silently defeating
+  // the seconds-not-frames design. A producer that sends a monotonic capture
+  // clock gets used; one that does not falls back to what this did before.
+  const usingMono = frame.capture_mono !== undefined;
+  const at = usingMono ? frame.capture_mono! : Date.parse(frame.occurred_at) / 1000;
 
   for (const detection of frame.detections) {
     const point = groundPoint(detection.bbox);
     const existing = tracks.get(trackKey(frame.camera_id, detection.track_ref));
     const from = existing?.last ?? point;
+
+    // A producer swapping clock basis mid-track (the simulator taking over
+    // from a real worker on the same camera, or the reverse) would move `at`
+    // by ~9 orders of magnitude. Start the track's zone state over rather
+    // than resolve a pending crossing against a meaningless interval.
+    if (existing && existing.mono !== usingMono) {
+      existing.zones.clear();
+      existing.mono = usingMono;
+      existing.path = [];
+      existing.lastSeen = at;
+    }
 
     const track = upsertTrack(frame, detection, context, point, at);
 
@@ -383,13 +447,17 @@ function sweepIdleTracks(now: number): void {
       const context = cameraContext(track.cameraId);
       if (!context) continue;
 
+      flushTrack(track);
       recordEvent({
         orgId: zone.org_id,
         siteId: context.siteId,
         kind: "zone_crossing",
         sourceType: "camera",
         sourceId: track.cameraId,
-        simulated: true,
+        // Carried from the frames that built this track. Hardcoding true here
+        // would have labelled a real camera's lost crossing as simulated --
+        // the one place in the log where that claim is not checkable.
+        simulated: track.simulated,
         cameraId: track.cameraId,
         zoneId,
         trackedThingId: track.trackedThingId,

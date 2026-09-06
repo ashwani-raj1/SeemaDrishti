@@ -49,6 +49,17 @@ export function parseDetectionFrame(body: unknown): DetectionFrame {
   const occurredAt = typeof raw.occurred_at === "string" ? raw.occurred_at : nowIso();
   if (Number.isNaN(Date.parse(occurredAt))) throw new BadRequest("occurred_at is not a valid timestamp");
 
+  // Optional monotonic capture clock. Rejected rather than coerced when
+  // malformed: a NaN here would silently poison the confirm window, which is
+  // exactly the class of failure this field exists to prevent.
+  let captureMono: number | undefined;
+  if (raw.capture_mono !== undefined && raw.capture_mono !== null) {
+    if (typeof raw.capture_mono !== "number" || !Number.isFinite(raw.capture_mono)) {
+      throw new BadRequest("capture_mono must be a finite number of seconds");
+    }
+    captureMono = raw.capture_mono;
+  }
+
   return {
     camera_id: cameraId,
     occurred_at: occurredAt,
@@ -56,6 +67,7 @@ export function parseDetectionFrame(body: unknown): DetectionFrame {
     simulated: raw.simulated === true,
     source_id: typeof raw.source_id === "string" ? raw.source_id : cameraId,
     detections,
+    capture_mono: captureMono,
   };
 }
 

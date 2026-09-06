@@ -1,0 +1,76 @@
+# The camera manifest — the one place a camera is declared.
+#
+# Adding a camera is adding a block here. Nothing else changes: `configure.py`
+# regenerates the media hub config from this file, the vision service reads the
+# same file to know what to pull, and the console gets it from the backend.
+#
+# This file says WHAT cameras exist. `.env` says WHERE the modules run and
+# which of these cameras THIS machine handles. Keep the split — this file is
+# shared and committed, `.env` is per-machine and ignored.
+#
+# `id` MUST match a camera row seeded in backend/src/db/seed.ts. The backend
+# rejects a frame for an unknown camera_id (l4/hooks.ts), so a typo here shows
+# up as a worker that runs fine and produces no events.
+
+# ── source kinds ─────────────────────────────────────────────────────────
+#
+#   file    loop a local clip forever. The v0 default.
+#             path:  clips/whatever.mp4
+#             url:   optional. `fetch.py` downloads this into `path` when the
+#                    file is missing. Any yt-dlp-supported URL.
+#
+#   rtsp    a real camera. The day one arrives, change `kind` and drop the
+#           URL in — the path name stays, so nothing downstream notices.
+#             url:   rtsp://user:pass@10.0.0.14:554/Streaming/Channels/102
+#             Credentials stay in this file and never reach the browser.
+#
+#   webcam  a local capture device (Windows DirectShow).
+#             device: "Integrated Camera"   — exact name from
+#                     ffmpeg -list_devices true -f dshow -i dummy
+#
+# ── per-camera keys ──────────────────────────────────────────────────────
+#
+#   detect: true|false   whether a vision worker runs on this camera.
+#                        false still publishes video — the tile is live, it
+#                        just has no boxes. That is a legitimate v0 state and
+#                        the console shows it honestly.
+
+defaults:
+  detect: true
+  # Downscale on publish. Detection runs at --imgsz anyway, so pushing
+  # 1080p into the hub buys nothing and costs decode on every worker.
+  # null = publish at the source's own resolution.
+  height: 480
+
+cameras:
+  - id: cam_fence_north
+    label: BOP-01 Fence North
+    detect: true
+    source:
+      kind: file
+      path: clips/fence_north.mp4
+      # url: https://www.youtube.com/watch?v=...
+
+  - id: cam_farm_gate
+    label: BOP-02 Farm Gate
+    detect: true
+    source:
+      kind: file
+      path: clips/farm_gate.mp4
+      # url: https://www.youtube.com/watch?v=...
+
+  - id: cam_patrol_road
+    label: BOP-03 Patrol Road
+    detect: true
+    source:
+      kind: file
+      path: clips/patrol_road.mp4
+      # url: https://www.youtube.com/watch?v=...
+
+  - id: cam_waterline
+    label: BOP-04 Waterline
+    detect: true
+    source:
+      kind: file
+      path: clips/waterline.mp4
+      # url: https://www.youtube.com/watch?v=...
