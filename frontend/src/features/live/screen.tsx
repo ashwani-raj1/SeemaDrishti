@@ -9,6 +9,7 @@ import { useClient } from "@/client/context";
 import { onStream } from "@/lib/stream";
 import { clockTime, humanise } from "@/lib/format";
 import type { IbvapEvent } from "@/lib/types";
+import { Link } from "react-router-dom";
 
 const PER_CAMERA = 4;
 
@@ -40,7 +41,7 @@ export function LiveCamerasScreen() {
   return (
     <PageShell
       title="Live cameras"
-      description="Secondary by design. The incident queue is where work happens; this is for looking at one feed on purpose."
+      description="Secondary by design. The incident queue is where work happens; this is for looking at one feed on purpose. Open a camera for its full record."
     >
       <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
         {cameras.map((camera) => {
@@ -51,7 +52,15 @@ export function LiveCamerasScreen() {
             <Card key={camera.id}>
               <CardHeader>
                 <CardTitle className="flex items-center gap-2 text-base">
-                  <span className="truncate">{camera.name}</span>
+                  {/* A link, not a handler: it can be middle-clicked, copied
+                      and sent. The tile only knows the minutes since this
+                      screen opened; the page knows the whole record. */}
+                  <Link
+                    to={`/cameras/${camera.id}`}
+                    className="truncate rounded-sm hover:underline focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
+                  >
+                    {camera.name}
+                  </Link>
                   <CameraStatusPill status={camera.status} className="ml-auto" />
                 </CardTitle>
                 <CardDescription className="font-mono text-xs">

@@ -115,19 +115,19 @@ export function AppRoutes() {
     <Routes>
       <Route element={<AppShell />}>
         <Route index element={<Navigate to={DEFAULT_PATH} replace />} />
-        {sections.map((section) => (
-          <Route
-            key={section.id}
-            path={section.path}
-            element={
-              canUse(section, role) ? (
-                section.element
-              ) : (
-                <RoleGate need={section.minRole}>{section.element}</RoleGate>
-              )
-            }
-          />
-        ))}
+        {sections.flatMap((section) => {
+          const guard = (element: React.ReactNode) =>
+            canUse(section, role) ? element : <RoleGate need={section.minRole}>{element}</RoleGate>;
+
+          return [
+            <Route key={section.id} path={section.path} element={guard(section.element)} />,
+            // Detail pages inherit their section's role gate, so a shared link
+            // cannot be a way around it.
+            ...(section.details ?? []).map((detail) => (
+              <Route key={detail.path} path={detail.path} element={guard(detail.element)} />
+            )),
+          ];
+        })}
         <Route path="*" element={<Navigate to={DEFAULT_PATH} replace />} />
       </Route>
     </Routes>

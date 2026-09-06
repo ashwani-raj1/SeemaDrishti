@@ -8,6 +8,9 @@ import { apiUrl } from "./api";
 
 export type StreamKind = "event" | "incident" | "action" | "camera" | "hello";
 
+/** Observed to prove the stream is alive, never dispatched to sections. */
+const HEARTBEAT = "heartbeat";
+
 /**
  * Whether the live push is actually alive. A stream that has quietly died
  * looks exactly like a quiet night -- which is the failure #17 exists to
@@ -22,7 +25,7 @@ const stateListeners = new Set<(state: StreamState) => void>();
 
 let source: EventSource | null = null;
 let state: StreamState = "connecting";
-/** The node sends a keep-alive every 20s; silence well past that is suspect. */
+/** The node beats every 15s; silence well past that means gone, not quiet. */
 let lastBeat = Date.now();
 
 const KINDS: StreamKind[] = ["event", "incident", "action", "camera", "hello"];
@@ -60,6 +63,13 @@ export function connectStream(): () => void {
     setState("live");
   };
   source.onerror = () => setState("down");
+
+  // The beat is what separates "nothing is happening" from "nothing is
+  // getting through". It carries no payload, so nothing subscribes to it.
+  source.addEventListener(HEARTBEAT, () => {
+    lastBeat = Date.now();
+    setState("live");
+  });
 
   for (const kind of KINDS) {
     source.addEventListener(kind, (raw) => {

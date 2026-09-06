@@ -11,7 +11,7 @@ import {
   formatLatLon, fovPolygon, framePathToGround, gridRef, placementOf, ATTARI_SECTOR,
   type GeoPoint,
 } from "@/client/geography";
-import type { Camera, Severity } from "@/lib/types";
+import type { CameraStatus, Point, Severity, ZoneGeometry, ZoneKind } from "@/lib/types";
 import { humanise } from "@/lib/format";
 import { cn } from "@/lib/utils";
 import { EvidenceOverlay } from "./evidence-overlay";
@@ -26,12 +26,36 @@ const SEVERITY_COLOUR: Record<Severity, string> = {
   CRITICAL: "#dc2626",
 };
 
+/**
+ * What this component actually needs to draw a camera.
+ *
+ * Narrower than `Camera` on purpose. The same camera arrives from three
+ * endpoints with slightly different payloads, and demanding the widest of them
+ * only pushed callers into casts -- which is how a missing field reached the
+ * browser as a crash instead of a type error.
+ */
+export interface MappableCamera {
+  id: string;
+  name: string;
+  status: CameraStatus;
+  zones: Array<{
+    id: string;
+    name: string;
+    kind: ZoneKind;
+    geometry: ZoneGeometry;
+    points: Point[];
+    severity: Severity;
+    watchClasses: string[];
+    logOnlyClasses: string[];
+  }>;
+}
+
 export function CameraMap({
   camera,
   className,
   showSwitcher = false,
 }: {
-  camera: Camera;
+  camera: MappableCamera;
   className?: string;
   showSwitcher?: boolean;
 }) {

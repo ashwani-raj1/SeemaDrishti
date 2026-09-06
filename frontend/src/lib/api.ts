@@ -6,8 +6,9 @@
  * header is attached here rather than remembered at each call site.
  */
 import type {
-  Action, ChainVerdict, Decision, Health, IbvapEvent, Incident,
-  IncidentDetail, ServerConfig, SimStatus, Zone,
+  Action, CameraDetail, CameraIncidents, ChainVerdict, Decision, Health,
+  IbvapEvent, Incident, IncidentDetail, MonitoringZone, Point, ServerConfig,
+  SimStatus,
 } from "./types";
 
 /**
@@ -118,9 +119,93 @@ export const api = {
     request<Action[]>(`/api/audit${qs(params)}`),
   verifyChain: () => request<ChainVerdict>("/api/audit/verify"),
 
-  zones: (cameraId?: string) => request<Zone[]>(`/api/zones${qs({ camera_id: cameraId })}`),
-  updateZone: (id: string, patch: Partial<Zone> & { reason?: string }) =>
-    request<Zone>(`/api/zones/${id}`, { method: "PATCH", body: JSON.stringify(patch) }),
+  // ---- cameras --------------------------------------------------------
+
+  cameras: () => request<CameraDetail[]>("/api/cameras"),
+  camera: (id: string) => request<CameraDetail>(`/api/cameras/${id}`),
+
+  /** Everything that has happened on one feed, plus what else watches it. */
+  cameraIncidents: (id: string, params: { status?: string; limit?: number } = {}) =>
+    request<CameraIncidents>(`/api/cameras/${id}/incidents${qs(params)}`),
+
+  /** Supervisor only. Taking a feed out of service needs a stated reason. */
+  updateCamera: (
+    id: string,
+    patch: { name?: string; streamUrl?: string | null; enabled?: boolean; reason?: string },
+  ) => request<CameraDetail>(`/api/cameras/${id}`, { method: "PATCH", body: JSON.stringify(patch) }),
+
+  // ---- zones ----------------------------------------------------------
+  // A zone is a named place watched by one or more cameras. Its own target
+  // policy is one call; a camera's exceptions to it are another.
+
+  zones: () => request<MonitoringZone[]>("/api/zones"),
+  zone: (id: string) => request<MonitoringZone>(`/api/zones/${id}`),
+
+  createZone: (body: {
+    name: string;
+    kind: string;
+    sector?: string | null;
+    cameraIds: string[];
+    targets: Array<{ class: string; severity: string; action: string }>;
+    reason?: string;
+  }) => post<MonitoringZone>("/api/zones", body),
+
+  updateZone: (
+    id: string,
+    patch: { name?: string; kind?: string; sector?: string | null; active?: boolean; reason?: string },
+  ) => request<MonitoringZone>(`/api/zones/${id}`, { method: "PATCH", body: JSON.stringify(patch) }),
+
+  deleteZone: (id: string, reason: string) =>
+    request<{ ok: true }>(`/api/zones/${id}`, { method: "DELETE", body: JSON.stringify({ reason }) }),
+
+  /** Replaces the whole list -- position in the array is the priority. */
+  setZoneTargets: (
+    id: string,
+    targets: Array<{ class: string; severity: string; action: string }>,
+    reason?: string,
+  ) =>
+    request<MonitoringZone>(`/api/zones/${id}/targets`, {
+      method: "PUT",
+      body: JSON.stringify({ targets, reason }),
+    }),
+
+  addZoneCamera: (id: string, cameraId: string, reason?: string) =>
+    post<MonitoringZone>(`/api/zones/${id}/cameras`, { cameraId, reason }),
+
+  removeZoneCamera: (id: string, cameraId: string, reason: string) =>
+    request<{ ok: true }>(`/api/zones/${id}/cameras/${cameraId}`, {
+      method: "DELETE",
+      body: JSON.stringify({ reason }),
+    }),
+
+  /** Move or retune one camera's shape within the zone. */
+  updateZoneCamera: (
+    id: string,
+    cameraId: string,
+    patch: {
+      geometry?: string;
+      points?: Point[];
+      direction?: string;
+      confirmSeconds?: number;
+      reason?: string;
+    },
+  ) =>
+    request<MonitoringZone>(`/api/zones/${id}/cameras/${cameraId}`, {
+      method: "PATCH",
+      body: JSON.stringify(patch),
+    }),
+
+  /** An empty list clears the exceptions and restores the zone policy. */
+  setZoneCameraTargets: (
+    id: string,
+    cameraId: string,
+    targets: Array<{ class: string; severity: string; action: string }>,
+    reason?: string,
+  ) =>
+    request<MonitoringZone>(`/api/zones/${id}/cameras/${cameraId}/targets`, {
+      method: "PUT",
+      body: JSON.stringify({ targets, reason }),
+    }),
 
   sim: () => request<SimStatus>("/api/sim"),
   simStart: (ambient = true) => post<SimStatus>("/api/sim/start", { ambient }),

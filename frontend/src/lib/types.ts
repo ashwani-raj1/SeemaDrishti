@@ -45,20 +45,78 @@ export type Decision = "acknowledge" | "escalate" | "dismiss";
 
 // ---------------------------------------------------------------- API shapes
 
+/** What a target does when it matches. */
+export type TargetAction = "alert" | "log_only";
+
+/**
+ * One thing a place must be detected against.
+ *
+ * `priority` is the order somebody declared these matter in, 1 highest.
+ * `log_only` is the animal case: written to the record, never raised.
+ */
+export interface ZoneTarget {
+  class: string;
+  severity: Severity;
+  action: TargetAction;
+  priority: number;
+  /** Set when a camera-specific rule displaced the zone's own. */
+  overridden?: boolean;
+}
+
+/**
+ * A zone as one camera sees it.
+ *
+ * The zone itself spans cameras; the shape does not, because a polygon drawn
+ * in one camera's frame means nothing in another's. So this is the resolved
+ * pairing -- this camera's shape, and the targets after any override.
+ */
 export interface Zone {
   id: string;
+  bindingId: string;
   cameraId: string;
   name: string;
   kind: ZoneKind;
   geometry: ZoneGeometry;
   points: Point[];
-  watchClasses: string[];
-  logOnlyClasses: string[];
   direction: Direction | "both";
   confirmSeconds: number;
+  targets: ZoneTarget[];
+  /** Derived from `targets`; convenient for tooltips and the status board. */
+  watchClasses: string[];
+  logOnlyClasses: string[];
   severity: Severity;
   active: boolean;
+}
+
+/** One camera's membership of a zone, as the zone screen sees it. */
+export interface ZoneCamera {
+  bindingId: string;
+  cameraId: string;
+  cameraName: string;
+  cameraStatus: CameraStatus;
+  geometry: ZoneGeometry;
+  points: Point[];
+  direction: Direction | "both";
+  confirmSeconds: number;
+  /** False while the shape is still the placeholder handed out on joining. */
+  placed: boolean;
+  active: boolean;
+  overrides: ZoneTarget[];
+  effectiveTargets: ZoneTarget[];
+}
+
+/** The whole zone: a named place, its cameras, and what matters there. */
+export interface MonitoringZone {
+  id: string;
+  siteId: string;
+  name: string;
+  kind: ZoneKind;
+  sector: string | null;
+  active: boolean;
+  createdAt: string;
   updatedAt: string;
+  targets: ZoneTarget[];
+  cameras: ZoneCamera[];
 }
 
 export interface Camera {
@@ -165,10 +223,86 @@ export interface Action {
   hash: string;
 }
 
+/** Another camera watching the same zone as the one in hand. */
+export interface CameraSibling {
+  cameraId: string;
+  cameraName: string;
+  cameraStatus: CameraStatus;
+  enabled: boolean;
+  zoneId: string;
+  zoneName: string;
+}
+
+/**
+ * What else was watching, and what else it saw.
+ *
+ * Cameras on the zone are listed whether or not they caught anything, because
+ * "the other camera saw nothing" is itself worth knowing.
+ */
+export interface CrossReference {
+  zone: { id: string; name: string } | null;
+  cameras: Array<{
+    cameraId: string;
+    cameraName: string;
+    cameraStatus: CameraStatus;
+    enabled: boolean;
+    /** The camera this incident actually came from. */
+    isSource: boolean;
+  }>;
+  incidents: Incident[];
+  windowSeconds?: number;
+}
+
 export interface IncidentDetail {
   incident: Incident;
   events: IbvapEvent[];
   actions: Action[];
+  crossReference: CrossReference;
+}
+
+/** A camera's own zone membership, with this camera's shape in each. */
+export interface CameraZone {
+  id: string;
+  name: string;
+  kind: ZoneKind;
+  sector: string | null;
+  geometry: ZoneGeometry;
+  points: Point[];
+  direction: Direction | "both";
+  confirmSeconds: number;
+  placed: boolean;
+  targets: ZoneTarget[];
+  /** Derived from `targets`, so a zone renders the same wherever it came from. */
+  watchClasses: string[];
+  logOnlyClasses: string[];
+  severity: Severity;
+}
+
+/**
+ * One camera, in full.
+ *
+ * `status` is observed by the analysis engine; `enabled` is decided by a
+ * person. They are kept apart because "we cannot see" and "we stopped looking"
+ * need different responses.
+ */
+export interface CameraDetail {
+  id: string;
+  siteId: string;
+  name: string;
+  streamUrl: string | null;
+  status: CameraStatus;
+  enabled: boolean;
+  createdAt: string;
+  updatedAt: string | null;
+  zones: CameraZone[];
+  siblings: CameraSibling[];
+  incidents: { open: number; total: number };
+}
+
+export interface CameraIncidents {
+  camera: CameraDetail;
+  incidents: Incident[];
+  recentEvents: IbvapEvent[];
 }
 
 export interface SimStatus {

@@ -124,7 +124,7 @@ describe("virtual fence", () => {
     expect(crossings).toHaveLength(1);
     expect(crossings[0]!.alertable).toBe(false);
     expect(crossings[0]!.severity).toBe("INFO");
-    expect(crossings[0]!.suppressedReason).toBe("class_is_log_only");
+    expect(crossings[0]!.suppressedReason).toBe("target_is_log_only");
   });
 
   test("a flicker across the line is rejected rather than shouted", () => {
@@ -170,6 +170,27 @@ describe("virtual fence", () => {
     );
     // Two separate people, two crossings, one incident for the operator to work.
     expect(incidentIds.size).toBe(1);
+  });
+
+  test("the incident headline describes its worst event, not its first", () => {
+    // A rejected flicker opens the incident...
+    fence.processFrame(frameAt(200, "person", "t-title-flicker", 0.5, 0.90));
+    fence.processFrame(frameAt(200.5, "person", "t-title-flicker", 0.5, 0.30));
+    fence.processFrame(frameAt(201, "person", "t-title-flicker", 0.5, 0.90));
+    fence.resetFenceMemory();
+
+    const opened = crossingsFor("t-title-flicker")[0]!;
+    expect(opened.alertable).toBe(false);
+
+    // ...then a real crossing joins it and raises the severity.
+    fence.processFrame(frameAt(210, "person", "t-title-real", 0.5, 0.30));
+    fence.processFrame(frameAt(211, "person", "t-title-real", 0.5, 0.90));
+    fence.processFrame(frameAt(214, "person", "t-title-real", 0.5, 0.92));
+
+    const incident = events.getIncident(opened.incidentId!)!;
+    expect(incident.severity).toBe("CRITICAL");
+    // The headline must not still say "logged only" above a CRITICAL badge.
+    expect(incident.title).not.toContain("logged only");
   });
 
   test("a crossing beyond the grouping window opens a fresh incident", () => {

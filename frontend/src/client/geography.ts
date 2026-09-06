@@ -38,6 +38,24 @@ export interface CameraPlacement {
   rangeM: number;
 }
 
+/**
+ * A named stretch of the sector, as a polygon.
+ *
+ * Areas overlap, because camera coverage overlaps -- one camera can sit in
+ * more than one area, and a zone cut from either may include it.
+ *
+ * Areas are deployment configuration like everything else here: a naval
+ * deployment lists jetty approaches, a check post lists lanes. Which cameras
+ * fall in one is computed from their placement rather than listed by hand, so
+ * moving a camera cannot leave a stale membership list behind.
+ */
+export interface Sector {
+  id: string;
+  label: string;
+  description: string;
+  area: GeoPoint[];
+}
+
 export interface SiteGeography {
   label: string;
   region: string;
@@ -51,6 +69,7 @@ export interface SiteGeography {
   /** Metalled road running in from the interior. */
   highway: { name: string; path: GeoPoint[] };
   landmarks: Landmark[];
+  sectors: Sector[];
   cameras: Record<string, CameraPlacement>;
 }
 
@@ -107,6 +126,53 @@ export const ATTARI_SECTOR: SiteGeography = {
     { name: "Attari village", kind: "settlement", at: { lat: 31.6033, lon: 74.6006 } },
     { name: "ICP Attari", kind: "checkpost", at: { lat: 31.6045, lon: 74.5885 } },
     { name: "Wagah crossing", kind: "crossing", at: { lat: 31.6047, lon: 74.573 } },
+  ],
+
+  sectors: [
+    {
+      id: "fence_north",
+      label: "Fence line north",
+      description: "The fence above the crossing, where the ground is open on both sides.",
+      area: [
+        { lat: 31.652, lon: 74.564 },
+        { lat: 31.652, lon: 74.600 },
+        { lat: 31.614, lon: 74.600 },
+        { lat: 31.614, lon: 74.564 },
+      ],
+    },
+    {
+      id: "gate_approach",
+      label: "Farm gate approach",
+      description: "Gates onto the farmland beyond the fence. Lawful traffic crosses daily.",
+      area: [
+        { lat: 31.628, lon: 74.564 },
+        { lat: 31.628, lon: 74.600 },
+        { lat: 31.600, lon: 74.600 },
+        { lat: 31.600, lon: 74.564 },
+      ],
+    },
+    {
+      id: "crossing",
+      label: "Attari crossing",
+      description: "The ICP and the patrol road running past it.",
+      area: [
+        { lat: 31.614, lon: 74.564 },
+        { lat: 31.614, lon: 74.600 },
+        { lat: 31.578, lon: 74.600 },
+        { lat: 31.578, lon: 74.564 },
+      ],
+    },
+    {
+      id: "waterline",
+      label: "Southern waterline",
+      description: "The wet stretch at the southern end of the sector.",
+      area: [
+        { lat: 31.600, lon: 74.564 },
+        { lat: 31.600, lon: 74.600 },
+        { lat: 31.570, lon: 74.600 },
+        { lat: 31.570, lon: 74.564 },
+      ],
+    },
   ],
 
   cameras: {
@@ -271,3 +337,40 @@ export const placementOf = (
   cameraId: string | null | undefined,
   geo: SiteGeography = ATTARI_SECTOR,
 ): CameraPlacement | undefined => (cameraId ? geo.cameras[cameraId] : undefined);
+
+// ------------------------------------------------------------------ areas
+
+/**
+ * Is this point inside the polygon? Ray casting on lat/lon.
+ *
+ * A sector is a few hundred metres across, so treating degrees as a flat plane
+ * costs nothing here -- the distortion is far below the size of a camera's
+ * own field of view.
+ */
+export function pointInArea(area: GeoPoint[], point: GeoPoint): boolean {
+  let inside = false;
+  for (let i = 0, j = area.length - 1; i < area.length; j = i++) {
+    const a = area[i]!;
+    const b = area[j]!;
+    const straddles = a.lat > point.lat !== b.lat > point.lat;
+    if (
+      straddles &&
+      point.lon < ((b.lon - a.lon) * (point.lat - a.lat)) / (b.lat - a.lat) + a.lon
+    ) {
+      inside = !inside;
+    }
+  }
+  return inside;
+}
+
+/** The cameras standing inside a sector, in map order. */
+export function camerasInSector(sectorId: string, geo: SiteGeography = ATTARI_SECTOR): string[] {
+  const sector = geo.sectors.find((s) => s.id === sectorId);
+  if (!sector) return [];
+  return Object.entries(geo.cameras)
+    .filter(([, placement]) => pointInArea(sector.area, placement.at))
+    .map(([cameraId]) => cameraId);
+}
+
+export const sectorById = (sectorId: string, geo: SiteGeography = ATTARI_SECTOR) =>
+  geo.sectors.find((s) => s.id === sectorId);

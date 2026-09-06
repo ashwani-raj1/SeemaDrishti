@@ -19,6 +19,7 @@ import { NotWired } from "@/components/ibvap/states";
 import { canUse, GROUP_ORDER, selectEnabled, type SectionGroup, type SectionMeta } from "./sections";
 
 import { IncidentsScreen } from "./incidents/screen";
+import { IncidentPage } from "./incidents/page";
 import { LiveCamerasScreen } from "./live/screen";
 import { StatusBoardScreen } from "./status/screen";
 import { HistoryScreen } from "./history/screen";
@@ -27,11 +28,25 @@ import { AuditScreen } from "./audit/screen";
 import { ZonesScreen } from "./zones/screen";
 import { SiteProfileScreen } from "./profile/screen";
 import { CamerasScreen } from "./cameras/screen";
+import { CameraPage } from "./cameras/page";
 import { SimulatorScreen } from "./simulator/screen";
 import { SectorMapScreen } from "./map/screen";
 
 export type { SectionGroup };
 export { GROUP_ORDER, canUse };
+
+/**
+ * A page reachable under a section but absent from the sidebar.
+ *
+ * Detail pages are addressed, not navigated to -- you arrive by clicking a row
+ * or by opening a link somebody sent you. Listing them in the nav would be
+ * meaningless (which incident?), but they still have to be declared here so
+ * the router and the registry cannot drift apart.
+ */
+export interface SectionDetail {
+  path: string;
+  element: React.ReactNode;
+}
 
 export interface Section extends SectionMeta {
   label: string;
@@ -40,6 +55,8 @@ export interface Section extends SectionMeta {
   /** False means the design defines it but no endpoint serves it yet. */
   backed: boolean;
   element: React.ReactNode;
+  /** Addressed pages beneath this section, e.g. /incidents/:incidentId. */
+  details?: SectionDetail[];
 }
 
 export const SECTIONS: Section[] = [
@@ -53,6 +70,7 @@ export const SECTIONS: Section[] = [
     minRole: "operator",
     backed: true,
     element: <IncidentsScreen />,
+    details: [{ path: "/incidents/:incidentId", element: <IncidentPage /> }],
   },
   {
     id: "map",
@@ -181,6 +199,7 @@ export const SECTIONS: Section[] = [
     minRole: "operator",
     backed: true,
     element: <CamerasScreen />,
+    details: [{ path: "/cameras/:cameraId", element: <CameraPage /> }],
   },
   {
     id: "watchlist",

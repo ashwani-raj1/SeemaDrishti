@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { useSearchParams } from "react-router-dom";
+import { useNavigate, useSearchParams } from "react-router-dom";
 import { CheckIcon, InboxIcon, SirenIcon, TriangleAlertIcon, XIcon } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
@@ -21,7 +21,6 @@ import { clockTime, relative } from "@/lib/format";
 import type { Decision, Incident } from "@/lib/types";
 import { cn } from "@/lib/utils";
 import { useIncidents } from "./use-incidents";
-import { IncidentSheet } from "./sheet";
 
 /** Where an incident happened, spoken the way a radio call would say it. */
 const incidentGrid = (incident: Incident) => {
@@ -46,11 +45,11 @@ const STATUS_STYLE: Record<string, string> = {
  */
 export function IncidentsScreen() {
   const [params, setParams] = useSearchParams();
+  const navigate = useNavigate();
   const [showClosed, setShowClosed] = useState(false);
   const { incidents, loading, error, reload, merge } = useIncidents(showClosed);
 
   const [cursor, setCursor] = useState(0);
-  const [openId, setOpenId] = useState<string | null>(null);
   const [prompt, setPrompt] = useState<{ decision: Decision; incident: Incident } | null>(null);
   const [pending, setPending] = useState(false);
   const [reasonError, setReasonError] = useState<string | null>(null);
@@ -59,15 +58,13 @@ export function IncidentsScreen() {
 
   // Arrived from the sector map: open the incident that was clicked, and put
   // the cursor on it so the keyboard picks up from there.
+  // Older links used ?incident=; send those to the page so they keep working.
   const deepLink = params.get("incident");
   useEffect(() => {
     if (!deepLink) return;
-    const index = incidents.findIndex((incident) => incident.id === deepLink);
-    if (index < 0) return;
-    setCursor(index);
-    setOpenId(deepLink);
     setParams({}, { replace: true });
-  }, [deepLink, incidents, setParams]);
+    navigate(`/incidents/${deepLink}`, { replace: true });
+  }, [deepLink, navigate, setParams]);
 
   useEffect(() => {
     if (cursor > incidents.length - 1) setCursor(Math.max(0, incidents.length - 1));
@@ -128,10 +125,7 @@ export function IncidentsScreen() {
           setCursor((index) => Math.max(index - 1, 0));
           break;
         case "enter":
-          if (selected) setOpenId(selected.id);
-          break;
-        case "escape":
-          setOpenId(null);
+          if (selected) navigate(`/incidents/${selected.id}`);
           break;
         case "a":
           act(selected, "acknowledge");
@@ -227,7 +221,7 @@ export function IncidentsScreen() {
                   className={cn("cursor-pointer", index === cursor && "bg-muted/60")}
                   onClick={() => {
                     setCursor(index);
-                    setOpenId(incident.id);
+                    navigate(`/incidents/${incident.id}`);
                   }}
                 >
                   <TableCell>
@@ -280,7 +274,6 @@ export function IncidentsScreen() {
         </div>
       )}
 
-      <IncidentSheet incidentId={openId} onOpenChange={(open) => !open && setOpenId(null)} />
 
       <ReasonDialog
         open={prompt !== null}

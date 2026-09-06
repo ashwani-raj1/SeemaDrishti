@@ -1,6 +1,7 @@
 import { Database } from "bun:sqlite";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
+import { migrateAfter, migrateBefore } from "./migrate";
 
 /**
  * One local SQLite file. No hosted database, no external service -- a post
@@ -11,7 +12,11 @@ const DB_PATH = process.env.IBVAP_DB ?? join(import.meta.dir, "..", "..", "ibvap
 
 export const db = new Database(DB_PATH, { create: true });
 
+// The legacy single-camera `zone` table has to move aside before the schema
+// can create the new one under that name.
+migrateBefore(db);
 db.exec(readFileSync(join(import.meta.dir, "schema.sql"), "utf8"));
+migrateAfter(db);
 
 export type Row = Record<string, any>;
 

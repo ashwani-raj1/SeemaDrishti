@@ -12,6 +12,7 @@ import { Spinner } from "@/components/ibvap/spinner";
 import { useClient } from "@/client/context";
 import { SITE_PROFILES, type SiteProfile } from "@/client/profiles";
 import { api } from "@/lib/api";
+import { useResource } from "@/lib/use-resource";
 import { humanise } from "@/lib/format";
 
 /**
@@ -28,32 +29,70 @@ export function SiteProfileScreen() {
   const { cameras, site, org, refreshServer } = useClient();
   const [applying, setApplying] = useState<string | null>(null);
 
-  const zones = cameras.flatMap((camera) => camera.zones);
+  // The logical zones, not the per-camera bindings -- a zone spanning two
+  // cameras is one row here, and one thing a profile rewrites.
+  const zoneList = useResource(() => api.zones(), []);
+  const zones = zoneList.data ?? [];
 
   const apply = async (profile: SiteProfile) => {
     setApplying(profile.id);
     try {
-      // Positional: a zone is a shape plus a label, and a profile supplies the
-      // label. The shapes stay exactly where the site drew them.
-      const pairs = zones.map((zone, index) => [zone, profile.zones[index]] as const);
+      // Positional: a zone is a place plus a policy, and a profile supplies the
+      // policy. The shapes stay exactly where the site drew them.
+      //
+      // This relies on `api.zones()` being stably ordered (oldest first). A
+      // newest-first list would re-map every zone the moment one was created,
+      // renaming zones by accident. Zones past the end of the profile are
+      // deliberately left alone rather than blanked.
+      //
+      // A profile zone now writes to three places, because the model separates
+      // them: the zone's identity, its ordered targets, and each camera's own
+      // direction and patience.
+      const zones = await api.zones();
       let changed = 0;
 
-      for (const [zone, spec] of pairs) {
+      for (const [index, zone] of zones.entries()) {
+        const spec = profile.zones[index];
         if (!spec) continue;
+
         await api.updateZone(zone.id, {
           name: spec.name,
           kind: spec.kind,
-          watchClasses: spec.watchClasses,
-          logOnlyClasses: spec.logOnlyClasses,
-          direction: spec.direction,
-          severity: spec.severity,
-          confirmSeconds: spec.confirmSeconds,
           reason: `Applied site profile: ${profile.label}`,
         });
+
+        // Watched classes first, at the profile's severity; then the ones that
+        // are only ever written down. Order is the priority.
+        await api.setZoneTargets(
+          zone.id,
+          [
+            ...spec.watchClasses.map((cls) => ({
+              class: cls,
+              severity: spec.severity,
+              action: "alert",
+            })),
+            ...spec.logOnlyClasses.map((cls) => ({
+              class: cls,
+              severity: "INFO",
+              action: "log_only",
+            })),
+          ],
+          `Applied site profile: ${profile.label}`,
+        );
+
+        for (const camera of zone.cameras.filter((c) => c.active)) {
+          await api.updateZoneCamera(zone.id, camera.cameraId, {
+            direction: spec.direction,
+            confirmSeconds: spec.confirmSeconds,
+            reason: `Applied site profile: ${profile.label}`,
+          });
+        }
+
         changed += 1;
       }
 
       await refreshServer();
+      zoneList.reload();
       toast.success(`${profile.label} applied`, {
         description: `${changed} zones rewritten. Every change is in the audit trail.`,
       });
@@ -170,12 +209,23 @@ export function SiteProfileScreen() {
                     </Badge>
                   </TableCell>
                   <TableCell className="font-mono text-xs">
-                    {zone.watchClasses.join(", ")}
+                    {zone.targets
+                      .filter((target) => target.action === "alert")
+                      .map((target) => target.class)
+                      .join(", ") || "—"}
                   </TableCell>
                   <TableCell className="font-mono text-xs text-muted-foreground">
-                    {zone.logOnlyClasses.join(", ") || "—"}
+                    {zone.targets
+                      .filter((target) => target.action === "log_only")
+                      .map((target) => target.class)
+                      .join(", ") || "—"}
                   </TableCell>
-                  <TableCell className="font-mono text-xs">{zone.confirmSeconds}s</TableCell>
+                  <TableCell className="font-mono text-xs">
+                    {/* Each camera keeps its own patience, so show the range. */}
+                    {[...new Set(zone.cameras.filter((c) => c.active).map((c) => c.confirmSeconds))]
+                      .sort((a, b) => a - b)
+                      .join("/")}s
+                  </TableCell>
                 </TableRow>
               ))}
             </TableBody>

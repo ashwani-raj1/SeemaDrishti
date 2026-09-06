@@ -37,35 +37,97 @@ CREATE TABLE IF NOT EXISTS camera (
   stream_url   TEXT,
   -- The blindness ladder (Plate 07). Held here so the operator screen can say
   -- out loud where we are blind instead of failing quietly.
+  --
+  -- This is OBSERVED: the analysis engine writes it from what it can actually
+  -- see. Nobody sets it by hand.
   status       TEXT NOT NULL DEFAULT 'FULL',   -- FULL|DEGRADED|MOTION_ONLY|RECORD_ONLY|DEAD
-  created_at   TEXT NOT NULL
+  -- This is DECIDED: a person took the feed out of service, for maintenance or
+  -- because it is pointing at nothing useful. Kept apart from `status` because
+  -- "we cannot see" and "we chose to stop looking" are different facts, and an
+  -- operator needs to be able to tell them apart on the status board.
+  enabled      INTEGER NOT NULL DEFAULT 1,
+  created_at   TEXT NOT NULL,
+  updated_at   TEXT
 );
 
--- A zone is a shape plus a label saying what kind of place it is. A border
--- fence line and a naval jetty perimeter are the same primitive with a
--- different `kind` -- there is no force-specific code anywhere below this.
+-- A monitoring zone is a named place that one or more cameras watch.
 --
--- `points` are normalised 0..1 against the frame, so a zone survives a camera
--- being swapped for one with a different resolution.
+-- It deliberately holds no geometry of its own. A polygon drawn in one
+-- camera's frame is meaningless in another's, so the shape belongs to the
+-- pairing of a zone with a camera (`zone_camera`), not to the zone. What the
+-- zone owns is identity and policy: what this place is, and what matters here.
+--
+-- A border fence line and a naval jetty perimeter are the same primitive with
+-- a different `kind`. There is no force-specific code anywhere below this.
 CREATE TABLE IF NOT EXISTS zone (
-  id                TEXT PRIMARY KEY,
-  camera_id         TEXT NOT NULL REFERENCES camera(id),
-  org_id            TEXT NOT NULL REFERENCES organisation(id),
-  name              TEXT NOT NULL,
-  kind              TEXT NOT NULL,          -- fence_line|gate|waterline|perimeter|pass|restricted_area
-  geometry          TEXT NOT NULL,          -- 'line' | 'polygon'
-  points            TEXT NOT NULL,          -- JSON [[x,y], ...]
-  watch_classes     TEXT NOT NULL,          -- JSON, classes that may raise an alert
-  log_only_classes  TEXT NOT NULL,          -- JSON, classes written to the log and never alerted (#12)
-  direction         TEXT NOT NULL DEFAULT 'both',   -- inbound | outbound | both
-  confirm_seconds   REAL NOT NULL DEFAULT 2.0,      -- wait-and-confirm before shouting (#13)
-  severity          TEXT NOT NULL DEFAULT 'WARNING',
-  active            INTEGER NOT NULL DEFAULT 1,
-  created_at        TEXT NOT NULL,
-  updated_at        TEXT NOT NULL
+  id         TEXT PRIMARY KEY,
+  org_id     TEXT NOT NULL REFERENCES organisation(id),
+  site_id    TEXT NOT NULL REFERENCES site(id),
+  name       TEXT NOT NULL,
+  kind       TEXT NOT NULL,          -- fence_line|gate|waterline|perimeter|pass|restricted_area
+  -- The named area this zone was cut from, kept so the console can show where
+  -- it came from. Advisory only; nothing in judgement reads it.
+  sector     TEXT,
+  active     INTEGER NOT NULL DEFAULT 1,
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL
 );
 
-CREATE INDEX IF NOT EXISTS zone_by_camera ON zone(camera_id, active);
+CREATE INDEX IF NOT EXISTS zone_by_site ON zone(site_id, active);
+
+-- One camera's view of one zone: the shape it watches, and how patient it is.
+--
+-- `points` are normalised 0..1 against that camera's frame, so the shape
+-- survives the camera being swapped for a different resolution. Direction and
+-- the confirm delay live here too, because the same fence seen down its length
+-- from one camera and across from another genuinely needs different settings.
+CREATE TABLE IF NOT EXISTS zone_camera (
+  id              TEXT PRIMARY KEY,
+  zone_id         TEXT NOT NULL REFERENCES zone(id),
+  camera_id       TEXT NOT NULL REFERENCES camera(id),
+  geometry        TEXT NOT NULL,          -- 'line' | 'polygon'
+  points          TEXT NOT NULL,          -- JSON [[x,y], ...]
+  direction       TEXT NOT NULL DEFAULT 'both',   -- inbound | outbound | both
+  confirm_seconds REAL NOT NULL DEFAULT 2.0,      -- wait-and-confirm (#13)
+  -- 0 means the shape is still the placeholder handed out when the camera was
+  -- added to the zone. The console says so rather than implying somebody has
+  -- actually positioned it against this camera's view.
+  placed          INTEGER NOT NULL DEFAULT 0,
+  active          INTEGER NOT NULL DEFAULT 1,
+  created_at      TEXT NOT NULL,
+  updated_at      TEXT NOT NULL,
+  UNIQUE(zone_id, camera_id)
+);
+
+CREATE INDEX IF NOT EXISTS zone_camera_by_camera ON zone_camera(camera_id, active);
+
+-- What must be detected against here, in the order it matters.
+--
+-- `camera_id NULL` is the zone's own policy, applying to every camera in it.
+-- A row naming a camera overrides the zone policy for that class on that
+-- camera alone -- one policy per zone, with exceptions stated explicitly
+-- rather than by duplicating the whole list per camera.
+--
+-- `priority` is an explicit rank, 1 highest -- the order somebody declared
+-- these matter in, and the order they are read back in.
+-- `action` of 'log_only' is the animal case (#12): written down, never alerted.
+CREATE TABLE IF NOT EXISTS zone_target (
+  id         TEXT PRIMARY KEY,
+  zone_id    TEXT NOT NULL REFERENCES zone(id),
+  camera_id  TEXT REFERENCES camera(id),   -- NULL = the zone's own policy
+  class      TEXT NOT NULL,
+  severity   TEXT NOT NULL DEFAULT 'WARNING',
+  action     TEXT NOT NULL DEFAULT 'alert',  -- alert | log_only
+  priority   INTEGER NOT NULL DEFAULT 100,
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL
+);
+
+-- One rule per class per scope. Two rows for 'person' on the same camera would
+-- make which one applies a matter of luck.
+CREATE UNIQUE INDEX IF NOT EXISTS zone_target_unique
+  ON zone_target(zone_id, IFNULL(camera_id, ''), class);
+CREATE INDEX IF NOT EXISTS zone_target_by_zone ON zone_target(zone_id, priority);
 
 -- ---------------------------------------------------------------- what happened
 

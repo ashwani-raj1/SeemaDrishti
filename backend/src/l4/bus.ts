@@ -11,7 +11,8 @@ export type StreamMessage =
   | { type: "incident"; data: unknown }
   | { type: "action"; data: unknown }
   | { type: "camera"; data: unknown }
-  | { type: "hello"; data: unknown };
+  | { type: "hello"; data: unknown }
+  | { type: "heartbeat"; data: unknown };
 
 type Subscriber = (message: StreamMessage) => void;
 
@@ -52,14 +53,20 @@ export function streamResponse(): Response {
       send({ type: "hello", data: { at: new Date().toISOString() } });
       unsubscribe = subscribe(send);
 
-      // Keeps proxies from closing an idle connection on a quiet night.
+      // A NAMED event, not an SSE comment.
+      //
+      // A comment keeps the socket open but fires no listener in EventSource,
+      // so a screen watching for silence cannot see it -- which made a healthy
+      // stream look dead on exactly the quiet nights it should reassure
+      // through. This is observable, so the console can tell "quiet" from
+      // "gone". It also keeps intermediaries from closing an idle connection.
       heartbeat = setInterval(() => {
         try {
-          controller.enqueue(encoder.encode(": keep-alive\n\n"));
+          send({ type: "heartbeat", data: { at: new Date().toISOString() } });
         } catch {
           /* closed underneath us; cancel() cleans up */
         }
-      }, 20_000);
+      }, 15_000);
     },
     cancel() {
       unsubscribe?.();

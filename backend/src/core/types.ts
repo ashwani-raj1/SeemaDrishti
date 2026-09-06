@@ -31,19 +31,52 @@ export type Role = "operator" | "supervisor" | "admin";
 /** Normalised against the frame, so zones survive a camera swap. */
 export type Point = [number, number];
 
+/** What a target does when it matches. */
+export type TargetAction = "alert" | "log_only";
+
+/**
+ * One thing this place must be detected against.
+ *
+ * `priority` is an explicit rank, 1 highest: the order the operator declared
+ * these matter in, and the order they are read back in. It does not pick
+ * between targets -- a detection carries one class and each class appears once
+ * per scope -- it ranks them. `log_only` is the animal case: written down,
+ * never alerted.
+ */
+export interface ZoneTarget {
+  class: string;
+  severity: Severity;
+  action: TargetAction;
+  priority: number;
+  /** True when a camera-specific row overrode the zone's own policy. */
+  overridden?: boolean;
+}
+
+/**
+ * A zone as one camera sees it.
+ *
+ * The logical zone spans cameras; the shape does not, because a polygon drawn
+ * in one camera's frame is meaningless in another's. So this is the resolved
+ * pairing: the zone's identity, this camera's shape, and the effective target
+ * list after any camera overrides are applied.
+ *
+ * `id` is the logical zone id, because that is what events reference and what
+ * incidents group by. `bindingId` identifies the pairing itself.
+ */
 export interface Zone {
   id: string;
+  bindingId: string;
   camera_id: string;
   org_id: string;
+  site_id: string;
   name: string;
   kind: ZoneKind;
   geometry: ZoneGeometry;
   points: Point[];
-  watch_classes: string[];
-  log_only_classes: string[];
   direction: Direction | "both";
   confirm_seconds: number;
-  severity: Severity;
+  /** Ordered by priority ascending. */
+  targets: ZoneTarget[];
   active: boolean;
 }
 

@@ -1,8 +1,10 @@
-import { all, one, run } from "../db";
+import { one, run } from "../db";
 import { id, nowIso } from "../core/ids";
 import type { Detection, DetectionFrame, Direction, Point, Severity, Zone } from "../core/types";
 import { crossingOf, directionWanted, groundPoint, sideForZone } from "./geometry";
 import { recordEvent } from "../l3/events";
+import { zonesForCamera } from "../l3/zones";
+import { cameraEnabled } from "../l3/cameras";
 
 /**
  * L2 -- the virtual fence.
@@ -56,47 +58,6 @@ const PATH_LIMIT = 60;
 const trackKey = (cameraId: string, trackRef: string) => `${cameraId}/${trackRef}`;
 
 // ------------------------------------------------------------------ zone loading
-
-interface ZoneRow {
-  id: string;
-  camera_id: string;
-  org_id: string;
-  name: string;
-  kind: string;
-  geometry: string;
-  points: string;
-  watch_classes: string;
-  log_only_classes: string;
-  direction: string;
-  confirm_seconds: number;
-  severity: string;
-  active: number;
-}
-
-export function hydrateZone(row: ZoneRow): Zone {
-  return {
-    id: row.id,
-    camera_id: row.camera_id,
-    org_id: row.org_id,
-    name: row.name,
-    kind: row.kind as Zone["kind"],
-    geometry: row.geometry as Zone["geometry"],
-    points: JSON.parse(row.points) as Point[],
-    watch_classes: JSON.parse(row.watch_classes) as string[],
-    log_only_classes: JSON.parse(row.log_only_classes) as string[],
-    direction: row.direction as Zone["direction"],
-    confirm_seconds: row.confirm_seconds,
-    severity: row.severity as Severity,
-    active: row.active === 1,
-  };
-}
-
-export function zonesForCamera(cameraId: string): Zone[] {
-  return all<ZoneRow>(
-    "SELECT * FROM zone WHERE camera_id = $camera AND active = 1",
-    { $camera: cameraId },
-  ).map(hydrateZone);
-}
 
 /**
  * A zone edit must not leave a track mid-crossing against the old shape --
@@ -189,17 +150,19 @@ type Routing =
   | { kind: "ignore" };
 
 /**
- * What this class means to this zone. An animal crossing is a record, never
- * an alarm; a class the zone was never asked to watch produces nothing at all.
+ * What this class means here, according to the zone's ordered targets.
+ *
+ * The first target matching the class wins, and the list is already sorted by
+ * priority -- so when a supervisor drags "person" above "vehicle", that order
+ * is what decides. A class no target names produces nothing at all.
  */
 function routeClass(zone: Zone, className: string): Routing {
-  if (zone.log_only_classes.includes(className)) {
-    return { kind: "log_only", reason: "class_is_log_only" };
+  const target = zone.targets.find((t) => t.class === className);
+  if (!target) return { kind: "ignore" };
+  if (target.action === "log_only") {
+    return { kind: "log_only", reason: "target_is_log_only" };
   }
-  if (zone.watch_classes.includes(className)) {
-    return { kind: "alert", severity: zone.severity };
-  }
-  return { kind: "ignore" };
+  return { kind: "alert", severity: target.severity };
 }
 
 interface EmitArgs {
@@ -361,6 +324,8 @@ export interface FrameResult {
   cameraId: string;
   tracked: number;
   zonesEvaluated: number;
+  /** Set when the frame was accepted but deliberately not judged. */
+  skipped?: string;
 }
 
 /**
@@ -370,6 +335,13 @@ export interface FrameResult {
 export function processFrame(frame: DetectionFrame): FrameResult {
   const context = cameraContext(frame.camera_id);
   if (!context) throw new Error(`unknown camera ${frame.camera_id}`);
+
+  // Somebody took this feed out of service. Detections still arrive -- the
+  // detector does not know -- but nothing is judged and no event is written,
+  // because an operator was told this camera is not being watched.
+  if (!cameraEnabled(frame.camera_id)) {
+    return { cameraId: frame.camera_id, tracked: 0, zonesEvaluated: 0, skipped: "camera_disabled" };
+  }
 
   const zones = zonesForCamera(frame.camera_id);
   const at = Date.parse(frame.occurred_at) / 1000;
@@ -403,7 +375,10 @@ function sweepIdleTracks(now: number): void {
 
     for (const [zoneId, memory] of track.zones) {
       if (!memory.pending) continue;
-      const zone = one<ZoneRow>("SELECT * FROM zone WHERE id = $id", { $id: zoneId });
+      const zone = one<{ id: string; org_id: string; name: string }>(
+        "SELECT id, org_id, name FROM zone WHERE id = $id",
+        { $id: zoneId },
+      );
       if (!zone) continue;
       const context = cameraContext(track.cameraId);
       if (!context) continue;

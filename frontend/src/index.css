@@ -31,6 +31,16 @@
 @layer components {
   .leaflet-container {
     @apply bg-muted font-sans text-foreground;
+
+    /*
+     * Leaflet gives its own panes z-index 400-700. Without a stacking context
+     * here those escape the map entirely and paint over anything above them --
+     * a card map behind a sheet showed straight through it. Position + z-index
+     * scopes them to the map they belong to.
+     */
+    position: relative;
+    z-index: 0;
+    isolation: isolate;
   }
 
   .leaflet-tooltip {

@@ -89,14 +89,19 @@ function attachIncident(input: EventInput): { incidentId: string; opened: boolea
   );
 
   if (existing) {
-    const raised =
-      SEVERITY_RANK[input.severity] > SEVERITY_RANK[existing.severity]
-        ? input.severity
-        : existing.severity;
+    const worse = SEVERITY_RANK[input.severity] > SEVERITY_RANK[existing.severity];
 
+    // The headline has to describe the worst thing in the incident, not the
+    // first. A rejected flicker can open an incident that a real crossing then
+    // joins -- leaving the title saying "logged only" above a CRITICAL badge,
+    // which reads as a bug to the one person who has to triage it.
     run(
-      `UPDATE incident SET last_event_at = $at, severity = $severity WHERE id = $id`,
-      { $at: input.occurredAt, $severity: raised, $id: existing.id },
+      worse
+        ? `UPDATE incident SET last_event_at = $at, severity = $severity, title = $title WHERE id = $id`
+        : `UPDATE incident SET last_event_at = $at WHERE id = $id`,
+      worse
+        ? { $at: input.occurredAt, $severity: input.severity, $title: input.title, $id: existing.id }
+        : { $at: input.occurredAt, $id: existing.id },
     );
     return { incidentId: existing.id, opened: false };
   }
@@ -263,11 +268,18 @@ export function queryEvents(orgId: string, q: EventQuery) {
 }
 
 /** The operator's screen: incidents ranked by severity, then recency. */
-export function listIncidents(orgId: string, opts: { status?: string; limit?: number } = {}) {
+export function listIncidents(
+  orgId: string,
+  opts: { status?: string; cameraId?: string; zoneId?: string; limit?: number } = {},
+) {
   const where = ["org_id = $org"];
   const params: Record<string, unknown> = { $org: orgId };
 
   if (opts.status) (where.push("status = $status"), (params.$status = opts.status));
+  // "Everything that has happened on this feed" -- the question you ask after
+  // clicking a camera, which the unfiltered queue is not shaped to answer.
+  if (opts.cameraId) (where.push("camera_id = $camera"), (params.$camera = opts.cameraId));
+  if (opts.zoneId) (where.push("zone_id = $zone"), (params.$zone = opts.zoneId));
   params.$limit = Math.min(opts.limit ?? 100, 500);
 
   return all<any>(
@@ -288,4 +300,74 @@ export function listIncidents(orgId: string, opts: { status?: string; limit?: nu
     lastEventAt: row.last_event_at,
     eventCount: row.event_count,
   }));
+}
+
+
+/** How far either side of an incident to look for related activity. */
+const CROSS_REFERENCE_WINDOW_SECONDS = 1800;
+
+/**
+ * What else was watching, and what else it saw.
+ *
+ * A zone spans cameras, so when something crosses on one feed the operator's
+ * next question is "what else could have seen this, and did it?" -- which used
+ * to be a guess and is now a lookup. Cameras that cover the same zone are
+ * listed whether or not they caught anything, because "the other camera saw
+ * nothing" is itself worth knowing.
+ */
+export function crossReference(incidentId: string) {
+  const incident = one<any>("SELECT * FROM incident_state WHERE id = $id", { $id: incidentId });
+  if (!incident || !incident.zone_id) {
+    return { zone: null, cameras: [], incidents: [] };
+  }
+
+  const zone = one<{ id: string; name: string }>(
+    "SELECT id, name FROM zone WHERE id = $id",
+    { $id: incident.zone_id },
+  );
+
+  const cameras = all<any>(
+    `SELECT c.id, c.name, c.status, c.enabled
+       FROM zone_camera zc
+       JOIN camera c ON c.id = zc.camera_id
+      WHERE zc.zone_id = $zone AND zc.active = 1
+      ORDER BY c.name`,
+    { $zone: incident.zone_id },
+  ).map((row) => ({
+    cameraId: row.id,
+    cameraName: row.name,
+    cameraStatus: row.status,
+    enabled: row.enabled === 1,
+    /** The camera this incident actually came from. */
+    isSource: row.id === incident.camera_id,
+  }));
+
+  const from = new Date(
+    Date.parse(incident.opened_at) - CROSS_REFERENCE_WINDOW_SECONDS * 1000,
+  ).toISOString();
+  const until = new Date(
+    Date.parse(incident.last_event_at) + CROSS_REFERENCE_WINDOW_SECONDS * 1000,
+  ).toISOString();
+
+  const related = all<any>(
+    `SELECT * FROM incident_state
+      WHERE zone_id = $zone
+        AND id != $id
+        AND last_event_at >= $from
+        AND opened_at <= $until
+      ORDER BY last_event_at DESC
+      LIMIT 20`,
+    { $zone: incident.zone_id, $id: incidentId, $from: from, $until: until },
+  ).map((row) => ({
+    id: row.id,
+    title: row.title,
+    severity: row.severity,
+    status: row.status,
+    cameraId: row.camera_id,
+    openedAt: row.opened_at,
+    lastEventAt: row.last_event_at,
+    eventCount: row.event_count,
+  }));
+
+  return { zone, cameras, incidents: related, windowSeconds: CROSS_REFERENCE_WINDOW_SECONDS };
 }

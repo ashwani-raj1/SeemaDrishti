@@ -32,9 +32,15 @@ export function SectorMapScreen() {
     (incident) => showClosed || incident.status === "OPEN" || incident.status === "ACKNOWLEDGED",
   );
 
+  /**
+   * Following a marker through to the thing it stands for.
+   *
+   * Every target has its own address, so what you are looking at can be sent
+   * to somebody else. The browser's back button returns you to the map.
+   */
   const open = (target: MapTarget) => {
-    if (target.kind === "incident") navigate(`/incidents?incident=${target.id}`);
-    if (target.kind === "camera") navigate(`/cameras?camera=${target.id}`);
+    if (target.kind === "incident") navigate(`/incidents/${target.id}`);
+    if (target.kind === "camera") navigate(`/cameras/${target.id}`);
     if (target.kind === "zone") navigate(`/zones?zone=${target.id}`);
   };
 

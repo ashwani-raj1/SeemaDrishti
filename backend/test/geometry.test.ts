@@ -11,8 +11,10 @@ import type { Zone } from "../src/core/types";
 
 const zone = (over: Partial<Zone>): Zone => ({
   id: "z",
+  bindingId: "zc",
   camera_id: "c",
   org_id: "o",
+  site_id: "s",
   name: "test",
   kind: "fence_line",
   geometry: "line",
@@ -20,11 +22,12 @@ const zone = (over: Partial<Zone>): Zone => ({
     [0.0, 0.5],
     [1.0, 0.5],
   ],
-  watch_classes: ["person"],
-  log_only_classes: ["cattle"],
   direction: "both",
   confirm_seconds: 2,
-  severity: "CRITICAL",
+  targets: [
+    { class: "person", severity: "CRITICAL", action: "alert", priority: 1 },
+    { class: "cattle", severity: "INFO", action: "log_only", priority: 2 },
+  ],
   active: true,
   ...over,
 });

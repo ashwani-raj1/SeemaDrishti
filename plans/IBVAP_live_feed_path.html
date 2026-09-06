@@ -1,0 +1,1264 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>IBVAP Live Feed Path</title>
+</head>
+<body><style>
+:root {
+  color-scheme: light;
+
+  --paper:      #EBEEE9;
+  --plate:      #F7F8F5;
+  --plate-2:    #E2E7E0;
+  --ink:        #1E2A24;
+  --ink-2:      #4A574F;
+  --ink-3:      #78847C;
+  --rule:       #CFD5CB;
+  --rule-2:     #ADB7AB;
+
+  --olive:      #3D6B55;
+  --olive-soft: #E0EAE3;
+  --ochre:      #8A6529;
+  --ochre-soft: #F0E7D5;
+  --slate:      #45657F;
+  --slate-soft: #DFE6EC;
+  --brick:      #9E4530;
+  --brick-soft: #F3E1DC;
+
+  --sans: ui-sans-serif, "Segoe UI Variable Display", "Segoe UI", system-ui, -apple-system, "Helvetica Neue", Arial, sans-serif;
+  --serif: Georgia, "Iowan Old Style", "Palatino Linotype", Palatino, "Times New Roman", serif;
+  --mono: ui-monospace, "Cascadia Mono", "Cascadia Code", Consolas, "SF Mono", Menlo, monospace;
+}
+
+/* Light-locked by choice, matching IBVAP_brief.html: these two are one set of
+   daylight sheets, and the viewer's dark toggle keeps the same ground rather
+   than inverting one of them into a different document. */
+:root[data-theme="dark"], :root[data-theme="light"] { color-scheme: light; }
+
+* { box-sizing: border-box; }
+
+body {
+  margin: 0;
+  background: var(--paper);
+  color: var(--ink);
+  font-family: var(--serif);
+  font-size: 17px;
+  line-height: 1.72;
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+}
+
+/* ---------- structure ---------- */
+
+.sheet { max-width: 1140px; margin: 0 auto; padding: 0 28px 120px; }
+.col   { max-width: 66ch; }
+.col-wide { max-width: 78ch; }
+
+section { padding-top: 68px; scroll-margin-top: 64px; }
+
+hr.div { border: 0; border-top: 1px solid var(--rule); margin: 64px 0 0; }
+
+/* ---------- masthead ---------- */
+
+.masthead {
+  position: relative;
+  padding: 92px 0 44px;
+  border-bottom: 2px solid var(--ink);
+  overflow: hidden;
+}
+.masthead::before {
+  content: ""; position: absolute; inset: 0; z-index: 0;
+  background-image:
+    repeating-linear-gradient(to right, var(--rule) 0 1px, transparent 1px 44px),
+    repeating-linear-gradient(to bottom, var(--rule) 0 1px, transparent 1px 44px);
+  opacity: .5;
+  -webkit-mask-image: linear-gradient(to bottom, rgba(0,0,0,.85), transparent 78%);
+          mask-image: linear-gradient(to bottom, rgba(0,0,0,.85), transparent 78%);
+}
+.masthead > * { position: relative; z-index: 1; }
+
+.stamp {
+  display: inline-flex; align-items: center; gap: 10px;
+  font-family: var(--mono); font-size: 11px; letter-spacing: .14em;
+  text-transform: uppercase; color: var(--olive);
+  border: 1px solid var(--rule-2); background: var(--plate);
+  padding: 6px 11px; margin-bottom: 26px;
+}
+.stamp b { color: var(--ink); font-weight: 600; }
+
+h1 {
+  font-family: var(--sans); font-weight: 650;
+  font-size: clamp(38px, 6.4vw, 62px); line-height: 1.02;
+  letter-spacing: -.028em; margin: 0 0 6px; text-wrap: balance;
+  max-width: 21ch;
+}
+.h1-sub {
+  font-family: var(--sans); font-weight: 400;
+  font-size: clamp(19px, 2.6vw, 26px); line-height: 1.28;
+  letter-spacing: -.01em; color: var(--ink-2);
+  margin: 0 0 34px; max-width: 32ch;
+}
+.deck { font-size: 19px; line-height: 1.66; max-width: 58ch; margin: 0; }
+.deck strong { font-weight: 700; }
+
+.meta {
+  display: flex; flex-wrap: wrap; gap: 0 40px;
+  margin-top: 38px; padding-top: 22px;
+  border-top: 1px solid var(--rule);
+  font-family: var(--mono); font-size: 11.5px; letter-spacing: .04em;
+  color: var(--ink-3);
+}
+.meta div span { display: block; color: var(--ink); letter-spacing: 0; }
+
+/* ---------- headings ---------- */
+
+.eyebrow {
+  font-family: var(--mono); font-size: 11px; letter-spacing: .17em;
+  text-transform: uppercase; color: var(--olive);
+  display: flex; align-items: center; gap: 12px; margin: 0 0 16px;
+}
+.eyebrow::after { content: ""; flex: 1; height: 1px; background: var(--rule); max-width: 180px; }
+
+h2 {
+  font-family: var(--sans); font-weight: 640;
+  font-size: clamp(27px, 3.6vw, 35px); line-height: 1.12;
+  letter-spacing: -.021em; margin: 0 0 18px; text-wrap: balance;
+  max-width: 30ch;
+}
+h3 {
+  font-family: var(--sans); font-weight: 620; font-size: 21px;
+  line-height: 1.24; letter-spacing: -.012em;
+  margin: 46px 0 12px; text-wrap: balance;
+}
+h4 {
+  font-family: var(--mono); font-weight: 600; font-size: 12px;
+  letter-spacing: .13em; text-transform: uppercase; color: var(--ink-2);
+  margin: 34px 0 10px;
+}
+p { margin: 0 0 17px; }
+.lead { font-size: 18.5px; color: var(--ink-2); max-width: 62ch; }
+
+a { color: var(--olive); text-decoration-thickness: 1px; text-underline-offset: 2px; }
+a:focus-visible { outline: 2px solid var(--olive); outline-offset: 3px; }
+
+code {
+  font-family: var(--mono); font-size: .86em;
+  background: var(--plate-2); padding: 1px 5px;
+  border: 1px solid var(--rule); white-space: nowrap;
+}
+
+/* ---------- nav ---------- */
+
+.nav {
+  position: sticky; top: 0; z-index: 40;
+  background: color-mix(in srgb, var(--paper) 92%, transparent);
+  backdrop-filter: blur(9px);
+  border-bottom: 1px solid var(--rule);
+}
+.nav-in {
+  max-width: 1140px; margin: 0 auto; padding: 0 28px;
+  display: flex; gap: 4px; overflow-x: auto; scrollbar-width: thin;
+}
+.nav a {
+  font-family: var(--mono); font-size: 11px; letter-spacing: .09em;
+  text-transform: uppercase; color: var(--ink-2); text-decoration: none;
+  padding: 13px 11px; white-space: nowrap; border-bottom: 2px solid transparent;
+}
+.nav a:hover { color: var(--olive); border-bottom-color: var(--olive); }
+
+/* ---------- plates (diagrams) ---------- */
+
+.plate {
+  background: var(--plate); border: 1px solid var(--rule-2);
+  margin: 30px 0 34px; max-width: 1000px;
+}
+.plate-hd {
+  display: flex; align-items: baseline; gap: 14px; flex-wrap: wrap;
+  padding: 12px 20px; border-bottom: 1px solid var(--rule);
+  background: var(--plate-2);
+  font-family: var(--mono); font-size: 11px; letter-spacing: .13em;
+  text-transform: uppercase;
+}
+.plate-hd b { color: var(--olive); font-weight: 700; }
+.plate-hd span { color: var(--ink-2); letter-spacing: .06em; }
+.plate-body { padding: 26px 22px; overflow-x: auto; }
+.plate-ft {
+  padding: 13px 20px; border-top: 1px solid var(--rule);
+  font-family: var(--sans); font-size: 14px; line-height: 1.55;
+  color: var(--ink-2); background: var(--plate-2);
+}
+
+.chip {
+  display: inline-block; border: 1px solid var(--rule-2);
+  background: var(--paper); padding: 3px 8px; margin: 2px 3px 2px 0;
+  font-family: var(--mono); font-size: 11.5px; white-space: nowrap;
+}
+.chip.olive { border-color: var(--olive); color: var(--olive); background: var(--olive-soft); }
+.chip.slate { border-color: var(--slate); color: var(--slate); background: var(--slate-soft); }
+.chip.ochre { border-color: var(--ochre); color: var(--ochre); background: var(--ochre-soft); }
+.chip.brick { border-color: var(--brick); color: var(--brick); background: var(--brick-soft); }
+
+/* ---------- runtime topology ---------- */
+
+.rtnet { border: 1px dashed var(--rule-2); padding: 20px 14px 14px; position: relative; margin: 0; }
+.rtnetl {
+  position: absolute; top: -8px; left: 12px; background: var(--plate); padding: 0 7px;
+  font-family: var(--mono); font-size: 9.5px; letter-spacing: .11em;
+  text-transform: uppercase; color: var(--ink-2); font-weight: 700;
+}
+.rtrow { display: flex; gap: 12px; flex-wrap: wrap; }
+.rtbox { border: 1px solid var(--rule-2); background: var(--paper); flex: 1 1 232px; min-width: 232px; }
+.rth {
+  display: flex; justify-content: space-between; align-items: baseline; gap: 10px;
+  padding: 8px 10px; border-bottom: 1px solid var(--rule);
+}
+.rtn { font-family: var(--mono); font-size: 12.5px; font-weight: 700; color: var(--ink); }
+.rtt {
+  font-family: var(--mono); font-size: 8.5px; letter-spacing: .12em; text-transform: uppercase;
+  font-weight: 700; padding: 2px 6px; border: 1px solid; white-space: nowrap;
+}
+.rtm { padding: 8px 10px; display: flex; flex-direction: column; gap: 3px; }
+.rtm i { font-style: normal; font-family: var(--mono); font-size: 10.5px; color: var(--ink-3); line-height: 1.45; }
+.rtm i b { color: var(--ink); font-weight: 600; }
+
+.t-proc { border-color: var(--olive); }
+.t-proc .rtt { border-color: var(--olive); color: var(--olive); background: var(--olive-soft); }
+.t-db   { border-color: var(--slate); border-left-width: 5px; }
+.t-db   .rtt { border-color: var(--slate); color: var(--slate); background: var(--slate-soft); }
+.t-ui   { border-color: var(--ochre); }
+.t-ui   .rtt { border-color: var(--ochre); color: var(--ochre); background: var(--ochre-soft); }
+.t-ext  { border-color: var(--rule-2); border-style: dashed; }
+.t-ext  .rtt { border-color: var(--rule-2); color: var(--ink-3); background: var(--plate-2); }
+
+.rtc {
+  display: flex; align-items: flex-start; gap: 8px; padding: 7px 0 7px 12px;
+  font-family: var(--mono); font-size: 10px; color: var(--ink-3); line-height: 1.5;
+}
+.rtc b { color: var(--rule-2); font-size: 14px; font-weight: 400; line-height: 1; }
+.rtc em { font-style: normal; }
+.rtc em u { text-decoration: none; color: var(--ink); font-weight: 600; }
+
+/* ---------- channel comparison ---------- */
+
+.chan { display: grid; grid-template-columns: 128px repeat(3, minmax(178px, 1fr)); min-width: min-content; }
+.chan > div {
+  padding: 10px 12px; border-bottom: 1px solid var(--rule);
+  font-family: var(--sans); font-size: 13.5px; line-height: 1.5;
+}
+.chan > div:nth-child(4n+1) {
+  font-family: var(--mono); font-size: 10.5px; letter-spacing: .1em;
+  text-transform: uppercase; color: var(--ink-2); background: var(--plate-2);
+  border-right: 1px solid var(--rule);
+}
+.chan-hd { font-family: var(--mono) !important; font-size: 12px !important; font-weight: 700;
+  letter-spacing: .06em; border-bottom: 1px solid var(--rule-2) !important; }
+.chan-hd.c1 { color: var(--ochre); background: var(--ochre-soft); }
+.chan-hd.c2 { color: var(--olive); background: var(--olive-soft); }
+.chan-hd.c3 { color: var(--slate); background: var(--slate-soft); }
+.chan > div:nth-last-child(-n+4) { border-bottom: 0; }
+.chan .mono { font-family: var(--mono); font-size: 12px; font-variant-numeric: tabular-nums; }
+
+/* ---------- code blocks ---------- */
+
+.code {
+  border: 1px solid var(--rule-2); background: var(--plate);
+  margin: 22px 0 28px; max-width: 1000px;
+}
+.code-hd {
+  padding: 9px 14px; border-bottom: 1px solid var(--rule); background: var(--plate-2);
+  font-family: var(--mono); font-size: 10.5px; letter-spacing: .12em;
+  text-transform: uppercase; color: var(--ink-2);
+}
+.code-hd b { color: var(--olive); font-weight: 700; }
+pre {
+  margin: 0; padding: 15px 16px; overflow-x: auto;
+  font-family: var(--mono); font-size: 12.5px; line-height: 1.62; color: var(--ink);
+}
+pre .c { color: var(--ink-3); }
+pre .s { color: var(--olive); }
+pre .n { color: var(--slate); }
+pre .k { color: var(--ochre); font-weight: 600; }
+
+/* ---------- feature rows ---------- */
+
+.frow {
+  display: grid; grid-template-columns: 58px 1fr; gap: 0;
+  border: 1px solid var(--rule-2); border-bottom: 0; background: var(--plate);
+}
+.frow:last-of-type { border-bottom: 1px solid var(--rule-2); }
+.frow-id {
+  font-family: var(--mono); font-size: 12.5px; font-weight: 700;
+  color: var(--brick); padding: 14px 10px; text-align: center;
+  border-right: 1px solid var(--rule); background: var(--plate-2);
+  font-variant-numeric: tabular-nums;
+}
+.frow-b { padding: 13px 16px; }
+.frow-b h5 {
+  font-family: var(--sans); font-size: 15.5px; font-weight: 630;
+  margin: 0 0 6px; letter-spacing: -.008em;
+}
+.frow-b p {
+  font-family: var(--sans); font-size: 14px; line-height: 1.6;
+  color: var(--ink-2); margin: 0 0 7px;
+}
+.frow-b p:last-child { margin-bottom: 0; }
+.frow-b .fix { color: var(--ink); }
+.frow-b .fix b, .frow-b .where b {
+  font-family: var(--mono); font-size: 10.5px; letter-spacing: .1em;
+  text-transform: uppercase; font-weight: 700; color: var(--olive);
+}
+.frow-b .where { font-family: var(--mono); font-size: 12px; color: var(--ink-3); }
+
+/* ---------- cards ---------- */
+
+.cards { display: grid; gap: 14px; margin: 26px 0 0; }
+.cards.two { grid-template-columns: repeat(auto-fit, minmax(290px, 1fr)); }
+.cards.three { grid-template-columns: repeat(auto-fit, minmax(215px, 1fr)); }
+
+.card { border: 1px solid var(--rule-2); background: var(--plate); padding: 17px 18px; }
+.card-k {
+  font-family: var(--mono); font-size: 11px; letter-spacing: .12em;
+  text-transform: uppercase; color: var(--ochre); font-weight: 700;
+  margin-bottom: 8px; display: flex; justify-content: space-between; gap: 10px;
+}
+.card-k em { font-style: normal; color: var(--ink-3); font-weight: 400; letter-spacing: .05em; }
+.card h5 {
+  font-family: var(--sans); font-size: 16px; font-weight: 630;
+  margin: 0 0 8px; line-height: 1.3; letter-spacing: -.01em;
+}
+.card p { font-family: var(--sans); font-size: 14px; line-height: 1.6; color: var(--ink-2); margin: 0 0 9px; }
+.card p:last-child { margin-bottom: 0; }
+.card .rec {
+  display: inline-block; font-family: var(--mono); font-size: 10px;
+  letter-spacing: .11em; text-transform: uppercase; font-weight: 700;
+  color: var(--olive); background: var(--olive-soft);
+  border: 1px solid var(--olive); padding: 2px 7px; margin-bottom: 9px;
+}
+
+/* ---------- tables ---------- */
+
+.tw { overflow-x: auto; margin: 24px 0 30px; border: 1px solid var(--rule-2); max-width: 1000px; }
+table { border-collapse: collapse; width: 100%; background: var(--plate); }
+th, td {
+  text-align: left; padding: 11px 14px; border-bottom: 1px solid var(--rule);
+  font-family: var(--sans); font-size: 14px; line-height: 1.52; vertical-align: top;
+}
+th {
+  font-family: var(--mono); font-size: 10.5px; letter-spacing: .12em;
+  text-transform: uppercase; color: var(--ink-2); background: var(--plate-2);
+  white-space: nowrap; font-weight: 600;
+}
+tbody tr:last-child td { border-bottom: 0; }
+td.k { font-family: var(--mono); font-size: 12.5px; white-space: nowrap; color: var(--ink); }
+td.no { color: var(--brick); }
+td.yes { color: var(--olive); }
+
+/* ---------- callouts ---------- */
+
+.note {
+  border-left: 3px solid var(--olive); background: var(--olive-soft);
+  padding: 15px 18px; margin: 24px 0; max-width: 68ch;
+}
+.note.warn { border-left-color: var(--brick); background: var(--brick-soft); }
+.note.hold { border-left-color: var(--ochre); background: var(--ochre-soft); }
+.note p { font-family: var(--sans); font-size: 14.5px; line-height: 1.62; margin: 0 0 9px; }
+.note p:last-child { margin: 0; }
+.note-k {
+  font-family: var(--mono); font-size: 10.5px; letter-spacing: .13em;
+  text-transform: uppercase; font-weight: 700; color: var(--olive);
+  display: block; margin-bottom: 7px;
+}
+.note.warn .note-k { color: var(--brick); }
+.note.hold .note-k { color: var(--ochre); }
+
+/* ---------- misc ---------- */
+
+ul.tight, ol.tight { margin: 0 0 17px; padding-left: 22px; max-width: 66ch; }
+ul.tight li, ol.tight li { margin-bottom: 8px; }
+
+.steps { margin: 26px 0 0; padding: 0; list-style: none; counter-reset: s; }
+.steps li {
+  display: grid; grid-template-columns: 52px 1fr; gap: 0;
+  border: 1px solid var(--rule-2); border-bottom: 0; background: var(--plate);
+  counter-increment: s;
+}
+.steps li:last-child { border-bottom: 1px solid var(--rule-2); }
+.steps li::before {
+  content: "M" counter(s);
+  font-family: var(--mono); font-size: 12px; font-weight: 700; color: var(--olive);
+  padding: 14px 8px; text-align: center; border-right: 1px solid var(--rule);
+  background: var(--plate-2);
+}
+.steps .sb { padding: 13px 16px; }
+.steps .sb h5 {
+  font-family: var(--sans); font-size: 15.5px; font-weight: 630;
+  margin: 0 0 6px; letter-spacing: -.008em;
+}
+.steps .sb p { font-family: var(--sans); font-size: 14px; line-height: 1.6; color: var(--ink-2); margin: 0; }
+.steps .sb .done { color: var(--olive); font-family: var(--mono); font-size: 11px;
+  letter-spacing: .09em; text-transform: uppercase; font-weight: 700; }
+
+.foot {
+  margin-top: 88px; padding-top: 26px; border-top: 2px solid var(--ink);
+  font-family: var(--mono); font-size: 11.5px; letter-spacing: .05em;
+  color: var(--ink-3); line-height: 1.9;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  * { animation: none !important; transition: none !important; scroll-behavior: auto !important; }
+}
+</style>
+
+<div class="sheet">
+
+  <!-- ============================================ MASTHEAD -->
+  <header class="masthead">
+    <div class="stamp">Working paper · <b>v0 runtime</b> · ideation</div>
+    <h1>IBVAP Live Feed Path</h1>
+    <p class="h1-sub">Real video, synthetic sources, and the three channels that keep them apart.</p>
+    <p class="deck">
+      The edge node already judges detections it is handed. This paper covers the layer
+      beneath it: where the frames come from, who decodes them, and how video reaches the
+      operator's screen without the detector ever standing between the two.
+      <strong>Nothing above the ingress hook changes.</strong>
+    </p>
+    <div class="meta">
+      <div>Companion to<span>IBVAP_brief.html</span></div>
+      <div>Status<span>Ideation — not built</span></div>
+      <div>Scope<span>Media plane · L1 vision · transport</span></div>
+      <div>Assumes<span>No real cameras yet</span></div>
+    </div>
+  </header>
+
+  <nav class="nav"><div class="nav-in">
+    <a href="#shape">The shape</a>
+    <a href="#channels">Three channels</a>
+    <a href="#synthetic">Synthetic source</a>
+    <a href="#split">Backend split</a>
+    <a href="#contracts">Contracts</a>
+    <a href="#fixes">What breaks</a>
+    <a href="#open">Open calls</a>
+    <a href="#failure">Failure modes</a>
+    <a href="#order">Build order</a>
+    <a href="#notv0">Not in v0</a>
+  </div></nav>
+
+  <!-- ============================================ THE SHAPE -->
+  <section id="shape">
+    <p class="eyebrow">Topology</p>
+    <h2>Four processes, one box</h2>
+
+    <div class="col">
+      <p class="lead">
+        Everything below runs on a single machine at the post. The separation is
+        about failure isolation and language boundaries, not about distribution —
+        there is still no cloud service anywhere in the working path.
+      </p>
+      <p>
+        The load-bearing decision: <strong>the backend is not in the video path.</strong>
+        Video goes from the media hub to the browser directly. Detection load can spike,
+        the vision worker can crash and restart, the edge node can be redeployed — and
+        the operator's picture never stutters, because none of those processes are
+        carrying frames to the screen.
+      </p>
+    </div>
+
+    <div class="plate">
+      <div class="plate-hd"><b>Plate A</b><span>Runtime topology — v0</span></div>
+      <div class="plate-body">
+
+        <div class="rtnet" style="margin-bottom:0">
+          <span class="rtnetl">Source plane — v0 stand-in, deleted when cameras arrive</span>
+          <div class="rtrow">
+            <div class="rtbox t-ext">
+              <div class="rth"><span class="rtn">clip loop ×N</span><span class="rtt">ffmpeg</span></div>
+              <div class="rtm">
+                <i><b>-re -stream_loop -1</b></i>
+                <i>one process per camera path</i>
+                <i>H.264 in, <b>-c:v copy</b> out</i>
+                <i>spawned by MediaMTX runOnInit</i>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div class="rtc"><b>↓</b><em>RTSP publish · <u>rtsp://127.0.0.1:8554/cam_fence_north</u> · loopback only</em></div>
+
+        <div class="rtnet">
+          <span class="rtnetl">Media plane</span>
+          <div class="rtrow">
+            <div class="rtbox t-proc">
+              <div class="rth"><span class="rtn">MediaMTX</span><span class="rtt">media hub</span></div>
+              <div class="rtm">
+                <i>one <b>path</b> per camera, name is stable</i>
+                <i>:8554 RTSP · :8889 WHEP · :8888 HLS</i>
+                <i>single Go binary, no dependencies</i>
+                <i>fans one ingest out to many readers</i>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div class="rtc"><b>↓</b><em>RTSP pull, <u>substream</u> · ~640×360 · decode cost is the whole budget</em></div>
+        <div class="rtc" style="padding-left:0"><b>↘</b><em>WHEP / WebRTC · <u>straight to the browser</u> · hub → screen, nothing in between</em></div>
+
+        <div class="rtnet">
+          <span class="rtnetl">Analysis + record plane — "the backend"</span>
+          <div class="rtrow">
+            <div class="rtbox t-proc">
+              <div class="rth"><span class="rtn">vision service</span><span class="rtt">python</span></div>
+              <div class="rtm">
+                <i><b>ibvap/</b> — decode → detect → track</i>
+                <i>stateless; crash and restart freely</i>
+                <i>drop-oldest queue, never buffers</i>
+                <i>emits <b>2 channels</b>, one hot one cold</i>
+              </div>
+            </div>
+            <div class="rtbox t-proc">
+              <div class="rth"><span class="rtn">edge node</span><span class="rtt">bun / ts</span></div>
+              <div class="rtm">
+                <i><b>backend/</b> — unchanged, today's code</i>
+                <i>zones → fence → events → incidents</i>
+                <i>audit chain, append-only</i>
+                <i>owns the durable record</i>
+              </div>
+            </div>
+            <div class="rtbox t-db">
+              <div class="rth"><span class="rtn">ibvap.db</span><span class="rtt">sqlite</span></div>
+              <div class="rtm">
+                <i>WAL, one file</i>
+                <i>events · incidents · action chain</i>
+                <i>no per-frame data ever lands here</i>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div class="rtc"><b>↓</b><em>WS <u>boxes</u> ephemeral · HTTP <u>frames</u> to /hooks/ingress/detections · SSE <u>events</u> from /api/stream</em></div>
+
+        <div class="rtnet">
+          <span class="rtnetl">Operator</span>
+          <div class="rtrow">
+            <div class="rtbox t-ui">
+              <div class="rth"><span class="rtn">console</span><span class="rtt">browser</span></div>
+              <div class="rtm">
+                <i><b>frontend/</b> — three live connections</i>
+                <i>&lt;video&gt; ← WHEP · canvas ← WS · list ← SSE</i>
+                <i>zone outlines drawn from /api/config</i>
+                <i>each channel fails independently</i>
+              </div>
+            </div>
+          </div>
+        </div>
+
+      </div>
+      <div class="plate-ft">
+        The vision service and the edge node are the two halves you described as one backend.
+        They stay separate processes because they are different languages, restart on different
+        cadences, and one of them is allowed to die at any moment while the other holds the record.
+      </div>
+    </div>
+  </section>
+
+  <hr class="div">
+
+  <!-- ============================================ CHANNELS -->
+  <section id="channels">
+    <p class="eyebrow">The central idea</p>
+    <h2>Three channels, deliberately unmuxed</h2>
+
+    <div class="col">
+      <p class="lead">
+        Video, boxes, and the record travel separately because they have nothing in
+        common except a destination. Different rates, different durability, different
+        consequences when they break.
+      </p>
+      <p>
+        Muxing boxes into the video server-side — burning them into the frames — couples
+        the three together at the worst possible point: it puts the detector in the video
+        path, forces re-encode on every camera, and means a slow model produces stuttering
+        video rather than late boxes. Keep them apart and a slow model produces exactly one
+        symptom: slightly late boxes.
+      </p>
+    </div>
+
+    <div class="plate">
+      <div class="plate-hd"><b>Plate B</b><span>Channel comparison</span></div>
+      <div class="plate-body">
+        <div class="chan">
+          <div></div>
+          <div class="chan-hd c1">VIDEO</div>
+          <div class="chan-hd c2">BOXES</div>
+          <div class="chan-hd c3">RECORD</div>
+
+          <div>Carries</div>
+          <div>H.264 frames</div>
+          <div>Per-frame detections</div>
+          <div>Events, incidents, decisions</div>
+
+          <div>Path</div>
+          <div class="mono">MediaMTX → browser</div>
+          <div class="mono">vision → browser</div>
+          <div class="mono">edge node → browser</div>
+
+          <div>Transport</div>
+          <div class="mono">WHEP / WebRTC</div>
+          <div class="mono">WebSocket</div>
+          <div class="mono">SSE <span style="color:var(--olive)">(exists)</span></div>
+
+          <div>Rate</div>
+          <div class="mono">15–25 fps</div>
+          <div class="mono">5–10 fps</div>
+          <div class="mono">a few / minute</div>
+
+          <div>Bandwidth</div>
+          <div class="mono">~1–2 Mbit/s per tile</div>
+          <div class="mono">~2–5 KB/s per camera</div>
+          <div class="mono">negligible</div>
+
+          <div>Durable</div>
+          <div>No — not recorded in v0</div>
+          <div><strong>Never.</strong> Discarded on arrival</div>
+          <div>Yes — SQLite, append-only</div>
+
+          <div>Replayable</div>
+          <div>No</div>
+          <div>No</div>
+          <div>Yes — <span class="mono">?after_seq=</span></div>
+
+          <div>If it breaks</div>
+          <div>Tile goes black. Boxes and record fine.</div>
+          <div>Boxes freeze. <strong>Video keeps playing.</strong></div>
+          <div>Console goes stale. Video and boxes fine.</div>
+        </div>
+      </div>
+      <div class="plate-ft">
+        Read the last row as the design justification. Three independent failure modes,
+        none of which takes the others down, is what the split buys you.
+      </div>
+    </div>
+
+    <h3>Why boxes are never stored</h3>
+    <div class="col">
+      <p>
+        At 8 fps across four cameras with three subjects in view, the box channel is roughly
+        a hundred detections a second. Writing those anywhere durable would dwarf the event
+        log by four orders of magnitude and destroy the property that makes the current design
+        work — that the database stays small enough to live at a remote post.
+      </p>
+      <p>
+        The boxes exist for exactly one purpose: drawing a rectangle on a screen someone is
+        looking at right now. The moment nobody is watching, they are worthless. What survives
+        is what the fence decided about them — and that is already modelled, already durable,
+        and already only a few rows per minute.
+      </p>
+    </div>
+
+    <div class="note">
+      <span class="note-k">Sequencing advantage</span>
+      <p>
+        IBVAP's evidence is geometry, not frames. The incident review overlay replays a walked
+        path against a zone shape — it needs no video at all and no clock alignment. So live
+        video and box-overlay precision are <strong>separable milestones</strong>. You can ship
+        a live tile with zone outlines and no boxes at all, and the forensic path is untouched.
+      </p>
+    </div>
+  </section>
+
+  <hr class="div">
+
+  <!-- ============================================ SYNTHETIC -->
+  <section id="synthetic">
+    <p class="eyebrow">v0 sources</p>
+    <h2>Clips on a loop, indistinguishable downstream</h2>
+
+    <div class="col">
+      <p class="lead">
+        No cameras yet, so the media hub gets fed by ffmpeg reading video files in a loop.
+        The point is not that it is easy — it is that it enters at the same place a camera
+        will, so nothing downstream can tell the difference.
+      </p>
+      <p>
+        This is the same move the repo already makes one layer up. <code>src/sim/simulator.ts</code>
+        posts through <code>ingestDetections</code>, the identical function the HTTP hook calls,
+        so the fence cannot tell a simulated walker from a real one. The clip loop does that
+        for the <em>media</em> layer: MediaMTX publishes a path called <code>cam_fence_north</code>,
+        and whether that path is fed by ffmpeg or by a camera on the wall is invisible to
+        every reader.
+      </p>
+    </div>
+
+    <div class="code">
+      <div class="code-hd"><b>mediamtx.yml</b> — v0, synthetic</div>
+<pre><span class="k">paths</span>:
+  <span class="n">cam_fence_north</span>:
+    <span class="c"># -re     read at native frame rate, or ffmpeg blasts the whole</span>
+    <span class="c">#         file through in seconds and the "camera" runs at 400×</span>
+    <span class="c"># -c:v copy  no transcode; requires the clip to already be H.264</span>
+    <span class="k">runOnInit</span>: <span class="s">&gt;
+      ffmpeg -re -stream_loop -1 -i /clips/fence_north.mp4
+             -c:v copy -an -f rtsp
+             rtsp://127.0.0.1:$RTSP_PORT/$MTX_PATH</span>
+    <span class="k">runOnInitRestart</span>: <span class="s">yes</span>
+
+  <span class="n">cam_farm_gate</span>:
+    <span class="k">runOnInit</span>: <span class="s">&gt;
+      ffmpeg -re -stream_loop -1 -i /clips/farm_gate.mp4
+             -c:v copy -an -f rtsp
+             rtsp://127.0.0.1:$RTSP_PORT/$MTX_PATH</span>
+    <span class="k">runOnInitRestart</span>: <span class="s">yes</span>
+</pre>
+    </div>
+
+    <div class="code">
+      <div class="code-hd"><b>mediamtx.yml</b> — the day a camera arrives</div>
+<pre><span class="k">paths</span>:
+  <span class="n">cam_fence_north</span>:
+    <span class="k">source</span>: <span class="s">rtsp://admin:••••@10.0.0.14:554/Streaming/Channels/102</span>
+    <span class="c"># channel 102 = substream. 101 would be the main stream.</span>
+</pre>
+    </div>
+
+    <div class="col">
+      <p>
+        That is the entire migration. One block of config per camera, the path name unchanged,
+        the ffmpeg processes deleted. The vision service still pulls
+        <code>rtsp://127.0.0.1:8554/cam_fence_north</code>; the browser still asks for the same
+        WHEP endpoint; the seeded <code>camera.id</code> rows in SQLite still line up.
+      </p>
+    </div>
+
+    <h3>Choosing the clips</h3>
+    <div class="col">
+      <p>
+        The clips are test fixtures and should be picked like fixtures — each one should make
+        a specific behaviour observable. The scenario list in <code>src/sim/simulator.ts</code>
+        is already the right inventory, and the negatives matter more than the positives:
+        footage of cattle crossing a fence line proves the log-only routing works;
+        a person stepping over and straight back proves flicker rejection works. Those are
+        harder to demonstrate and more convincing than an intruder walking through.
+      </p>
+    </div>
+
+    <div class="note warn">
+      <span class="note-k">Pin the codec</span>
+      <p>
+        Encode the clips as <strong>H.264</strong>, not H.265. WebRTC in most browsers will not
+        accept HEVC, so an H.265 source forces MediaMTX to transcode every stream — spending
+        exactly the CPU you wanted for inference. The same trap waits on real hardware, where
+        plenty of modern IP cameras ship H.265 by default and have to be reconfigured.
+      </p>
+    </div>
+  </section>
+
+  <hr class="div">
+
+  <!-- ============================================ SPLIT -->
+  <section id="split">
+    <p class="eyebrow">The two halves</p>
+    <h2>What each side owns</h2>
+
+    <div class="col">
+      <p class="lead">
+        You described the backend as two submodules — one doing detection and analysis,
+        one storing actions. That is the right cut. Here is where the line falls.
+      </p>
+    </div>
+
+    <div class="tw">
+      <table>
+        <thead>
+          <tr><th>&nbsp;</th><th>Vision service</th><th>Edge node</th></tr>
+        </thead>
+        <tbody>
+          <tr><td class="k">code</td><td class="k">ibvap/ · Python</td><td class="k">backend/ · Bun + TS</td></tr>
+          <tr><td class="k">knows about</td><td>Pixels, boxes, track identity</td><td>Zones, direction, severity, people</td></tr>
+          <tr><td class="k">answers</td><td>"There is a person at (0.48, 0.74)"</td><td>"That person crossed the fence inbound, and it matters"</td></tr>
+          <tr><td class="k">state</td><td>Tracker state in RAM only</td><td>Fence memory in RAM; everything else in SQLite</td></tr>
+          <tr><td class="k">on restart</td><td class="yes">Loses nothing that matters</td><td>Loses pending crossings; record intact</td></tr>
+          <tr><td class="k">may crash</td><td class="yes">Freely. Supervisor restarts it.</td><td class="no">Should not. It holds the audit chain.</td></tr>
+          <tr><td class="k">scales by</td><td>Cameras × fps × model cost</td><td>Events per minute — trivially small</td></tr>
+          <tr><td class="k">talks to</td><td>MediaMTX (RTSP in), edge node (HTTP out), browser (WS out)</td><td>SQLite, browser (SSE out)</td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <div class="col">
+      <p>
+        The asymmetry in the "may crash" row is the reason to keep them as separate processes
+        rather than one. The vision service is doing the risky work — decoding untrusted
+        streams, running a model, managing GPU or thread pools. It should be disposable.
+        The edge node is doing the work that must not be lost, and it should be the boring
+        process that stays up for weeks.
+      </p>
+    </div>
+
+    <h3>The seam already exists</h3>
+    <div class="col">
+      <p>
+        Nothing in <code>src/l2</code>, <code>src/l3</code> or <code>src/l4</code> changes.
+        The vision service POSTs to <code>/hooks/ingress/detections</code> — the endpoint the
+        README already describes as the one a real detector will point at. The simulator stays
+        exactly where it is, because it is still the only way to reproduce a flicker on demand.
+      </p>
+    </div>
+
+    <div class="note">
+      <span class="note-k">Keep the simulator</span>
+      <p>
+        When real feeds land, do not delete <code>src/sim/simulator.ts</code>. It becomes the
+        test harness and the offline demo mode, and it costs nothing to keep because it goes
+        through the same door as everything else. A clip loop gives you repeatable
+        <em>footage</em>; the simulator gives you repeatable <em>geometry</em>, which is what
+        the fence tests actually assert on.
+      </p>
+    </div>
+  </section>
+
+  <hr class="div">
+
+  <!-- ============================================ CONTRACTS -->
+  <section id="contracts">
+    <p class="eyebrow">Message shapes</p>
+    <h2>Two payloads, one bbox convention</h2>
+
+    <div class="col">
+      <p class="lead">
+        The single most important thing to settle before any code is written: there is
+        <strong>one</strong> bounding-box convention, and it is the one already in the codebase.
+      </p>
+    </div>
+
+    <div class="note warn">
+      <span class="note-k">Do not introduce a second convention</span>
+      <p>
+        The sketch payload used <code>[x1, y1, x2, y2]</code> in absolute pixels. The existing
+        <code>Detection</code> type in <code>src/core/types.ts</code> uses
+        <code>[x, y, w, h]</code> normalised 0..1, and the entire zone system depends on
+        normalisation — it is what lets a zone survive a camera swap, and what lets detection
+        run on a 640×360 substream while display runs at 1080p.
+      </p>
+      <p>
+        Two conventions in one system is a bug factory: every boundary becomes a place where
+        someone forgets to convert, and the failure is silent because a wrong box still looks
+        like a box. Pick <code>[x, y, w, h]</code> normalised, everywhere, both channels.
+      </p>
+    </div>
+
+    <div class="code">
+      <div class="code-hd">Cold path — <b>POST /hooks/ingress/detections</b> · ~8 fps · already implemented</div>
+<pre>{
+  <span class="s">"camera_id"</span>:    <span class="s">"cam_fence_north"</span>,
+  <span class="s">"occurred_at"</span>:  <span class="s">"2026-09-06T10:41:03.120Z"</span>,   <span class="c">// wall clock, for display + storage</span>
+  <span class="s">"capture_mono"</span>: <span class="n">88231.412</span>,                  <span class="c">// NEW — monotonic, for confirm maths</span>
+  <span class="s">"simulated"</span>:    <span class="k">true</span>,                       <span class="c">// clip loop is still "simulated"</span>
+  <span class="s">"source_id"</span>:    <span class="s">"vision.worker.r7c2"</span>,
+  <span class="s">"detections"</span>: [
+    { <span class="s">"track_ref"</span>:  <span class="s">"r7c2:14"</span>,               <span class="c">// NEW — run-scoped, see fix 01</span>
+      <span class="s">"class"</span>:      <span class="s">"person"</span>,
+      <span class="s">"confidence"</span>: <span class="n">0.86</span>,
+      <span class="s">"bbox"</span>:       [<span class="n">0.48</span>, <span class="n">0.74</span>, <span class="n">0.045</span>, <span class="n">0.16</span>] }   <span class="c">// x, y, w, h — normalised</span>
+  ]
+}</pre>
+    </div>
+
+    <div class="code">
+      <div class="code-hd">Hot path — <b>WS frame</b> · vision → browser · ephemeral, never stored</div>
+<pre>{
+  <span class="s">"t"</span>:            <span class="s">"boxes"</span>,
+  <span class="s">"camera_id"</span>:    <span class="s">"cam_fence_north"</span>,
+  <span class="s">"capture_mono"</span>: <span class="n">88231.412</span>,
+  <span class="s">"boxes"</span>: [
+    { <span class="s">"track_ref"</span>:  <span class="s">"r7c2:14"</span>,
+      <span class="s">"class"</span>:      <span class="s">"person"</span>,
+      <span class="s">"confidence"</span>: <span class="n">0.86</span>,
+      <span class="s">"bbox"</span>:       [<span class="n">0.48</span>, <span class="n">0.74</span>, <span class="n">0.045</span>, <span class="n">0.16</span>] }
+  ]
+}
+
+<span class="c">// client → server, so one socket can serve a changing tile layout</span>
+{ <span class="s">"t"</span>: <span class="s">"subscribe"</span>,   <span class="s">"cameras"</span>: [<span class="s">"cam_fence_north"</span>, <span class="s">"cam_farm_gate"</span>] }
+{ <span class="s">"t"</span>: <span class="s">"unsubscribe"</span>, <span class="s">"cameras"</span>: [<span class="s">"cam_farm_gate"</span>] }</pre>
+    </div>
+
+    <h3>What the box channel deliberately does not carry</h3>
+    <div class="col">
+      <p>
+        No zone state, no severity, no incident id. The vision service does not know what a
+        zone is and should not learn — that knowledge lives one layer up, and pushing it down
+        would put force-specific configuration into the pixel pipeline.
+      </p>
+      <p>
+        So the live overlay is composed from three sources rather than one: neutral boxes from
+        the WS, static zone outlines from <code>/api/config</code>, and a flash on the zone when
+        an event arrives over SSE. That is also why the two frontend channels stay separate
+        rather than being merged into one socket — they come from different processes and mean
+        different things.
+      </p>
+    </div>
+  </section>
+
+  <hr class="div">
+
+  <!-- ============================================ FIXES -->
+  <section id="fixes">
+    <p class="eyebrow">Prerequisites</p>
+    <h2>Four things in the current code that real feeds break</h2>
+
+    <div class="col">
+      <p class="lead">
+        All four are invisible today because the simulator is well-behaved: it never
+        recycles a track id, it shares a clock with the backend, and it runs at 4 fps.
+        A real detector is none of those things.
+      </p>
+    </div>
+
+    <div style="max-width:1000px">
+      <div class="frow">
+        <div class="frow-id">01</div>
+        <div class="frow-b">
+          <h5>Track ids get recycled</h5>
+          <p>
+            Real trackers — ByteTrack, BoT-SORT, DeepSORT — reuse integer ids once a track dies,
+            and reset to 1 on worker restart. Two different people will land on the same row,
+            and the second will inherit the first's zone-crossing state, including a pending
+            crossing waiting to confirm.
+          </p>
+          <p class="where"><b>where</b> &nbsp;fence.ts:58 <code>trackKey</code> · schema.sql:148 <code>UNIQUE(camera_id, track_ref)</code></p>
+          <p class="fix"><b>fix</b> &nbsp;Namespace the ref with a per-run id from the vision service — <code>r7c2:14</code> rather than <code>14</code>. Cheap, and it makes worker restarts safe by construction.</p>
+        </div>
+      </div>
+
+      <div class="frow">
+        <div class="frow-id">02</div>
+        <div class="frow-b">
+          <h5>Wait-and-confirm runs on wall-clock arithmetic</h5>
+          <p>
+            The confirm state machine measures held time by differencing parsed timestamps.
+            On a post with no NTP, a clock step makes a pending crossing either confirm instantly
+            or never confirm at all — and the whole point of the seconds-not-frames design was
+            that the setting means the same thing everywhere.
+          </p>
+          <p class="where"><b>where</b> &nbsp;fence.ts:347 <code>Date.parse(frame.occurred_at) / 1000</code></p>
+          <p class="fix"><b>fix</b> &nbsp;Carry <code>capture_mono</code> on the frame and use it for the confirm maths. Wall clock stays for <code>occurred_at</code>, storage and display only.</p>
+        </div>
+      </div>
+
+      <div class="frow">
+        <div class="frow-id">03</div>
+        <div class="frow-b">
+          <h5>A SQLite write per detection per frame</h5>
+          <p>
+            <code>upsertTrack</code> re-serialises the whole path to JSON and UPDATEs on every
+            detection of every frame. At four cameras × 8 fps × three subjects that is around
+            a hundred writes a second. The interesting part: nothing reads that column —
+            <code>evidence.path</code> is built from the in-memory <code>track.path</code> at
+            emit time, so the write is very nearly pure cost.
+          </p>
+          <p class="where"><b>where</b> &nbsp;fence.ts:103 <code>UPDATE tracked_thing SET last_seen …</code></p>
+          <p class="fix"><b>fix</b> &nbsp;Drop the per-frame write, or batch it on an interval. Persist the path once at emit time, where it is actually read.</p>
+        </div>
+      </div>
+
+      <div class="frow">
+        <div class="frow-id">04</div>
+        <div class="frow-b">
+          <h5>Camera credentials would leak through /api/config</h5>
+          <p>
+            RTSP URLs embed credentials — <code>rtsp://admin:password@10.0.0.14/…</code>. The
+            <code>camera.stream_url</code> column exists and is unused; populating it with a real
+            URL hands camera passwords to every browser that loads the console, and there is no
+            auth on that route.
+          </p>
+          <p class="where"><b>where</b> &nbsp;schema.sql:37 <code>stream_url</code> · server.ts <code>/api/config</code></p>
+          <p class="fix"><b>fix</b> &nbsp;The frontend receives a hub path name only. The real URL lives in the MediaMTX config, server-side, and never enters SQLite or an API response.</p>
+        </div>
+      </div>
+    </div>
+
+    <div class="note hold">
+      <span class="note-k">Worth doing now</span>
+      <p>
+        Fixes 01 and 02 are cheap while the simulator is the only producer and expensive once
+        a real tracker is attached — they change the shape of data crossing the ingress hook.
+        Do them before wiring the vision service, not after.
+      </p>
+    </div>
+  </section>
+
+  <hr class="div">
+
+  <!-- ============================================ OPEN -->
+  <section id="open">
+    <p class="eyebrow">Decisions</p>
+    <h2>Open calls, with a recommendation each</h2>
+
+    <div class="cards two">
+      <div class="card">
+        <div class="card-k"><span>Transport</span><em>boxes</em></div>
+        <span class="rec">Rec — WebSocket</span>
+        <h5>WS or a second SSE stream?</h5>
+        <p>
+          SSE would work and the infrastructure exists. WS earns its place on one thing only:
+          the client can talk back, so a console showing one tile fullscreen can unsubscribe
+          from the other seven cameras' boxes.
+        </p>
+        <p>
+          At four cameras that saving is nothing. At sixteen it is the difference between a
+          usable console and a busy one. Take WS now because retrofitting subscription
+          control later means changing both ends.
+        </p>
+      </div>
+
+      <div class="card">
+        <div class="card-k"><span>Routing</span><em>boxes</em></div>
+        <span class="rec">Rec — direct from vision</span>
+        <h5>Boxes via the edge node, or straight to the browser?</h5>
+        <p>
+          Routing through the edge node gives the frontend a single origin and one CORS config.
+          But it puts a hundred messages a second through the process that owns the audit chain,
+          for no benefit — the edge node has nothing to add to a raw box.
+        </p>
+        <p>
+          Direct from the vision service keeps per-frame traffic entirely out of the durable-record
+          process, and gives you the failure isolation in Plate B.
+        </p>
+      </div>
+
+      <div class="card">
+        <div class="card-k"><span>Sync</span><em>overlay</em></div>
+        <span class="rec">Rec — best-effort in v0</span>
+        <h5>How closely must boxes track the video?</h5>
+        <p>
+          WebRTC frame timestamps and detection timestamps live in different clocks, and
+          reconciling them properly means a detection ring buffer keyed on capture time plus
+          <code>requestVideoFrameCallback</code>.
+        </p>
+        <p>
+          For v0, draw the latest box set for each camera over the current frame. Sub-100ms
+          misalignment on a walking person is invisible. Revisit only if someone actually
+          complains — and remember the forensic overlay never had this problem at all.
+        </p>
+      </div>
+
+      <div class="card">
+        <div class="card-k"><span>Rate</span><em>inference</em></div>
+        <span class="rec">Rec — 5–8 fps</span>
+        <h5>How fast does detection need to run?</h5>
+        <p>
+          A person walks about 1.5 m/s. At 8 fps that is under 20 cm between frames — far
+          finer than the tracker needs, and finer than the fence's confirm window cares about.
+        </p>
+        <p>
+          Decoding every frame at 25 fps to throw four-fifths away is the single easiest way to
+          run out of CPU. Decode at the rate you infer at.
+        </p>
+      </div>
+    </div>
+
+    <h3>Still needed from you</h3>
+    <div class="col">
+      <ul class="tight">
+        <li><strong>Edge hardware</strong> — CPU-only x86, or Jetson / discrete GPU? Sets how many streams decode in parallel and whether 8 fps across four cameras is comfortable or marginal.</li>
+        <li><strong>Model choice</strong> — this paper assumes a single-stage detector plus a lightweight tracker, which is what <code>ibvap/core/person.py</code> implies. Worth confirming before the fps budget above means anything.</li>
+        <li><strong>Console location</strong> — same LAN as the edge box, always? If the console might ever run off-site, WebRTC needs STUN/TURN and the topology grows a hop.</li>
+        <li><strong>Tile count</strong> — how many cameras visible at once on one screen? Four tiles of WHEP is unremarkable; sixteen needs thought about decode load in the browser.</li>
+      </ul>
+    </div>
+  </section>
+
+  <hr class="div">
+
+  <!-- ============================================ FAILURE -->
+  <section id="failure">
+    <p class="eyebrow">Operations</p>
+    <h2>What each process taking down looks like</h2>
+
+    <div class="col">
+      <p class="lead">
+        The schema already models a blindness ladder — <code>FULL · DEGRADED · MOTION_ONLY ·
+        RECORD_ONLY · DEAD</code> on the camera row — which is currently decorative because
+        nothing produces the signal. Real streams produce it.
+      </p>
+    </div>
+
+    <div class="tw">
+      <table>
+        <thead>
+          <tr><th>Dies</th><th>Operator sees</th><th>Still working</th><th>Drives status to</th></tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td class="k">ffmpeg clip loop</td>
+            <td>One tile goes black</td>
+            <td>Everything else, including other cameras</td>
+            <td class="k">DEAD</td>
+          </tr>
+          <tr>
+            <td class="k">MediaMTX</td>
+            <td>All tiles black, no detections</td>
+            <td>Console, history, audit — the record is intact</td>
+            <td class="k">DEAD <span style="color:var(--ink-3)">(all)</span></td>
+          </tr>
+          <tr>
+            <td class="k">vision service</td>
+            <td class="yes">Video keeps playing. Boxes freeze.</td>
+            <td>Video, console, history, audit</td>
+            <td class="k">DEGRADED</td>
+          </tr>
+          <tr>
+            <td class="k">edge node</td>
+            <td>Console stale; no new incidents</td>
+            <td>Video, boxes — the picture is still live</td>
+            <td class="k">RECORD_ONLY</td>
+          </tr>
+          <tr>
+            <td class="k">inference falls behind</td>
+            <td>Boxes lag visibly, then thin out</td>
+            <td>Everything, at reduced detection rate</td>
+            <td class="k">MOTION_ONLY</td>
+          </tr>
+          <tr>
+            <td class="k">browser reloads</td>
+            <td>Momentary blank, then recovery</td>
+            <td>All three channels reconnect</td>
+            <td class="k">— <span style="color:var(--ink-3)">no change</span></td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+
+    <div class="col">
+      <p>
+        Two rows are worth dwelling on. <strong>The vision service dying leaves the picture
+        live</strong> — an operator can still watch the fence with their own eyes while the
+        detector restarts, which is a meaningfully better failure than a black screen.
+        And <strong>the browser reload row is free</strong>: WHEP renegotiates, the WS reconnects,
+        and the SSE stream replays missed events via <code>?after_seq=</code>, which the event
+        table's monotonic <code>seq</code> was built for.
+      </p>
+    </div>
+
+    <div class="note">
+      <span class="note-k">The supervisor's real job</span>
+      <p>
+        Not much, in v0. MediaMTX's <code>runOnInitRestart</code> handles the clip loops itself,
+        so the supervisor reduces to a camera manifest plus whatever restarts the vision service
+        — systemd, a compose file, or a twenty-line Python parent. The interesting work is the
+        column above: turning process liveness into the <code>camera.status</code> the operator
+        screen already knows how to display.
+      </p>
+    </div>
+  </section>
+
+  <hr class="div">
+
+  <!-- ============================================ ORDER -->
+  <section id="order">
+    <p class="eyebrow">Sequencing</p>
+    <h2>Build order</h2>
+
+    <div class="col">
+      <p class="lead">
+        Ordered so that each milestone is demonstrable on its own and nothing is built
+        against an interface that has not been proven yet.
+      </p>
+    </div>
+
+    <ol class="steps" style="max-width:1000px">
+      <li><div class="sb">
+        <h5>Fix the two shape-changing prerequisites</h5>
+        <p>Run-scoped <code>track_ref</code> and <code>capture_mono</code> on the ingress frame. Update the simulator to emit both — it is the cheapest place to prove the new shape works, and the fence tests will catch anything that moves.</p>
+      </div></li>
+      <li><div class="sb">
+        <h5>MediaMTX with clip loops, nothing consuming it</h5>
+        <p>Four paths, four looping clips, verified with <code>ffplay rtsp://…</code>. No code written yet. Confirms codec, frame rate, and that <code>-c:v copy</code> holds.</p>
+      </div></li>
+      <li><div class="sb">
+        <h5>Video in the browser, no boxes</h5>
+        <p>One WHEP tile in the console with the zone outlines drawn over it from <code>/api/config</code>. This is already a real demo — live video with the virtual fence visible on it — and it needs no detector at all.</p>
+      </div></li>
+      <li><div class="sb">
+        <h5>Vision service → ingress hook</h5>
+        <p>Python worker pulls RTSP, detects, tracks, POSTs frames. The console's existing incident list starts filling from real footage. <span class="done">The seam is already built for this.</span></p>
+      </div></li>
+      <li><div class="sb">
+        <h5>Box channel over WS</h5>
+        <p>Add the WS server to the vision service, the canvas overlay to the tile. Best-effort sync. This is the last piece and the most visible one, which is exactly why it goes last.</p>
+      </div></li>
+      <li><div class="sb">
+        <h5>Health signal → camera.status</h5>
+        <p>Wire stream and worker liveness into the blindness ladder, so the console can say out loud where it is blind rather than failing quietly.</p>
+      </div></li>
+    </ol>
+
+    <div class="note">
+      <span class="note-k">Note on M3</span>
+      <p>
+        Milestone 3 is worth calling out separately: live video with zone outlines and no
+        detection is a complete, showable artefact that depends on none of the hard parts.
+        If a demo is coming before the model is ready, that is the thing to have working.
+      </p>
+    </div>
+  </section>
+
+  <hr class="div">
+
+  <!-- ============================================ NOT V0 -->
+  <section id="notv0">
+    <p class="eyebrow">Scope</p>
+    <h2>Deliberately not in v0</h2>
+
+    <div class="col">
+      <p class="lead">
+        Written down so they are decisions rather than omissions. Each one is a thing the
+        architecture leaves room for and does not build.
+      </p>
+    </div>
+
+    <div class="cards three">
+      <div class="card">
+        <div class="card-k"><span>Auth</span></div>
+        <h5>No real logins</h5>
+        <p>The <code>x-ibvap-actor</code> header stays. The property that matters — no write path is anonymous — already holds, and it is the part that would be expensive to add later.</p>
+      </div>
+      <div class="card">
+        <div class="card-k"><span>Storage</span></div>
+        <h5>No video recording</h5>
+        <p>Evidence stays geometry. Adding continuous recording is a MediaMTX config change, but it makes a retention sweeper urgent, and disk is where video goes to eat a post alive.</p>
+      </div>
+      <div class="card">
+        <div class="card-k"><span>Sync</span></div>
+        <h5>No frame-accurate overlay</h5>
+        <p>Best-effort boxes. The forensic path never needed alignment, so this only ever affects the live tile.</p>
+      </div>
+      <div class="card">
+        <div class="card-k"><span>Vision</span></div>
+        <h5>No cross-camera re-ID</h5>
+        <p>The <code>same_as</code> column exists and stays empty. Real appearance features are a v2 problem and a much heavier model.</p>
+      </div>
+      <div class="card">
+        <div class="card-k"><span>Network</span></div>
+        <h5>No STUN/TURN</h5>
+        <p>Console and edge box on the same LAN. Off-site viewing changes the topology and is worth pricing separately.</p>
+      </div>
+      <div class="card">
+        <div class="card-k"><span>Distribution</span></div>
+        <h5>No post-to-HQ sync</h5>
+        <p>Still one box. <code>?after_seq=</code> is already the right primitive when it comes, which is why it exists now.</p>
+      </div>
+    </div>
+
+    <div class="foot">
+      IBVAP — Live Feed Path · v0 runtime architecture · ideation<br>
+      Companion to IBVAP_brief.html · media plane, L1 vision, transport<br>
+      Assumes: no cameras yet · single edge box · console on the same LAN · H.264 sources
+    </div>
+  </section>
+
+</div>
+
+</body>
+</html>
