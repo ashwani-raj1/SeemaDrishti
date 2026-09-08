@@ -3,6 +3,7 @@
  * configuration file -- nothing else. All data comes from the edge node.
  */
 import { serve } from "bun";
+import { join } from "node:path";
 import index from "./index.html";
 
 const PORT = Number(process.env.PORT ?? 3000);
@@ -21,6 +22,15 @@ const server = serve({
       // Absent is not an error -- it means "run the defaults".
       if (!(await file.exists())) return new Response("{}", { headers: { "content-type": "application/json" } });
       return new Response(file, { headers: { "content-type": "application/json" } });
+    },
+
+    "/assets/*": async (req) => {
+      const pathname = new URL(req.url).pathname.replace(/^\/assets\//, "");
+      const file = Bun.file(join(import.meta.dir, "assets", pathname));
+      if (await file.exists()) {
+        return new Response(file);
+      }
+      return new Response("Not found", { status: 404 });
     },
 
     // Client-side routing: every path is the app.

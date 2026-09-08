@@ -68,3 +68,103 @@
     filter: invert(1) hue-rotate(180deg) brightness(0.92) contrast(0.9);
   }
 }
+
+/*
+ * Antigravity Signature Dark Theme (Warm Yellowish-Black / Obsidian Aesthetic)
+ * Overrides cold blue slate with rich warm dark amber/yellowish charcoal and ivory text.
+ */
+.dark,
+.dark body,
+.dark #root {
+  background-color: #12110c !important;
+  color: #f7f4ec !important;
+}
+
+/* Page background container */
+.dark .dark\:bg-slate-950\/40,
+.dark .dark\:bg-slate-950,
+.dark [class*="dark:bg-slate-950"] {
+  background-color: #12110c !important;
+}
+
+/* Card surfaces */
+.dark .dark\:bg-slate-900\/95,
+.dark .dark\:bg-slate-900,
+.dark [class*="dark:bg-slate-900"] {
+  background-color: #191811 !important;
+}
+
+/* Buttons, inputs, chips, badges */
+.dark .dark\:bg-slate-800\/80,
+.dark .dark\:bg-slate-800\/60,
+.dark .dark\:bg-slate-800,
+.dark [class*="dark:bg-slate-800"] {
+  background-color: #24221a !important;
+}
+
+.dark .dark\:bg-slate-700,
+.dark [class*="dark:bg-slate-700"] {
+  background-color: #333024 !important;
+}
+
+/* Borders */
+.dark .dark\:border-slate-800\/80,
+.dark .dark\:border-slate-800,
+.dark [class*="dark:border-slate-800"] {
+  border-color: #2a271e !important;
+}
+
+.dark .dark\:border-slate-700\/60,
+.dark .dark\:border-slate-700,
+.dark [class*="dark:border-slate-700"] {
+  border-color: #383528 !important;
+}
+
+/* Hover states */
+.dark .dark\:hover\:bg-slate-800:hover,
+.dark [class*="dark:hover:bg-slate-800"]:hover {
+  background-color: #2c2a20 !important;
+}
+
+.dark .dark\:hover\:bg-slate-700:hover,
+.dark [class*="dark:hover:bg-slate-700"]:hover {
+  background-color: #3a3729 !important;
+}
+
+/* Warm text hierarchy */
+.dark .dark\:text-slate-100,
+.dark [class*="dark:text-slate-100"] {
+  color: #faf7f0 !important;
+}
+
+.dark .dark\:text-slate-200,
+.dark [class*="dark:text-slate-200"] {
+  color: #eae5d7 !important;
+}
+
+.dark .dark\:text-slate-300,
+.dark [class*="dark:text-slate-300"] {
+  color: #cfc8b5 !important;
+}
+
+.dark .dark\:text-slate-400,
+.dark [class*="dark:text-slate-400"] {
+  color: #a49d86 !important;
+}
+
+.dark .dark\:text-slate-500,
+.dark [class*="dark:text-slate-500"] {
+  color: #7b7460 !important;
+}
+
+/* Sidebar and Shell in Antigravity Dark Mode */
+.dark [data-slot="sidebar"],
+.dark aside[data-slot="sidebar"] {
+  background-color: #14130d !important;
+  border-color: #25231a !important;
+}
+
+.dark main[data-slot="sidebar-inset"] {
+  background-color: #12110c !important;
+}
+

@@ -36,7 +36,7 @@ export interface BasemapConfig {
 }
 
 export interface ClientConfig {
-  brand: { name: string; short: string; tagline?: string };
+  brand: { name: string; short: string; tagline?: string; subSector?: string; motto?: string };
   /** Where the edge node is. Same origin by default. */
   apiBase: string;
   /** Section id -> enabled. Omitted means "use the registry default". */

@@ -15,15 +15,16 @@ import { canUse, DEFAULT_PATH, enabledSections } from "@/features/registry";
 import { LiveDot } from "@/components/ibvap/live-dot";
 import { RoleGate } from "@/components/ibvap/states";
 import { AppSidebar } from "./sidebar";
+import { CommandHeader } from "./header";
 
 export function AppShell() {
   return (
     <TooltipProvider delayDuration={200}>
       <SidebarProvider>
         <AppSidebar />
-        <SidebarInset>
-          <Header />
-          <div className="flex-1 overflow-auto">
+        <SidebarInset className="h-screen overflow-hidden flex flex-col">
+          <CommandHeader />
+          <div className="flex-1 min-h-0 overflow-hidden flex flex-col">
             <Outlet />
           </div>
         </SidebarInset>
