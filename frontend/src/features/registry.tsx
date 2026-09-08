@@ -31,6 +31,7 @@ import { CamerasScreen } from "./cameras/screen";
 import { CameraPage } from "./cameras/page";
 import { SimulatorScreen } from "./simulator/screen";
 import { SectorMapScreen } from "./map/screen";
+import { WatchlistScreen } from "./watchlist/screen";
 
 export type { SectionGroup };
 export { GROUP_ORDER, canUse };
@@ -208,14 +209,8 @@ export const SECTIONS: Section[] = [
     icon: CarFrontIcon,
     path: "/watchlist",
     minRole: "supervisor",
-    backed: false,
-    element: (
-      <NotWired
-        label="Plate watchlist"
-        item="#36 — checking a read plate against a flagged-vehicle list, which runs against a clearly labelled mock registry because no real one is available"
-        waitingOn="GET /api/watchlist"
-      />
-    ),
+    backed: true,
+    element: <WatchlistScreen />,
   },
 
   // --------------------------------------------------------------- Platform

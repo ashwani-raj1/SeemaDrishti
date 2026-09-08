@@ -54,6 +54,7 @@ class StreamReader:
         self.frames_read = 0
         self.frames_dropped = 0
         self.reconnects = 0
+        self.loop_restarts = 0
         self.last_frame_time = 0.0
 
     def start(self):
@@ -77,7 +78,12 @@ class StreamReader:
         while self._running:
             if not cap.isOpened():
                 # Camera failure path. Real BOP cameras drop out constantly.
-                self.reconnects += 1
+                if self.loop and not self.drop:
+                    # A demo file looping is intentional playback, not a lost
+                    # camera connection. Keep it out of health reporting.
+                    self.loop_restarts += 1
+                else:
+                    self.reconnects += 1
                 time.sleep(self.reconnect_delay)
                 cap.release()
                 cap = self._open()
@@ -136,6 +142,7 @@ class StreamReader:
             "frames_dropped": self.frames_dropped,
             "drop_rate": round(self.frames_dropped / total, 3),
             "reconnects": self.reconnects,
+            "loop_restarts": self.loop_restarts,
             "age_s": round(time.time() - self.last_frame_time, 2)
             if self.last_frame_time else None,
         }

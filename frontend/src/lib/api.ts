@@ -6,9 +6,10 @@
  * header is attached here rather than remembered at each call site.
  */
 import type {
-  Action, CameraDetail, CameraIncidents, ChainVerdict, Decision, Health,
-  IbvapEvent, Incident, IncidentDetail, MonitoringZone, Point, ServerConfig,
-  SimStatus,
+  Action, CameraDetail, CameraIncidents, ChainVerdict, CreateWatchlistInput,
+  Decision, DetectVehicleInput, FrameAnalysisResult, Health, IbvapEvent, Incident,
+  IncidentDetail, MonitoringZone, PlateDetection, Point, ServerConfig, SimStatus,
+  UpdateWatchlistInput, WatchlistEntry, WatchlistStats,
 } from "./types";
 
 /**
@@ -212,4 +213,24 @@ export const api = {
   simStop: () => post<SimStatus>("/api/sim/stop"),
   simScenario: (name: string) =>
     post<{ spawned: unknown; status: SimStatus }>("/api/sim/scenario", { name }),
+
+  // ---- watchlist & vehicle/plate detection (#36) ----------------------
+
+  watchlist: (params: { search?: string; severity?: string; active?: boolean; limit?: number } = {}) =>
+    request<WatchlistEntry[]>(`/api/watchlist${qs(params)}`),
+  watchlistEntry: (id: string) => request<WatchlistEntry>(`/api/watchlist/${id}`),
+  createWatchlistEntry: (body: CreateWatchlistInput) => post<WatchlistEntry>("/api/watchlist", body),
+  updateWatchlistEntry: (id: string, patch: UpdateWatchlistInput) =>
+    request<WatchlistEntry>(`/api/watchlist/${id}`, { method: "PATCH", body: JSON.stringify(patch) }),
+  deleteWatchlistEntry: (id: string, reason: string) =>
+    request<{ ok: true }>(`/api/watchlist/${id}`, { method: "DELETE", body: JSON.stringify({ reason }) }),
+  watchlistStats: () => request<WatchlistStats>("/api/watchlist/stats"),
+  plateDetections: (params: { match_status?: string; camera_id?: string; plate?: string; limit?: number } = {}) =>
+    request<PlateDetection[]>(`/api/watchlist/detections${qs(params)}`),
+  detectVehicleAndPlate: (body: DetectVehicleInput) => post<PlateDetection>("/api/watchlist/detect", body),
+  simulatePlateDetection: (preset?: string) => post<PlateDetection>("/api/watchlist/simulate", { preset }),
+  analyzeFrame: (body: { cameraId?: string; zoneId?: string | null; timeOffset?: number; simulated?: boolean } = {}) =>
+    post<FrameAnalysisResult>("/api/watchlist/analyze-frame", body),
 };
+
+

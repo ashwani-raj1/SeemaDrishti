@@ -6,7 +6,7 @@
  */
 import { apiUrl } from "./api";
 
-export type StreamKind = "event" | "incident" | "action" | "camera" | "hello";
+export type StreamKind = "event" | "incident" | "action" | "camera" | "hello" | "plate_detection" | "watchlist_change";
 
 /** Observed to prove the stream is alive, never dispatched to sections. */
 const HEARTBEAT = "heartbeat";
@@ -28,7 +28,7 @@ let state: StreamState = "connecting";
 /** The node beats every 15s; silence well past that means gone, not quiet. */
 let lastBeat = Date.now();
 
-const KINDS: StreamKind[] = ["event", "incident", "action", "camera", "hello"];
+const KINDS: StreamKind[] = ["event", "incident", "action", "camera", "hello", "plate_detection", "watchlist_change"];
 const STALE_AFTER_MS = 45_000;
 
 function setState(next: StreamState) {

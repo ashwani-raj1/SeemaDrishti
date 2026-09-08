@@ -30,3 +30,16 @@ export const humanise = (value: string) =>
 
 export const percent = (value: number | null | undefined) =>
   value === null || value === undefined ? "--" : `${Math.round(value * 100)}%`;
+
+export function formatPlate(raw: string): string {
+  if (!raw) return "";
+  const norm = raw.toUpperCase().replace(/[^A-Z0-9]/g, "").trim();
+  const match = norm.match(/^([A-Z]{2})(\d{1,2})([A-Z]{1,3})?(\d{1,4})$/);
+  if (match) {
+    const [, state, dist, series, num] = match;
+    const paddedDist = dist!.padStart(2, "0");
+    return `${state} ${paddedDist}${series ? ` ${series}` : ""} ${num}`;
+  }
+  return raw;
+}
+

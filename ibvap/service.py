@@ -6,7 +6,8 @@ IBVAP vision service — the L1 half of the backend.
     python ibvap/service.py --no-backend           # overlay only, no ingress
 
 WHAT THIS IS: the process that turns video into detections. It pulls RTSP from
-the media hub, runs YOLO11n + ByteTrack per camera, and emits the same
+the media hub, runs CPU-only YOLO11n + ByteTrack vehicle tracking and cascaded
+number-plate OCR per camera, and emits the same
 detections down two channels that have nothing else in common:
 
     hot   core/box_channel.py  -> browser   every detector call, ephemeral
@@ -48,7 +49,8 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from core.box_channel import BoxChannel
 from core.ingest import StreamReader
 from core.ingress_client import IngressClient, normalise
-from core.person import PersonTracker
+from core.vehicle import VehicleTracker
+from core.plate import PlateDetector
 from core.settings import Settings, cameras_for_this_machine
 
 
@@ -73,6 +75,7 @@ class CameraWorker(threading.Thread):
 
         self.reader = None
         self.tracker = None
+        self.plates = None
         self.ingress = None
         # NOT `_stop`: threading.Thread uses that name internally, and
         # shadowing it breaks join() with a confusing TypeError.
@@ -106,11 +109,12 @@ class CameraWorker(threading.Thread):
         # stream, the decoder buffer grows and a "live" feed silently goes
         # stale — the #1 cause of a collapsed demo (core/ingest.py).
         self.reader = StreamReader(url, name=self.id, drop=True).start()
-        self.tracker = PersonTracker(
+        self.tracker = VehicleTracker(
             weights=settings.weights,
             imgsz=settings.imgsz,
             conf=settings.conf,
         )
+        self.plates = PlateDetector()
         if self.post:
             self.ingress = IngressClient(
                 settings.backend_url,
@@ -144,14 +148,16 @@ class CameraWorker(threading.Thread):
                 capture_mono = time.monotonic()
 
                 t0 = time.monotonic()
-                persons = self.tracker.update(frame)
+                vehicles = self.tracker.update(frame)
+                for vehicle in vehicles:
+                    vehicle["plate"] = self.plates.read_for_vehicle(frame, vehicle)
                 self.detector_seconds += time.monotonic() - t0
                 self.detector_calls += 1
 
                 height, width = frame.shape[:2]
                 detections = [
-                    d for d in (normalise(p, width, height, self.run_id)
-                                for p in persons)
+                    d for d in (normalise(vehicle, width, height, self.run_id)
+                                for vehicle in vehicles)
                     if d is not None
                 ]
 
@@ -161,7 +167,7 @@ class CameraWorker(threading.Thread):
                 self.boxes.publish(self.id, detections, capture_mono)
 
                 if self.ingress:
-                    self.ingress.send(persons, frame.shape,
+                    self.ingress.send(vehicles, frame.shape,
                                       capture_mono=capture_mono,
                                       detections=detections)
         finally:

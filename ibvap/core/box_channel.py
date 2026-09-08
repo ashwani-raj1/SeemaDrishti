@@ -86,6 +86,7 @@ class BoxChannel:
         self.bind = bind
         self.port = port
         self.sent = 0
+        self._dropped_total = 0
         self._clients = set()
         self._loop = None
         self._thread = None
@@ -132,7 +133,7 @@ class BoxChannel:
         return {
             "clients": len(self._clients),
             "sent": self.sent,
-            "dropped": sum(c.dropped for c in self._clients),
+            "dropped": self._dropped_total + sum(c.dropped for c in self._clients),
         }
 
     def stop(self):
@@ -189,6 +190,9 @@ class BoxChannel:
         except Exception as e:                       # noqa: BLE001
             print(f"[boxes] client error: {e}")
         finally:
+            # Keep the number after a browser disconnects; otherwise a busy
+            # tab closing makes the run summary falsely report zero drops.
+            self._dropped_total += client.dropped
             self._clients.discard(client)
 
     async def _pump(self, client):

@@ -248,11 +248,197 @@ export function seed(): void {
     );
   }
 
+  // ------------------------------------------------------------- Watchlist (#36)
+  const WATCHLIST_SEEDS = [
+    {
+      id: "wl_scorpio_4821",
+      plate_number: "PB 02 AK 4821",
+      vehicle_type: "suv",
+      make_model: "Mahindra Scorpio-N",
+      color: "Black",
+      severity: "CRITICAL",
+      flag_reason: "Suspected contraband transport / BOLO alert from Amritsar Rural",
+      notes: "Armed occupants reported. Alert nearest QRT immediately if sighted.",
+      active: 1,
+      added_by: "Shift Supervisor",
+    },
+    {
+      id: "wl_tractor_9182",
+      plate_number: "PB 02 T 9182",
+      vehicle_type: "tractor",
+      make_model: "Swaraj 855 FE",
+      color: "Blue",
+      severity: "WARNING",
+      flag_reason: "Gate pass revoked — unauthorized fence perimeter movement",
+      notes: "Farmer identity dispute at Gate 4. Hold for verification.",
+      active: 1,
+      added_by: "Duty Operator",
+    },
+    {
+      id: "wl_fortuner_1111",
+      plate_number: "DL 1C AA 1111",
+      vehicle_type: "suv",
+      make_model: "Toyota Fortuner 4x4",
+      color: "White",
+      severity: "CRITICAL",
+      flag_reason: "Stolen vehicle linked to cross-border drone drop retrieval",
+      notes: "Spotted in Gurdaspur sector 48 hours ago.",
+      active: 1,
+      added_by: "Shift Supervisor",
+    },
+    {
+      id: "wl_truck_5512",
+      plate_number: "HR 26 DQ 5512",
+      vehicle_type: "truck",
+      make_model: "Tata 407 LPT",
+      color: "Silver",
+      severity: "WARNING",
+      flag_reason: "Unauthorized nighttime transit near zero line patrol road",
+      notes: "Check cargo manifest against site customs clearance.",
+      active: 1,
+      added_by: "Shift Supervisor",
+    },
+    {
+      id: "wl_brezza_7744",
+      plate_number: "PB 08 BX 7744",
+      vehicle_type: "car",
+      make_model: "Maruti Suzuki Brezza",
+      color: "Dark Blue",
+      severity: "INFO",
+      flag_reason: "Routine surveillance flag — frequent loitering near culvert 14",
+      notes: "Log sightings and occupants if stationary longer than 5 minutes.",
+      active: 1,
+      added_by: "Duty Operator",
+    },
+  ];
+
+  for (const wl of WATCHLIST_SEEDS) {
+    run(
+      `INSERT OR IGNORE INTO watchlist_entry
+         (id, org_id, plate_number, vehicle_type, make_model, color, severity, flag_reason, notes, active, added_by, created_at, updated_at)
+       VALUES ($id, $org, $plate, $type, $make, $color, $severity, $reason, $notes, $active, $added_by, $at, $at)`,
+      {
+        $id: wl.id,
+        $org: ORG,
+        $plate: wl.plate_number,
+        $type: wl.vehicle_type,
+        $make: wl.make_model,
+        $color: wl.color,
+        $severity: wl.severity,
+        $reason: wl.flag_reason,
+        $notes: wl.notes,
+        $active: wl.active,
+        $added_by: wl.added_by,
+        $at: at,
+      },
+    );
+  }
+
+  const DETECTIONS_SEED = [
+    {
+      id: "pd_seed_01",
+      camera_id: "cam_fence_north",
+      zone_id: "zone_fence_line",
+      plate_number: "PB 02 AK 4821",
+      vehicle_type: "suv",
+      confidence: 0.94,
+      plate_confidence: 0.96,
+      matched_watchlist_id: "wl_scorpio_4821",
+      match_status: "MATCHED",
+      severity: "CRITICAL",
+      bbox: JSON.stringify([0.22, 0.45, 0.78, 0.88]),
+      plate_bbox: JSON.stringify([0.44, 0.74, 0.58, 0.81]),
+      image_snapshot: "preset_scorpio_black",
+      simulated: 1,
+      occurred_at: new Date(Date.now() - 1000 * 60 * 18).toISOString(),
+    },
+    {
+      id: "pd_seed_02",
+      camera_id: "cam_farm_gate",
+      zone_id: "zone_farm_gate",
+      plate_number: "PB 02 T 9182",
+      vehicle_type: "tractor",
+      confidence: 0.91,
+      plate_confidence: 0.89,
+      matched_watchlist_id: "wl_tractor_9182",
+      match_status: "MATCHED",
+      severity: "WARNING",
+      bbox: JSON.stringify([0.28, 0.38, 0.72, 0.84]),
+      plate_bbox: JSON.stringify([0.46, 0.68, 0.56, 0.74]),
+      image_snapshot: "preset_tractor_blue",
+      simulated: 1,
+      occurred_at: new Date(Date.now() - 1000 * 60 * 45).toISOString(),
+    },
+    {
+      id: "pd_seed_03",
+      camera_id: "cam_patrol_road",
+      zone_id: "zone_patrol_road",
+      plate_number: "PB 02 E 3391",
+      vehicle_type: "car",
+      confidence: 0.96,
+      plate_confidence: 0.95,
+      matched_watchlist_id: null,
+      match_status: "CLEAR",
+      severity: "INFO",
+      bbox: JSON.stringify([0.18, 0.52, 0.68, 0.91]),
+      plate_bbox: JSON.stringify([0.38, 0.78, 0.50, 0.84]),
+      image_snapshot: "preset_bolero_white",
+      simulated: 1,
+      occurred_at: new Date(Date.now() - 1000 * 60 * 92).toISOString(),
+    },
+    {
+      id: "pd_seed_04",
+      camera_id: "cam_farm_gate",
+      zone_id: "zone_farm_gate",
+      plate_number: "PB 02 AB 1042",
+      vehicle_type: "tractor",
+      confidence: 0.88,
+      plate_confidence: 0.92,
+      matched_watchlist_id: null,
+      match_status: "CLEAR",
+      severity: "INFO",
+      bbox: JSON.stringify([0.31, 0.40, 0.69, 0.85]),
+      plate_bbox: JSON.stringify([0.47, 0.70, 0.55, 0.76]),
+      image_snapshot: "preset_sonalika_red",
+      simulated: 1,
+      occurred_at: new Date(Date.now() - 1000 * 60 * 140).toISOString(),
+    },
+  ];
+
+  for (const det of DETECTIONS_SEED) {
+    run(
+      `INSERT OR IGNORE INTO plate_detection
+         (id, org_id, camera_id, zone_id, plate_number, vehicle_type, confidence, plate_confidence,
+          matched_watchlist_id, match_status, severity, bbox, plate_bbox, image_snapshot, simulated, occurred_at, created_at)
+       VALUES ($id, $org, $cam, $zone, $plate, $type, $conf, $pconf, $matched, $status, $sev, $bbox, $pbbox, $snap, $sim, $occ, $at)`,
+      {
+        $id: det.id,
+        $org: ORG,
+        $cam: det.camera_id,
+        $zone: det.zone_id,
+        $plate: det.plate_number,
+        $type: det.vehicle_type,
+        $conf: det.confidence,
+        $pconf: det.plate_confidence,
+        $matched: det.matched_watchlist_id,
+        $status: det.match_status,
+        $sev: det.severity,
+        $bbox: det.bbox,
+        $pbbox: det.plate_bbox,
+        $snap: det.image_snapshot,
+        $sim: det.simulated,
+        $occ: det.occurred_at,
+        $at: at,
+      },
+    );
+  }
+
   const bindings = ZONES.reduce((total, zone) => total + zone.cameras.length, 0);
   console.log(
-    `seeded ${CAMERAS.length} cameras, ${ZONES.length} zones (${bindings} camera bindings), ${USERS.length} users`,
+    `seeded ${CAMERAS.length} cameras, ${ZONES.length} zones (${bindings} camera bindings), ${USERS.length} users, ${WATCHLIST_SEEDS.length} watchlist plates`,
   );
 }
 
 export const DEFAULT_ORG = ORG;
 export const DEFAULT_SITE = SITE;
+

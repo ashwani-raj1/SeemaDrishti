@@ -87,6 +87,14 @@ export interface Detection {
   confidence: number;
   /** [x, y, w, h], normalised 0..1. */
   bbox: [number, number, number, number];
+  /** Vehicle subtype supplied by the vision service, when class is vehicle. */
+  vehicle_type?: string;
+  /** A successful ANPR read, with a normalised plate box. */
+  plate?: {
+    text: string;
+    confidence: number;
+    bbox: [number, number, number, number];
+  };
 }
 
 export interface DetectionFrame {

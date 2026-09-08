@@ -349,3 +349,97 @@ export interface ChainVerdict {
   brokenAt?: number | null;
   [key: string]: unknown;
 }
+
+// ---------------------------------------------------------------- Watchlist & ANPR (#36)
+
+export interface WatchlistEntry {
+  id: string;
+  org_id: string;
+  plate_number: string;
+  vehicle_type: string;
+  make_model: string | null;
+  color: string | null;
+  severity: Severity;
+  flag_reason: string;
+  notes: string | null;
+  active: boolean;
+  added_by: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface PlateDetection {
+  id: string;
+  org_id: string;
+  camera_id: string;
+  camera_name?: string;
+  zone_id: string | null;
+  zone_name?: string;
+  plate_number: string;
+  vehicle_type: string;
+  confidence: number;
+  plate_confidence: number;
+  matched_watchlist_id: string | null;
+  matched_entry?: WatchlistEntry | null;
+  match_status: "MATCHED" | "CLEAR" | "UNVERIFIED";
+  severity: Severity;
+  bbox: [number, number, number, number];
+  plate_bbox: [number, number, number, number];
+  image_snapshot?: string | null;
+  simulated: boolean;
+  occurred_at: string;
+  created_at: string;
+}
+
+export interface WatchlistStats {
+  totalWatchlist: number;
+  activeWatchlist: number;
+  criticalCount: number;
+  warningCount: number;
+  scans24h: number;
+  matches24h: number;
+  readRate: number;
+}
+
+export interface CreateWatchlistInput {
+  plateNumber: string;
+  vehicleType?: string;
+  makeModel?: string | null;
+  color?: string | null;
+  severity?: Severity;
+  flagReason: string;
+  notes?: string | null;
+  active?: boolean;
+}
+
+export interface UpdateWatchlistInput {
+  plateNumber?: string;
+  vehicleType?: string;
+  makeModel?: string | null;
+  color?: string | null;
+  severity?: Severity;
+  flagReason?: string;
+  notes?: string | null;
+  active?: boolean;
+  reason?: string;
+}
+
+export interface DetectVehicleInput {
+  cameraId?: string;
+  zoneId?: string | null;
+  plateNumber?: string;
+  vehicleType?: string;
+  confidence?: number;
+  plateConfidence?: number;
+  bbox?: [number, number, number, number];
+  plateBbox?: [number, number, number, number];
+  imageSnapshot?: string | null;
+  simulated?: boolean;
+}
+
+export interface FrameAnalysisResult {
+  detections: PlateDetection[];
+  totalInView: number;
+}
+
+

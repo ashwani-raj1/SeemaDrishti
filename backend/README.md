@@ -74,6 +74,14 @@ A camera's `status` is **observed** (the blindness ladder, written by the analys
 `enabled` is **decided** (a person took the feed out of service). They are kept apart
 because "we cannot see" and "we stopped looking" need different responses.
 
+### Vehicle classification and ANPR
+
+Vehicle detections use `class: "vehicle"` plus `vehicle_type`: `car`, `truck`,
+`two_wheeler`, `bus`, `tractor`, or `other`. A camera model may include a
+localised, OCR-read `plate`; it is normalised to uppercase and retained in the
+event evidence along with both confidence values. This endpoint accepts model
+results—it does not claim to run a detector or OCR engine itself.
+
 ## Routes
 
 ```

@@ -7,6 +7,7 @@ import { listZones, zonesForCamera } from "./l3/zones";
 import { zoneRoutes } from "./routes/zones";
 import { mediaConfig } from "./core/env";
 import { cameraRoutes } from "./routes/cameras";
+import { watchlistRoutes } from "./routes/watchlist";
 import {
   crossReference,
   getIncident,
@@ -107,6 +108,7 @@ const routes = {
 
   ...zoneRoutes,
   ...cameraRoutes,
+  ...watchlistRoutes,
 
   // ---------------------------------------------------------------- incidents
 

@@ -4,6 +4,14 @@
 # that fails to set up the night before submission. Every line here carries the
 # reason it is not removable.
 
+# Local HTTP endpoint used by the browser live/video ANPR scanner.
+fastapi>=0.115,<1
+uvicorn[standard]>=0.30,<1
+
+# Plate OCR after a vehicle is localised. Kept separate from vehicle tracking
+# so a detector result without a readable plate is still valid.
+easyocr>=1.7,<2
+
 # YOLO11n + the ByteTrack integration. Pulls torch (CPU wheels) with it.
 ultralytics>=8.3
 

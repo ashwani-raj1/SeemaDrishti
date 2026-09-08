@@ -278,3 +278,49 @@ SELECT
   ), 'OPEN') AS status,
   (SELECT COUNT(*) FROM event e WHERE e.incident_id = i.id) AS event_count
 FROM incident i;
+
+-- ---------------------------------------------------------------- vehicle & plate watchlist (#36)
+
+CREATE TABLE IF NOT EXISTS watchlist_entry (
+  id           TEXT PRIMARY KEY,
+  org_id       TEXT NOT NULL REFERENCES organisation(id),
+  plate_number TEXT NOT NULL,
+  vehicle_type TEXT NOT NULL DEFAULT 'car',
+  make_model   TEXT,
+  color        TEXT,
+  severity     TEXT NOT NULL DEFAULT 'WARNING',
+  flag_reason  TEXT NOT NULL,
+  notes        TEXT,
+  active       INTEGER NOT NULL DEFAULT 1,
+  added_by     TEXT,
+  created_at   TEXT NOT NULL,
+  updated_at   TEXT NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS watchlist_by_plate ON watchlist_entry(plate_number);
+CREATE INDEX IF NOT EXISTS watchlist_by_org   ON watchlist_entry(org_id, active);
+
+CREATE TABLE IF NOT EXISTS plate_detection (
+  id                   TEXT PRIMARY KEY,
+  org_id               TEXT NOT NULL,
+  camera_id            TEXT NOT NULL REFERENCES camera(id),
+  zone_id              TEXT REFERENCES zone(id),
+  plate_number         TEXT NOT NULL,
+  vehicle_type         TEXT NOT NULL DEFAULT 'car',
+  confidence           REAL NOT NULL DEFAULT 1.0,
+  plate_confidence     REAL NOT NULL DEFAULT 1.0,
+  matched_watchlist_id TEXT REFERENCES watchlist_entry(id),
+  match_status         TEXT NOT NULL DEFAULT 'CLEAR',
+  severity             TEXT NOT NULL DEFAULT 'INFO',
+  bbox                 TEXT NOT NULL DEFAULT '[0,0,0,0]',
+  plate_bbox           TEXT NOT NULL DEFAULT '[0,0,0,0]',
+  image_snapshot       TEXT,
+  simulated            INTEGER NOT NULL DEFAULT 0,
+  occurred_at          TEXT NOT NULL,
+  created_at           TEXT NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS plate_detection_by_time  ON plate_detection(occurred_at DESC);
+CREATE INDEX IF NOT EXISTS plate_detection_by_plate ON plate_detection(plate_number);
+CREATE INDEX IF NOT EXISTS plate_detection_by_match ON plate_detection(match_status, occurred_at DESC);
+

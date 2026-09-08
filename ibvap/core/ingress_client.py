@@ -36,6 +36,7 @@ import queue
 import threading
 import urllib.error
 import urllib.request
+import time
 from datetime import datetime, timezone
 
 
@@ -67,13 +68,25 @@ def normalise(person, width, height, run_id):
     if track_id is None:
         return None
     x1, y1, x2, y2 = person["bbox"]
-    return {
+    vehicle_type = person.get("class", "other")
+    result = {
         "track_ref": f"{run_id}:{track_id}",
-        "class": "person",
+        "class": "vehicle",
         "confidence": round(float(person["conf"]), 4),
         "bbox": [x1 / width, y1 / height,
                  (x2 - x1) / width, (y2 - y1) / height],
+        "vehicle_type": vehicle_type,
     }
+    plate = person.get("plate")
+    if plate:
+        px1, py1, px2, py2 = plate["bbox"]
+        result["plate"] = {
+            "text": plate["text"],
+            "confidence": round(float(plate["confidence"]), 4),
+            "bbox": [px1 / width, py1 / height,
+                     (px2 - px1) / width, (py2 - py1) / height],
+        }
+    return result
 
 
 class IngressClient:
@@ -94,6 +107,7 @@ class IngressClient:
         self._warned = False
         self._lock = threading.Lock()
         self._queue = queue.Queue(maxsize=1)
+        self._recent_plates = {}
         self._running = True
         self._thread = threading.Thread(target=self._worker, daemon=True)
         self._thread.start()
@@ -118,6 +132,23 @@ class IngressClient:
                           if d is not None]
         if not detections:
             return
+
+        # A stable tracked vehicle is visible in several detector calls. Keep
+        # its plate in the overlay, but persist one ANPR observation at most
+        # once every eight seconds so the database is not flooded with clones.
+        now = time.monotonic()
+        outbound = []
+        for detection in detections:
+            item = dict(detection)
+            plate = item.get("plate")
+            if plate:
+                key = f"{item['track_ref']}:{plate['text']}"
+                if now - self._recent_plates.get(key, 0) < 8.0:
+                    item.pop("plate", None)
+                else:
+                    self._recent_plates[key] = now
+            outbound.append(item)
+        detections = outbound
 
         payload = {
             "camera_id": self.camera_id,

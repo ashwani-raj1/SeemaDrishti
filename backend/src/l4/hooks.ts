@@ -3,6 +3,8 @@ import { nowIso } from "../core/ids";
 import type { DetectionFrame, Severity } from "../core/types";
 import { processFrame, type FrameResult } from "../l2/fence";
 import { recordEvent } from "../l3/events";
+import { DEFAULT_ORG } from "../db/seed";
+import { processVehicleAndPlateDetection } from "../l3/watchlist";
 
 /**
  * L4 -- the doorway. Everything that enters the system comes through here,
@@ -38,11 +40,25 @@ export function parseDetectionFrame(body: unknown): DetectionFrame {
     if (!Array.isArray(bbox) || bbox.length !== 4 || bbox.some((n: any) => typeof n !== "number" || !Number.isFinite(n))) {
       throw new BadRequest(`detections[${index}].bbox must be four finite numbers`);
     }
+    const plate = item.plate;
+    if (plate !== undefined && (!plate || typeof plate !== "object" ||
+        typeof plate.text !== "string" || !plate.text.trim() ||
+        typeof plate.confidence !== "number" || !Number.isFinite(plate.confidence) ||
+        !Array.isArray(plate.bbox) || plate.bbox.length !== 4 ||
+        plate.bbox.some((n: any) => typeof n !== "number" || !Number.isFinite(n)))) {
+      throw new BadRequest(`detections[${index}].plate is invalid`);
+    }
     return {
       track_ref: requireString(item.track_ref, `detections[${index}].track_ref`),
       class: requireString(item.class, `detections[${index}].class`),
       confidence: typeof item.confidence === "number" ? item.confidence : 1,
       bbox: bbox as [number, number, number, number],
+      vehicle_type: typeof item.vehicle_type === "string" ? item.vehicle_type : undefined,
+      plate: plate ? {
+        text: plate.text.trim(),
+        confidence: plate.confidence,
+        bbox: plate.bbox as [number, number, number, number],
+      } : undefined,
     };
   });
 
@@ -76,7 +92,25 @@ export function parseDetectionFrame(body: unknown): DetectionFrame {
  * both land here, so nothing built on top of it has to be reworked later.
  */
 export function ingestDetections(frame: DetectionFrame): FrameResult {
-  return processFrame(frame);
+  const result = processFrame(frame);
+  // Fence logic still owns zone evaluation. ANPR is an independent L3 record
+  // only when the vision service has actually read a plate; never invent one.
+  for (const detection of frame.detections) {
+    if (detection.class !== "vehicle" || !detection.plate) continue;
+    processVehicleAndPlateDetection({
+      orgId: DEFAULT_ORG,
+      cameraId: frame.camera_id,
+      plateNumber: detection.plate.text,
+      vehicleType: detection.vehicle_type ?? "vehicle",
+      confidence: detection.confidence,
+      plateConfidence: detection.plate.confidence,
+      bbox: detection.bbox,
+      plateBbox: detection.plate.bbox,
+      simulated: frame.simulated,
+      occurredAt: frame.occurred_at,
+    });
+  }
+  return result;
 }
 
 export interface SensorContact {
