@@ -1,8 +1,10 @@
 {
   "brand": {
     "name": "IBVAP",
-    "short": "IB",
-    "tagline": "Border Video Analytics"
+    "short": "IBVAP",
+    "tagline": "Border Video Analytics · BOP Attari",
+    "subSector": "BOP Attari | IB Sector",
+    "motto": "Surveillance • Real-time Monitoring • Securing Borders"
   },
   "apiBase": "http://localhost:8000",
   "sections": {},

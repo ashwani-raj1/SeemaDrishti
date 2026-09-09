@@ -1,22 +1,24 @@
 import { NavLink, useLocation } from "react-router-dom";
-import { LockIcon, RadioTowerIcon } from "lucide-react";
+import { LockIcon, SettingsIcon } from "lucide-react";
 import {
-  Sidebar, SidebarContent, SidebarFooter, SidebarGroup, SidebarGroupContent,
-  SidebarGroupLabel, SidebarHeader, SidebarMenu, SidebarMenuBadge,
-  SidebarMenuButton, SidebarMenuItem, SidebarRail,
+  Sidebar,
+  SidebarContent,
+  SidebarFooter,
+  SidebarGroup,
+  SidebarGroupContent,
+  SidebarGroupLabel,
+  SidebarHeader,
+  SidebarMenu,
+  SidebarMenuBadge,
+  SidebarMenuButton,
+  SidebarMenuItem,
+  SidebarRail,
 } from "@/components/ui/sidebar";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { useClient } from "@/client/context";
 import { canUse, enabledSections, GROUP_ORDER, type Section } from "@/features/registry";
+import { cn } from "@/lib/utils";
 
-/**
- * Sections this deployment runs, grouped.
- *
- * A section the current role may not use is shown locked rather than hidden:
- * the platform is the same everywhere, and an operator being able to see that
- * history search exists -- and that a supervisor holds it -- is more honest
- * than a nav bar that silently changes shape per person.
- */
 export function AppSidebar() {
   const { config, org, site, role } = useClient();
   const { pathname } = useLocation();
@@ -28,31 +30,36 @@ export function AppSidebar() {
   })).filter(({ items }) => items.length > 0);
 
   return (
-    <Sidebar collapsible="icon">
-      <SidebarHeader>
-        <SidebarMenu>
-          <SidebarMenuItem>
-            <SidebarMenuButton size="lg" asChild>
-              <NavLink to="/incidents">
-                <div className="flex aspect-square size-8 items-center justify-center rounded-lg bg-sidebar-primary text-sidebar-primary-foreground">
-                  <RadioTowerIcon className="size-4" />
-                </div>
-                <div className="grid flex-1 text-left leading-tight">
-                  <span className="truncate font-semibold">{config.brand.name}</span>
-                  <span className="truncate text-xs text-muted-foreground">
-                    {site?.name ?? config.brand.tagline}
-                  </span>
-                </div>
-              </NavLink>
-            </SidebarMenuButton>
-          </SidebarMenuItem>
-        </SidebarMenu>
+    <Sidebar collapsible="icon" className="border-r border-slate-200/80 dark:border-slate-800">
+      <SidebarHeader className="flex h-13 shrink-0 items-center justify-center border-b border-slate-200/80 dark:border-slate-800 px-3">
+        <NavLink to="/dashboard" className="flex items-center gap-2.5 min-w-0 w-full">
+          <div className="relative flex size-9 shrink-0 items-center justify-center rounded-full bg-black border-2 border-amber-400/80 shadow-xs overflow-hidden p-0.5">
+            <img
+              src="/assets/ibvap-logo.jpg"
+              alt="IBVAP Emblem"
+              className="size-full object-contain"
+            />
+          </div>
+          <div className="flex flex-col text-left group-data-[collapsible=icon]:hidden min-w-0">
+            <span className="font-black text-sm tracking-wider text-slate-900 dark:text-slate-100 uppercase leading-none">
+              IBVAP
+            </span>
+            <span className="text-[10px] font-semibold text-slate-600 dark:text-slate-300 leading-tight mt-0.5 truncate">
+              Border Video Analytics
+            </span>
+            <span className="text-[9px] text-slate-400 dark:text-slate-400 leading-tight truncate">
+              सीमा सुरक्षा बल &bull; BSF
+            </span>
+          </div>
+        </NavLink>
       </SidebarHeader>
 
-      <SidebarContent>
+      <SidebarContent className="scrollbar-none pt-2">
         {byGroup.map(({ group, items }) => (
-          <SidebarGroup key={group}>
-            <SidebarGroupLabel>{group}</SidebarGroupLabel>
+          <SidebarGroup key={group} className="py-1">
+            <SidebarGroupLabel className="text-[10px] font-bold uppercase tracking-wider text-slate-400 dark:text-slate-500">
+              {group}
+            </SidebarGroupLabel>
             <SidebarGroupContent>
               <SidebarMenu>
                 {items.map((section) => (
@@ -67,10 +74,57 @@ export function AppSidebar() {
             </SidebarGroupContent>
           </SidebarGroup>
         ))}
+
       </SidebarContent>
 
-      <SidebarFooter>
-        <div className="truncate px-2 py-1 text-xs text-muted-foreground group-data-[collapsible=icon]:hidden">
+      <SidebarFooter className="border-t border-slate-100 dark:border-slate-800/80 p-2 flex flex-col gap-1.5">
+        {/* Vertical Border Watchtower Graphic & Patriotic Motto from Image 1 & 2 */}
+        <div className="px-1 py-1 group-data-[collapsible=icon]:hidden">
+          <div className="relative overflow-hidden rounded-xl border border-slate-200/80 dark:border-slate-800 bg-gradient-to-b from-sky-50/50 via-slate-50/60 to-emerald-50/30 dark:from-slate-900 dark:via-slate-900/80 dark:to-slate-950 p-2.5 shadow-2xs">
+            {/* Background watchtower mountain image */}
+            <div className="absolute inset-0 opacity-25 pointer-events-none mix-blend-multiply dark:mix-blend-screen overflow-hidden">
+              <img
+                src="/assets/sidebar-art.png"
+                alt="Border Watchtower Artwork"
+                className="w-full h-full object-cover object-left-bottom"
+              />
+            </div>
+
+            {/* Slogan Text from Image 1 */}
+            <div className="relative z-10 flex flex-col items-start text-left">
+              <span className="text-[10px] font-black tracking-wider text-slate-700 dark:text-slate-200 uppercase leading-tight">
+                VIGILANT
+              </span>
+              <span className="text-[10px] font-black tracking-wider text-slate-700 dark:text-slate-200 uppercase leading-tight">
+                SECURE
+              </span>
+              <span className="text-[10px] font-black tracking-wider text-blue-700 dark:text-blue-400 uppercase leading-tight">
+                STRONGER INDIA
+              </span>
+
+              {/* Indian Tricolor Bar */}
+              <div className="mt-1 flex h-1 w-14 overflow-hidden rounded-full shadow-2xs">
+                <div className="w-1/3 bg-[#ff9933]"></div>
+                <div className="w-1/3 bg-white border-y border-slate-200"></div>
+                <div className="w-1/3 bg-[#138808]"></div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        {/* Settings Button matching Image 1 */}
+        <SidebarMenu>
+          <SidebarMenuItem>
+            <SidebarMenuButton asChild tooltip="Settings & Profile">
+              <NavLink to="/profile" className="flex items-center gap-2 text-xs font-semibold text-slate-700 dark:text-slate-300">
+                <SettingsIcon className="size-4" />
+                <span className="group-data-[collapsible=icon]:hidden">Settings</span>
+              </NavLink>
+            </SidebarMenuButton>
+          </SidebarMenuItem>
+        </SidebarMenu>
+
+        <div className="truncate px-2 py-0.5 text-[10px] font-mono text-slate-400 group-data-[collapsible=icon]:hidden">
           {org ? `${org.name} · ${org.code}` : "No organisation"}
         </div>
       </SidebarFooter>
@@ -91,9 +145,19 @@ function SidebarItem({
   const Icon = section.icon;
 
   const button = (
-    <SidebarMenuButton asChild isActive={active} tooltip={section.label}>
+    <SidebarMenuButton
+      asChild
+      isActive={active}
+      tooltip={section.label}
+      className={cn(
+        "rounded-lg font-medium text-xs transition-colors",
+        active
+          ? "bg-blue-600 text-white font-bold hover:bg-blue-700 hover:text-white dark:bg-blue-600 dark:text-white"
+          : "text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800"
+      )}
+    >
       <NavLink to={section.path}>
-        <Icon />
+        <Icon className={cn("size-4", active && "text-white")} />
         <span className={locked ? "text-muted-foreground" : undefined}>{section.label}</span>
       </NavLink>
     </SidebarMenuButton>

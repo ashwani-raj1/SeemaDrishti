@@ -10,7 +10,7 @@
 import type { LucideIcon } from "lucide-react";
 import {
   ActivityIcon, CarFrontIcon, CctvIcon, ClipboardListIcon, MapIcon,
-  EyeIcon, FileClockIcon, GaugeIcon, HistoryIcon, LayersIcon, PlugIcon,
+  EyeIcon, FileClockIcon, GaugeIcon, HistoryIcon, LayersIcon, LayoutDashboardIcon, PlugIcon,
   RefreshCwIcon, ScrollTextIcon, ShieldCheckIcon, SirenIcon, SlidersHorizontalIcon,
   UsersIcon,
 } from "lucide-react";
@@ -18,6 +18,7 @@ import type { Role } from "@/lib/types";
 import { NotWired } from "@/components/ibvap/states";
 import { canUse, GROUP_ORDER, selectEnabled, type SectionGroup, type SectionMeta } from "./sections";
 
+import { DashboardScreen } from "./dashboard/screen";
 import { IncidentsScreen } from "./incidents/screen";
 import { IncidentPage } from "./incidents/page";
 import { LiveCamerasScreen } from "./live/screen";
@@ -62,6 +63,16 @@ export interface Section extends SectionMeta {
 
 export const SECTIONS: Section[] = [
   // ------------------------------------------------------------- Operations
+  {
+    id: "dashboard",
+    group: "Operations",
+    label: "Dashboard",
+    icon: LayoutDashboardIcon,
+    path: "/dashboard",
+    minRole: "operator",
+    backed: true,
+    element: <DashboardScreen />,
+  },
   {
     id: "incidents",
     group: "Operations",
@@ -292,7 +303,7 @@ export const SECTIONS: Section[] = [
   },
 ];
 
-export const DEFAULT_PATH = "/incidents";
+export const DEFAULT_PATH = "/dashboard";
 
 /** What this deployment runs: registry default, overridden by client.json. */
 export const enabledSections = (clientSections: Record<string, boolean>): Section[] =>

@@ -1,4 +1,5 @@
 import { BrowserRouter } from "react-router-dom";
+import { ThemeProvider } from "next-themes";
 import { RadioTowerIcon, TriangleAlertIcon } from "lucide-react";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { ClientProvider, useClient } from "@/client/context";
@@ -48,9 +49,11 @@ function Boot() {
 export function App() {
   return (
     <BrowserRouter>
-      <ClientProvider>
-        <Boot />
-      </ClientProvider>
+      <ThemeProvider attribute="class" defaultTheme="light" enableSystem>
+        <ClientProvider>
+          <Boot />
+        </ClientProvider>
+      </ThemeProvider>
     </BrowserRouter>
   );
 }
