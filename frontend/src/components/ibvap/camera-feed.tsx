@@ -35,6 +35,21 @@ const SEVERITY_COLOUR: Record<Severity, string> = {
   CRITICAL: "#dc2626",
 };
 
+/** Recent-movement aid, not a record (see trailsRef comment below). */
+const TRAIL_MAX_POINTS = 50;
+const TRAIL_STALE_SECONDS = 3;
+
+/** Deterministic per-track colour so two overlapping trails stay readable
+ * without a legend -- same track, same colour, every tile, every render. */
+function colourFor(trackRef: string): string {
+  let hash = 0;
+  for (let i = 0; i < trackRef.length; i++) {
+    hash = (hash * 31 + trackRef.charCodeAt(i)) | 0;
+  }
+  const hue = Math.abs(hash) % 360;
+  return `hsl(${hue}, 85%, 60%)`;
+}
+
 /** Narrow on purpose, matching CameraMap's reasoning about payload drift. */
 export interface FeedZone {
   id: string;
@@ -68,6 +83,12 @@ export function CameraFeed({
   // re-rendering React that often to move a rectangle would be pure waste.
   // The canvas is redrawn from an animation frame instead.
   const boxesRef = useRef<Box[]>([]);
+  // Client-side only, by design: the box channel is stateless per-frame (see
+  // module comment above) and the backend never stores a live path either --
+  // it only keeps one in RAM per track, flushed to a row when a zone crossing
+  // actually fires. A short recent trail here is purely a viewing aid, gone
+  // the moment this tile unmounts, never a record of anything.
+  const trailsRef = useRef<Map<string, { pts: Array<[number, number]>; mono: number }>>(new Map());
   const [feed, setFeed] = useState<FeedState>("connecting");
   const [detail, setDetail] = useState<string>();
 
@@ -93,10 +114,38 @@ export function CameraFeed({
   useEffect(() => {
     if (!showBoxes) {
       boxesRef.current = [];
+      trailsRef.current.clear();
       return;
     }
     return onBoxes(cameraId, (frame) => {
       boxesRef.current = frame.boxes;
+
+      const seen = new Set<string>();
+      for (const box of frame.boxes) {
+        seen.add(box.track_ref);
+        const [x, y, w, h] = box.bbox;
+        // Bottom centre -- the ground point, matching how the backend's
+        // fence judges a crossing (a box's centre would place a tall
+        // person's "position" half a body above their feet).
+        const point: [number, number] = [x + w / 2, y + h];
+
+        const trail = trailsRef.current.get(box.track_ref);
+        if (trail) {
+          trail.pts.push(point);
+          if (trail.pts.length > TRAIL_MAX_POINTS) trail.pts.shift();
+          trail.mono = frame.capture_mono;
+        } else {
+          trailsRef.current.set(box.track_ref, { pts: [point], mono: frame.capture_mono });
+        }
+      }
+      // Drop trails for tracks that vanished a while ago, so a person who
+      // left frame doesn't leave a permanent ghost line behind. Anything
+      // still in `seen` this tick was just refreshed above.
+      for (const [ref, trail] of trailsRef.current) {
+        if (!seen.has(ref) && frame.capture_mono - trail.mono > TRAIL_STALE_SECONDS) {
+          trailsRef.current.delete(ref);
+        }
+      }
     });
   }, [cameraId, showBoxes]);
 
@@ -145,6 +194,23 @@ export function CameraFeed({
         context.stroke();
       }
       context.setLineDash([]);
+
+      // Trails under boxes: the current position is what matters most and
+      // should never be occluded by where a track has already been.
+      for (const [trackRef, trail] of trailsRef.current) {
+        if (trail.pts.length < 2) continue;
+        context.strokeStyle = colourFor(trackRef);
+        context.lineWidth = 2;
+        context.lineJoin = "round";
+        context.beginPath();
+        trail.pts.forEach(([x, y], index) => {
+          const px = x * width;
+          const py = y * height;
+          if (index === 0) context.moveTo(px, py);
+          else context.lineTo(px, py);
+        });
+        context.stroke();
+      }
 
       // Boxes are neutral by design. The vision service does not know what a
       // zone is or what a severity means -- that lives one layer up -- so a
