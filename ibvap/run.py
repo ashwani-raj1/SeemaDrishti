@@ -100,7 +100,7 @@ def main():
     plates = PlateDetector()
 
     run_id = uuid.uuid4().hex[:8]
-    ingress = IngressClient(args.post_url, args.camera_id, run_id=run_id) if args.post_url else None
+    ingress = IngressClient(args.post_url, args.camera_id, "vehicle", run_id=run_id) if args.post_url else None
 
     writer = None
     frame_idx = 0

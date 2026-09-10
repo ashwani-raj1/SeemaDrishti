@@ -40,15 +40,24 @@ import time
 from datetime import datetime, timezone
 
 
-def normalise(person, width, height, run_id):
+def normalise(subject, width, height, run_id, class_):
     """
-    The ONE place a pixel box becomes the wire format. Both channels call it.
+    The ONE place a pixel box becomes the wire format. Both channels call it,
+    and both this repo's domains (people, vehicles) call it too.
 
     WHY IT IS SHARED: the hot path (core/box_channel.py -> browser overlay) and
     the cold path (this file -> backend fence) carry the same detections. Two
     functions producing "the box" is how a system ends up with two conventions,
     and a wrongly-converted box still looks like a box — the failure is silent.
-    One function, one convention, both channels.
+    One function, one convention, every channel and every domain.
+
+    WHY `class_` IS REQUIRED, NOT DEFAULTED: this function used to hardcode
+    "class": "person", then got edited in place to hardcode "class": "vehicle"
+    -- each change silently broke whichever domain wasn't being worked on at
+    the time, and nothing failed loudly when it happened. A required parameter
+    turns that into an immediate TypeError at the call site instead of a
+    detection silently mislabelled downstream. Pass "person" or "vehicle"
+    explicitly; do not give this a default.
 
     CONTRACT (backend/src/core/types.ts): [x, y, w, h], normalised 0..1,
     top-left corner. Normalised is what lets detection run on a 480p substream
@@ -57,27 +66,37 @@ def normalise(person, width, height, run_id):
     WHY run_id PREFIXES THE REF: ByteTrack reuses integer ids once a track dies
     and restarts from 1 when this process restarts. The backend keys its fence
     memory on (camera_id, track_ref) and has a UNIQUE constraint on the pair
-    (backend/src/db/schema.sql), so a bare id means a new person can inherit a
+    (backend/src/db/schema.sql), so a bare id means a new subject can inherit a
     dead one's pending zone crossing. Scoping the ref to this run makes that
     impossible by construction rather than by luck.
 
     Returns None for an unconfirmed detection — the tracker has not issued an
     id yet, and the backend requires a non-empty track_ref.
+
+    `subject` may carry two optional, domain-specific extras, forwarded as-is
+    rather than gated on `class_` so a domain can add its own without editing
+    this function again:
+        "class"  (vehicle domain) -> re-keyed to wire field "vehicle_type",
+                 since the wire "class" here is the category ("vehicle"),
+                 not the COCO label ("car"/"truck"/...).
+        "plate"  (vehicle domain) -> {text, confidence, bbox} for an ANPR read
+                 cascaded inside this box, forwarded unchanged.
     """
-    track_id = person["track_id"]
+    track_id = subject["track_id"]
     if track_id is None:
         return None
-    x1, y1, x2, y2 = person["bbox"]
-    vehicle_type = person.get("class", "other")
+    x1, y1, x2, y2 = subject["bbox"]
     result = {
         "track_ref": f"{run_id}:{track_id}",
-        "class": "vehicle",
-        "confidence": round(float(person["conf"]), 4),
+        "class": class_,
+        "confidence": round(float(subject["conf"]), 4),
         "bbox": [x1 / width, y1 / height,
                  (x2 - x1) / width, (y2 - y1) / height],
-        "vehicle_type": vehicle_type,
     }
-    plate = person.get("plate")
+    vehicle_type = subject.get("class")
+    if vehicle_type:
+        result["vehicle_type"] = vehicle_type
+    plate = subject.get("plate")
     if plate:
         px1, py1, px2, py2 = plate["bbox"]
         result["plate"] = {
@@ -90,10 +109,18 @@ def normalise(person, width, height, run_id):
 
 
 class IngressClient:
-    def __init__(self, url, camera_id, source_id="ibvap-ingest", timeout=1.0,
-                 run_id="r0", simulated=False):
+    def __init__(self, url, camera_id, class_, source_id="ibvap-ingest",
+                 timeout=1.0, run_id="r0", simulated=False):
+        """
+        `class_` is required, not defaulted, for the same reason normalise()
+        requires it: this class is shared between the people and vehicle
+        domains, and a silently-wrong default is how a detection ends up
+        mislabelled without anything failing loudly. Pass "person" or
+        "vehicle" explicitly.
+        """
         self.url = url.rstrip("/")
         self.camera_id = camera_id
+        self.class_ = class_
         self.source_id = source_id
         self.timeout = timeout
         self.run_id = run_id
@@ -128,7 +155,7 @@ class IngressClient:
         if detections is None:
             h, w = frame_shape[:2]
             detections = [d for d in
-                          (normalise(p, w, h, self.run_id) for p in persons)
+                          (normalise(p, w, h, self.run_id, self.class_) for p in persons)
                           if d is not None]
         if not detections:
             return

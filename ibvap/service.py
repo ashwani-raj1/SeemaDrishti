@@ -119,6 +119,7 @@ class CameraWorker(threading.Thread):
             self.ingress = IngressClient(
                 settings.backend_url,
                 self.id,
+                "vehicle",
                 source_id=f"vision.{self.run_id}",
                 run_id=self.run_id,
                 simulated=simulated,
@@ -156,7 +157,7 @@ class CameraWorker(threading.Thread):
 
                 height, width = frame.shape[:2]
                 detections = [
-                    d for d in (normalise(vehicle, width, height, self.run_id)
+                    d for d in (normalise(vehicle, width, height, self.run_id, "vehicle")
                                 for vehicle in vehicles)
                     if d is not None
                 ]
