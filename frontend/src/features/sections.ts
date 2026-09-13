@@ -10,19 +10,24 @@ import type { Role } from "@/lib/types";
 
 export type SectionGroup =
   | "Operations"
-  | "Situation"
+  | "Services"
   | "Investigate"
-  | "Configure"
-  | "Platform"
-  | "Dev";
+  | "Configure";
 
+/**
+ * Reading order, and it is the order of a shift.
+ *
+ * Operations is what is happening and what needs a decision. Services is one
+ * page per detection capability -- the same list, in the same order, as the
+ * vision service's modules. Investigate is looking backwards. Configure is
+ * changing how the system behaves, and is the only group a plain operator
+ * cannot fully reach.
+ */
 export const GROUP_ORDER: SectionGroup[] = [
   "Operations",
-  "Situation",
+  "Services",
   "Investigate",
   "Configure",
-  "Platform",
-  "Dev",
 ];
 
 /** The half of a section that carries no React. */

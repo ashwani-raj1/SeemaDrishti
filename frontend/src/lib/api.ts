@@ -7,7 +7,7 @@
  */
 import type {
   Action, CameraDetail, CameraIncidents, ChainVerdict, CreateWatchlistInput,
-  Decision, DetectVehicleInput, FrameAnalysisResult, Health, IbvapEvent, Incident,
+  Decision, DetectVehicleInput, FrameAnalysisResult, Health, HubCameraList, IbvapEvent, Incident,
   IncidentDetail, MonitoringZone, PlateDetection, Point, ServerConfig, SimStatus,
   UpdateWatchlistInput, WatchlistEntry, WatchlistStats,
 } from "./types";
@@ -103,7 +103,9 @@ export const api = {
   health: () => request<Health>("/api/health"),
   config: () => request<ServerConfig>("/api/config"),
 
-  incidents: (params: { status?: string; limit?: number } = {}) =>
+  incidents: (
+    params: { status?: string; camera_id?: string; zone_id?: string; limit?: number } = {},
+  ) =>
     request<Incident[]>(`/api/incidents${qs(params)}`),
   incident: (id: string) => request<IncidentDetail>(`/api/incidents/${id}`),
   /** Recording the decision IS the state change; there is no status column. */
@@ -123,6 +125,21 @@ export const api = {
   // ---- cameras --------------------------------------------------------
 
   cameras: () => request<CameraDetail[]>("/api/cameras"),
+
+  /**
+   * What the media hub is serving right now, joined with what the node knows.
+   * Proxied by the node because the hub's control API sends no CORS header and
+   * exposes camera credentials -- see backend/src/routes/media.ts.
+   */
+  mediaCameras: () => request<HubCameraList>("/api/media/cameras"),
+
+  /**
+   * Adopt a camera the hub is already serving. `id` MUST be the hub's path
+   * name -- the vision service stamps it on every detection and the node
+   * matches on it exactly.
+   */
+  createCamera: (body: { id: string; name?: string; reason?: string }) =>
+    post<CameraDetail>("/api/cameras", body),
   camera: (id: string) => request<CameraDetail>(`/api/cameras/${id}`),
 
   /** Everything that has happened on one feed, plus what else watches it. */

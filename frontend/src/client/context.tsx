@@ -5,7 +5,7 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useState } from "react";
 import { api, configureApi, setActor } from "@/lib/api";
 import { connectStream, onStreamState, type StreamState } from "@/lib/stream";
-import { connectBoxes } from "@/lib/boxes";
+import { connectLive } from "@/lib/live";
 import type {
   AppUser, Camera, MediaConfig, Organisation, Role, ServerConfig, Site,
 } from "@/lib/types";
@@ -95,7 +95,7 @@ export function ClientProvider({ children }: { children: React.ReactNode }) {
   const boxesUrl = server?.media?.boxesUrl;
   useEffect(() => {
     if (!boxesUrl) return;
-    return connectBoxes(boxesUrl);
+    return connectLive(boxesUrl);
   }, [boxesUrl]);
 
   const chooseActor = useCallback(

@@ -1,268 +1,225 @@
-import { useEffect, useRef, useState } from "react";
-import { useSearchParams } from "react-router-dom";
-import { CctvIcon, ExternalLinkIcon, SaveIcon } from "lucide-react";
+import { Link } from "react-router-dom";
+import { CctvIcon, PlusIcon, SettingsIcon, TriangleAlertIcon } from "lucide-react";
 import { toast } from "sonner";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
 import { Switch } from "@/components/ui/switch";
-import { Separator } from "@/components/ui/separator";
-import { Field, FieldDescription, FieldLabel } from "@/components/ui/field";
+import { Label } from "@/components/ui/label";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { PageShell } from "@/components/ibvap/page-shell";
+import { CameraFeed } from "@/components/ibvap/camera-feed";
 import { CameraStatusPill } from "@/components/ibvap/badges";
-import { CameraMap } from "@/components/ibvap/camera-map";
-import { ErrorState, LoadingRows } from "@/components/ibvap/states";
+import { ErrorState, LoadingRows, NothingHere } from "@/components/ibvap/states";
 import { useClient } from "@/client/context";
-import { api, isForbidden, needsReason } from "@/lib/api";
+import { api, isForbidden } from "@/lib/api";
+import { relative } from "@/lib/format";
 import { useResource } from "@/lib/use-resource";
-import { humanise } from "@/lib/format";
+import type { HubCamera } from "@/lib/types";
 import { cn } from "@/lib/utils";
-import type { CameraDetail } from "@/lib/types";
-import { Link } from "react-router-dom";
+import { AddCameraDialog } from "./add-camera-dialog";
 
 /**
- * The feeds this site reads, and the settings a person controls.
+ * The feeds this site has, as the media hub is actually serving them.
  *
- * Two states live side by side and are deliberately not merged. The status
- * pill is OBSERVED -- the analysis engine writes what it can actually see, and
- * that is the blindness ladder. "In service" is DECIDED -- somebody turned the
- * feed off. An operator needs to tell those apart: one means send a patrol,
- * the other means we chose this.
+ * THE LIST COMES FROM THE HUB, NOT FROM A CONFIG FILE. A camera appears here
+ * when it starts publishing and is marked dead when it stops, so this page
+ * cannot show a tidy row for a feed nobody is sending. That is the difference
+ * between a console that reports the system and one that reports its own
+ * settings.
+ *
+ * THREE FACTS PER CAMERA, NEVER MERGED, because each sends a different person
+ * to do a different thing:
+ *
+ *   serving   is the hub publishing frames at all
+ *   status    what the vision service can make of them (the blindness ladder)
+ *   enabled   whether a human took this feed out of service on purpose
+ *
+ * And a fourth that only shows when it is wrong: `seeded`. A path the hub
+ * serves but the node has never heard of accepts no detections and can open no
+ * incident, while looking perfectly healthy on screen. It is the one failure
+ * here that is invisible without being named.
  */
 export function CamerasScreen() {
-  const { role, refreshServer } = useClient();
-  const [params] = useSearchParams();
-  const wanted = params.get("camera");
-  const cameras = useResource(() => api.cameras(), []);
-
+  const { role, media, refreshServer } = useClient();
+  const hub = useResource(() => api.mediaCameras(), []);
   const canEdit = role !== "operator";
 
   const reload = () => {
-    cameras.reload();
+    hub.reload();
     void refreshServer();
   };
 
-  return (
-      <PageShell
-        title="Cameras"
-        description="Ordinary IP cameras over RTSP. No proprietary boxes, no smart hardware — that constraint is the project."
-      >
-        {cameras.loading && !cameras.data && <LoadingRows rows={3} />}
-        {cameras.error && <ErrorState error={cameras.error} onRetry={cameras.reload} />}
-
-        <div className="grid gap-4 xl:grid-cols-2">
-          {cameras.data?.map((camera) => (
-            <CameraCard
-              key={camera.id}
-              camera={camera}
-              canEdit={canEdit}
-              focused={camera.id === wanted}
-              onSaved={reload}
-            />
-          ))}
-        </div>
-      </PageShell>
-  );
-}
-
-function CameraCard({
-  camera,
-  canEdit,
-  focused,
-  onSaved,
-}: {
-  camera: CameraDetail;
-  canEdit: boolean;
-  focused?: boolean;
-  onSaved: () => void;
-}) {
-  const card = useRef<HTMLDivElement | null>(null);
-  const [name, setName] = useState(camera.name);
-  const [streamUrl, setStreamUrl] = useState(camera.streamUrl ?? "");
-  const [enabled, setEnabled] = useState(camera.enabled);
-  const [reason, setReason] = useState("");
-  const [saving, setSaving] = useState(false);
-
-  useEffect(() => {
-    if (focused) card.current?.scrollIntoView({ behavior: "smooth", block: "center" });
-  }, [focused]);
-
-  useEffect(() => {
-    setName(camera.name);
-    setStreamUrl(camera.streamUrl ?? "");
-    setEnabled(camera.enabled);
-    setReason("");
-  }, [camera]);
-
-  const dirty =
-    name !== camera.name ||
-    streamUrl !== (camera.streamUrl ?? "") ||
-    enabled !== camera.enabled;
-
-  // Turning a feed off stops it being judged, so it has to be explained.
-  const goingDark = camera.enabled && !enabled;
-
-  async function save() {
-    setSaving(true);
+  const toggle = async (camera: HubCamera, enabled: boolean) => {
     try {
-      await api.updateCamera(camera.id, {
-        name: name.trim(),
-        streamUrl: streamUrl.trim() || null,
-        enabled,
-        reason: reason.trim() || undefined,
-      });
-      toast.success(`${name.trim()} saved`);
-      setReason("");
-      onSaved();
+      await api.updateCamera(camera.id, { enabled });
+      toast.success(
+        enabled ? `${camera.name} back in service` : `${camera.name} taken out of service`,
+      );
+      reload();
     } catch (error) {
       toast.error(
-        isForbidden(error)
-          ? "Changing a camera needs a supervisor."
-          : needsReason(error)
-            ? "Say why this feed is being taken out of service."
-            : (error as Error).message,
+        isForbidden(error) ? "This needs a supervisor." : (error as Error).message,
       );
-    } finally {
-      setSaving(false);
     }
-  }
+  };
+
+  /**
+   * Register a camera the hub is already serving.
+   *
+   * The id is the hub's path name, passed through untouched: the vision
+   * service stamps that exact string on every detection and the node matches
+   * on it, so generating a new one here would guarantee they never agree.
+   */
+  const adopt = async (camera: HubCamera) => {
+    try {
+      await api.createCamera({
+        id: camera.id,
+        name: camera.name,
+        reason: "adopted from the media hub",
+      });
+      toast.success(`${camera.name} registered`, {
+        description: "Detections from this camera are now accepted and can open incidents.",
+      });
+      reload();
+    } catch (error) {
+      toast.error(
+        isForbidden(error) ? "This needs a supervisor." : (error as Error).message,
+      );
+    }
+  };
+
+  const cameras = hub.data?.cameras ?? [];
 
   return (
-    <Card ref={card} className={cn(focused && "ring-2 ring-primary")}>
-      <CardHeader>
-        <CardTitle className="flex flex-wrap items-center gap-2 text-base">
-          <CctvIcon className="size-4 shrink-0 text-muted-foreground" />
-          <span className="truncate">{camera.name}</span>
-          <CameraStatusPill status={camera.status} className="ml-auto" />
-          {!camera.enabled && <Badge variant="destructive">out of service</Badge>}
-        </CardTitle>
-        <CardDescription className="flex flex-wrap items-center gap-x-3 gap-y-1 font-mono text-xs">
-          <span>{camera.id}</span>
-          <span>
-            {camera.incidents.total} incident{camera.incidents.total === 1 ? "" : "s"}
-          </span>
-          {camera.incidents.open > 0 && (
-            <span className="text-amber-600 dark:text-amber-500">
-              {camera.incidents.open} open
-            </span>
-          )}
-        </CardDescription>
-      </CardHeader>
-
-      <CardContent className="flex flex-col gap-4">
-        <CameraMap camera={camera} className="aspect-video w-full" showSwitcher />
-
-        <Button variant="outline" size="sm" className="w-full" asChild>
-          <Link to={`/cameras/${camera.id}`}>
-            <ExternalLinkIcon className="size-4" />
-            Open this feed&rsquo;s record
-          </Link>
-        </Button>
-
-        <Separator />
-
-        <Field>
-          <FieldLabel htmlFor={`name-${camera.id}`}>Name</FieldLabel>
-          <FieldDescription>What operators call this feed on every screen.</FieldDescription>
-          <Input
-            id={`name-${camera.id}`}
-            value={name}
-            disabled={!canEdit}
-            onChange={(event) => setName(event.target.value)}
+    <PageShell
+      title="Cameras"
+      description="Every feed the media hub is serving, and what the node knows about it."
+      actions={
+        <div className="flex items-center gap-2">
+          <Button variant="outline" size="sm" onClick={reload}>
+            Refresh
+          </Button>
+          <AddCameraDialog
+            unseeded={cameras.filter((camera) => !camera.seeded)}
+            canEdit={canEdit}
+            onAdded={reload}
           />
-        </Field>
-
-        <Field>
-          <FieldLabel htmlFor={`stream-${camera.id}`}>Stream address</FieldLabel>
-          <FieldDescription>
-            The RTSP the node reads. Ordinary protocol, ordinary camera — leave it empty until the
-            feed is cabled.
-          </FieldDescription>
-          <Input
-            id={`stream-${camera.id}`}
-            value={streamUrl}
-            disabled={!canEdit}
-            placeholder="rtsp://10.0.4.21:554/stream1"
-            onChange={(event) => setStreamUrl(event.target.value)}
-            className="font-mono text-xs"
-          />
-        </Field>
-
-        <div className="flex items-start gap-3 rounded-md border p-3">
-          <Switch
-            id={`enabled-${camera.id}`}
-            checked={enabled}
-            disabled={!canEdit}
-            onCheckedChange={setEnabled}
-          />
-          <div className="min-w-0 flex-1">
-            <FieldLabel htmlFor={`enabled-${camera.id}`} className="cursor-pointer">
-              In service
-            </FieldLabel>
-            <p className="mt-0.5 text-xs text-muted-foreground">
-              {enabled
-                ? "Crossings on this feed are judged and raised."
-                : "Detections still arrive, but nothing is judged and no incident is raised."}
-            </p>
-          </div>
         </div>
+      }
+    >
+      {hub.error && <ErrorState error={hub.error} onRetry={hub.reload} />}
 
-        {camera.zones.length > 0 && (
-          <div className="flex flex-col gap-1.5">
-            <p className="text-xs font-medium text-muted-foreground">Zones drawn on this feed</p>
-            {camera.zones.map((zone) => (
-              <div key={zone.id} className="flex flex-wrap items-center gap-1.5 text-sm">
-                <span className="font-medium">{zone.name}</span>
-                <Badge variant="outline" className="font-mono text-[10px] font-normal">
-                  {humanise(zone.kind)}
+      {hub.data && !hub.data.hub.reachable && (
+        <Alert variant="destructive">
+          <TriangleAlertIcon />
+          <AlertTitle>The media hub is not answering</AlertTitle>
+          <AlertDescription>
+            {hub.data.hub.url} — {hub.data.hub.error}. The cameras below are the
+            ones the node has on record; nothing is being checked against a live
+            feed, and no preview will load.
+          </AlertDescription>
+        </Alert>
+      )}
+
+      {hub.loading && <LoadingRows rows={4} />}
+
+      {!hub.loading && cameras.length === 0 && (
+        <NothingHere
+          icon={CctvIcon}
+          title="No cameras"
+          description="The hub is serving nothing and the node has none on record. Add a block to media/cameras.yml, then run media/configure.py."
+        />
+      )}
+
+      <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
+        {cameras.map((camera) => (
+          <Card key={camera.id} className={cn(camera.enabled === false && "opacity-70")}>
+            <CardHeader className="flex-row items-start justify-between gap-2 space-y-0 pb-3">
+              <div className="flex min-w-0 flex-col gap-1">
+                <CardTitle className="truncate text-sm font-medium">
+                  {camera.name}
+                </CardTitle>
+                <span className="font-mono text-[10px] text-muted-foreground">
+                  {camera.id}
+                </span>
+              </div>
+              {camera.status && <CameraStatusPill status={camera.status} />}
+            </CardHeader>
+
+            <CardContent className="flex flex-col gap-3">
+              <CameraFeed
+                cameraId={camera.id}
+                whepBase={media?.whepBase}
+                module={null}
+                showBoxes={false}
+              />
+
+              <div className="flex flex-wrap items-center gap-2">
+                <Badge variant={camera.ready ? "secondary" : "destructive"}>
+                  {camera.ready ? "serving" : "no feed"}
                 </Badge>
-                <Badge variant="secondary" className="font-mono text-[10px] font-normal">
-                  {zone.direction}
-                </Badge>
-                {!zone.placed && (
-                  <span className="text-[11px] text-amber-600 dark:text-amber-500">
-                    shape not positioned
+                {camera.width && (
+                  <Badge variant="outline" className="font-mono text-[10px]">
+                    {camera.width}×{camera.height} {camera.codec}
+                  </Badge>
+                )}
+                {camera.readySince && (
+                  <span className="text-xs text-muted-foreground">
+                    up {relative(camera.readySince)}
                   </span>
                 )}
               </div>
-            ))}
-          </div>
-        )}
-        {camera.zones.length === 0 && (
-          <p className="text-sm text-muted-foreground">
-            No zones drawn on this feed, so it raises nothing.
-          </p>
-        )}
 
-        {canEdit && dirty && (
-          <div className="flex flex-col gap-3 rounded-md border bg-muted/40 p-3">
-            <Field>
-              <FieldLabel htmlFor={`reason-${camera.id}`}>
-                Reason {goingDark && <span className="text-destructive">(required)</span>}
-              </FieldLabel>
-              <Input
-                id={`reason-${camera.id}`}
-                value={reason}
-                placeholder={
-                  goingDark ? "e.g. lens cracked, replacement on order" : "e.g. re-cabled to the new switch"
-                }
-                onChange={(event) => setReason(event.target.value)}
-              />
-            </Field>
-            <Button onClick={save} disabled={saving || (goingDark && !reason.trim())}>
-              <SaveIcon className="size-4" />
-              {saving ? "Saving…" : "Save camera"}
-            </Button>
-          </div>
-        )}
+              {!camera.seeded && (
+                <div className="flex flex-col gap-2 rounded-md bg-destructive/10 p-2">
+                  <p className="text-xs text-destructive">
+                    The hub serves this path but the node has no such camera, so
+                    every detection from it is rejected and no incident can open.
+                  </p>
+                  <Button
+                    size="sm"
+                    variant="secondary"
+                    disabled={!canEdit}
+                    onClick={() => void adopt(camera)}
+                  >
+                    <PlusIcon className="size-3.5" />
+                    {canEdit ? "Add to the node" : "A supervisor must add this"}
+                  </Button>
+                </div>
+              )}
 
-        {!canEdit && (
-          <p className="text-xs text-muted-foreground">
-            Changing a camera needs a supervisor. Switch actor in the header.
-          </p>
-        )}
-      </CardContent>
-    </Card>
+              <div className="flex items-center justify-between gap-2 border-t pt-3">
+                {camera.seeded ? (
+                  <div className="flex items-center gap-2">
+                    <Switch
+                      id={`enabled-${camera.id}`}
+                      checked={camera.enabled !== false}
+                      disabled={!canEdit}
+                      onCheckedChange={(next) => void toggle(camera, next)}
+                    />
+                    {/* "In service" is a DECISION, kept apart from the status
+                        pill above, which is OBSERVED. Merging them would make
+                        "we are blind" look like "we chose to stop looking". */}
+                    <Label htmlFor={`enabled-${camera.id}`} className="text-xs">
+                      In service
+                    </Label>
+                  </div>
+                ) : (
+                  <span className="text-xs text-muted-foreground">not configurable</span>
+                )}
+                {camera.seeded && (
+                  <Button asChild size="sm" variant="ghost">
+                    <Link to={`/cameras/${camera.id}`}>
+                      <SettingsIcon className="size-3.5" /> Settings
+                    </Link>
+                  </Button>
+                )}
+              </div>
+            </CardContent>
+          </Card>
+        ))}
+      </div>
+    </PageShell>
   );
 }

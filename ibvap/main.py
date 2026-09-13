@@ -51,7 +51,6 @@ from config import CameraConfig, Settings, fetch_zones, load_cameras  # noqa: E4
 from core.capture import RTSPStream  # noqa: E402
 from core.detection import SharedDetector  # noqa: E402
 from core.dispatcher import Dispatcher, DurableSink, LiveChannel  # noqa: E402
-from core.payload import legacy_box_frame  # noqa: E402
 from modules.base import FrameContext, build  # noqa: E402
 
 # Importing a module registers it. A new capability is a new file here plus a
@@ -141,18 +140,12 @@ class CameraWorker:
                 ctx = FrameContext(camera_id=camera.id, ts=ts, width=width,
                                    height=height, frame_index=frame_index)
 
-                detections, results = await asyncio.to_thread(
-                    self._infer, frame, ctx)
+                results = await asyncio.to_thread(self._infer, frame, ctx)
 
                 for module_name, live_items, durable_items in results:
                     self.dispatcher.dispatch(
                         camera.id, module_name, ts,
                         live_items, durable_items, camera.simulated)
-
-                # Migration shim for the console's current overlay. Carries the
-                # raw shared pass, never a module's opinion. Delete with
-                # core/payload.legacy_box_frame once boxes.ts is updated.
-                self.dispatcher.live.publish(legacy_box_frame(camera.id, ts, detections))
         finally:
             if self.reader:
                 self.reader.stop()
@@ -176,7 +169,7 @@ class CameraWorker:
                 print(f"[{ctx.camera_id}/{module.name}] {type(error).__name__}: {error}")
                 continue
             results.append((module.name, live_items, durable_items))
-        return detections, results
+        return results
 
     def _health(self, now: float) -> None:
         """
@@ -210,6 +203,29 @@ class CameraWorker:
             }],
             self.camera.simulated,
         )
+
+    def snapshot(self) -> dict:
+        """
+        What this worker is doing right now, for the console's status card.
+
+        Deliberately the SAME numbers the run summary prints at exit -- a
+        console that reported different figures from the ones quoted in the
+        measurements would make both untrustworthy.
+        """
+        elapsed = (time.monotonic() - self.started_at) if self.started_at else 0.0
+        source = self.reader.stats() if self.reader else {}
+        return {
+            "camera_id": self.camera.id,
+            "modules": [m.name for m in self.modules],
+            "simulated": self.camera.simulated,
+            "feed": "live" if (self.reader and self.reader.healthy) else "down",
+            "frames": self.frames,
+            "fps": round(self.frames / elapsed, 2) if elapsed else 0.0,
+            "detector_ms": round(self.detector.mean_ms, 1) if self.detector else 0.0,
+            "detector_calls": self.detector.calls if self.detector else 0,
+            "drop_rate": source.get("drop_rate"),
+            "reconnects": source.get("reconnects"),
+        }
 
     def report(self) -> dict:
         elapsed = (time.monotonic() - self.started_at) if self.started_at else 0.0
@@ -254,6 +270,38 @@ async def refresh_zones(settings: Settings, workers: list[CameraWorker],
             first.set()
         try:
             await asyncio.wait_for(stop.wait(), timeout=settings.zone_refresh_seconds)
+        except asyncio.TimeoutError:
+            pass
+
+
+async def broadcast_status(live: LiveChannel, durable: "DurableSink | None",
+                           workers: list[CameraWorker], run_id: str,
+                           started: float, stop: asyncio.Event,
+                           every: float = 2.0) -> None:
+    """
+    Say out loud that this process is alive, and what it is managing.
+
+    WHY A HEARTBEAT AND NOT SILENCE: observations only arrive when a camera is
+    producing frames, so a console cannot tell a detector that crashed from a
+    border where nothing is moving. Both look like an empty screen. This is the
+    one message that separates them, which is why it rides its own queue and is
+    never dropped in favour of a box.
+
+    It carries the real numbers rather than a bare "ok" -- an operator who can
+    see fps and detector milliseconds can tell a healthy service from one that
+    is technically running at one frame every four seconds.
+    """
+    while not stop.is_set():
+        live.broadcast({
+            "kind": "status",
+            "t": "status",
+            "run_id": run_id,
+            "uptime_s": round(time.monotonic() - started, 1),
+            "cameras": [worker.snapshot() for worker in workers],
+            "durable": durable.stats() if durable else None,
+        })
+        try:
+            await asyncio.wait_for(stop.wait(), timeout=every)
         except asyncio.TimeoutError:
             pass
 
@@ -344,6 +392,8 @@ async def amain(args) -> None:
 
     started = time.monotonic()
     camera_tasks = [asyncio.create_task(w.run(stop), name=w.camera.id) for w in workers]
+    tasks.append(asyncio.create_task(
+        broadcast_status(live, durable, workers, run_id, started, stop), name="status"))
 
     if args.seconds:
         print(f"[vision] running for {args.seconds}s. ctrl-c to stop early.\n")

@@ -442,4 +442,33 @@ export interface FrameAnalysisResult {
   totalInView: number;
 }
 
+// ---------------------------------------------------------------- media hub
 
+/**
+ * A camera as the media hub and the node jointly see it.
+ *
+ * `seeded` is the field that matters and the reason this is not just `Camera`:
+ * a path can exist in the hub without a matching row in the node's database
+ * (a typo in cameras.yml), or a row can exist with no feed arriving. Both are
+ * real states with different fixes, and the console shows them apart rather
+ * than quietly listing the intersection.
+ */
+export interface HubCamera {
+  id: string;
+  name: string;
+  ready: boolean;
+  readySince: string | null;
+  readers: number;
+  width: number | null;
+  height: number | null;
+  codec: string | null;
+  whepUrl: string;
+  seeded: boolean;
+  status: CameraStatus | null;
+  enabled: boolean | null;
+}
+
+export interface HubCameraList {
+  hub: { url: string; reachable: boolean; error: string | null };
+  cameras: HubCamera[];
+}

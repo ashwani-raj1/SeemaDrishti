@@ -109,36 +109,3 @@ class DurableEvent:
     def dedupe_key(self) -> str:
         """Identity for retry logging. Not sent; the node dedupes on its own."""
         return f"{self.camera_id}:{self.module}:{self.event_type}:{self.track_id}"
-
-
-def legacy_box_frame(camera_id: str, frame_ts: float, detections: list[dict]) -> dict:
-    """
-    The console's current overlay message, kept alive during the migration.
-
-    `frontend/src/lib/boxes.ts` filters on `t === "boxes"` and reads
-    `[x, y, w, h]`. The spec's LiveObservation is a different shape, so the
-    dispatcher sends BOTH on the same socket: the console ignores what it does
-    not recognise, and nothing on screen breaks while the frontend still speaks
-    the old contract.
-
-    DELETE THIS the moment boxes.ts reads LiveObservation. It is a migration
-    shim, not a second contract — it carries the raw shared detection pass, not
-    any module's opinion, so it can never become the thing a module publishes.
-    """
-    return {
-        "t": "boxes",
-        "camera_id": camera_id,
-        "capture_mono": round(frame_ts, 3),
-        "boxes": [
-            {
-                "track_ref": d["track_ref"],
-                "class": d["class"],
-                "confidence": round(float(d["confidence"]), 4),
-                "bbox": [round(v, 5) for v in d["bbox_xywh"]],
-                **({"vehicle_type": d["subtype"]} if d.get("is_vehicle") else {}),
-                **({"plate": d["plate"]} if d.get("plate") else {}),
-            }
-            for d in detections
-            if d.get("track_ref")
-        ],
-    }

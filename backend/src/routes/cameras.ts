@@ -1,6 +1,6 @@
 import { DEFAULT_ORG, DEFAULT_SITE } from "../db/seed";
 import { recordAction } from "../l3/audit";
-import { cameraDetail, listCameras, updateCamera } from "../l3/cameras";
+import { cameraDetail, createCamera, listCameras, updateCamera } from "../l3/cameras";
 import { listIncidents, queryEvents } from "../l3/events";
 import { publish } from "../l4/bus";
 import { BadRequest } from "../l4/hooks";
@@ -46,7 +46,61 @@ function validateStreamUrl(value: unknown): string | null {
 }
 
 export const cameraRoutes = {
-  "/api/cameras": handled(async () => json(listCameras(DEFAULT_SITE))),
+  "/api/cameras": {
+    GET: handled(async () => json(listCameras(DEFAULT_SITE))),
+
+    /**
+     * Adopt a camera the media hub is already serving.
+     *
+     * The id is the hub's path name, not something generated here: the vision
+     * service stamps that same string on every detection, and the node matches
+     * on it exactly. Taking it as given is what makes the two agree.
+     *
+     * Supervisor-only and audited like every other configuration change --
+     * adding an eye to the system is a decision somebody made, and the record
+     * should say who.
+     */
+    POST: handled(async (req) => {
+      const actor = actorOf(req);
+      requireRole(actor, "supervisor", "admin");
+
+      const body = await readJson(req);
+      const id = typeof body.id === "string" ? body.id.trim() : "";
+      if (!id) throw new BadRequest("id is required, and must be the hub's path name");
+      if (!/^[A-Za-z0-9_-]+$/.test(id)) {
+        // The id becomes a URL path segment on the hub and a key in the
+        // database. Anything outside this set is a bug waiting to happen in
+        // one of the two.
+        throw new BadRequest("id may contain only letters, digits, underscore and hyphen");
+      }
+
+      const name = typeof body.name === "string" && body.name.trim() ? body.name.trim() : id;
+      const created = createCamera({
+        id,
+        siteId: DEFAULT_SITE,
+        name,
+        streamUrl: validateStreamUrl(body.streamUrl),
+      });
+      // Already known. Not an error: two operators watching the same "not
+      // seeded" banner will both click it, and the second must not see a
+      // failure for a camera that is now present.
+      if (!created) return json(cameraDetail(id), 200);
+
+      recordAction({
+        actor,
+        orgId: DEFAULT_ORG,
+        verb: "camera.create",
+        targetType: "camera",
+        targetId: id,
+        reason: body.reason ?? null,
+        detail: { name, adoptedFromHub: true },
+        after: created,
+      });
+
+      publish({ type: "camera", data: created });
+      return json(created, 201);
+    }),
+  },
 
   "/api/cameras/:cameraId": {
     GET: handled(async (req: any) => json(requireCamera(req.params.cameraId))),

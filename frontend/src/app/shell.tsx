@@ -24,7 +24,18 @@ export function AppShell() {
         <AppSidebar />
         <SidebarInset className="h-screen overflow-hidden flex flex-col">
           <CommandHeader />
-          <div className="flex-1 min-h-0 overflow-hidden flex flex-col">
+          {/*
+            SCROLLS. This was `overflow-hidden`, which silently CLIPPED any
+            page taller than the viewport -- no scrollbar, no way to reach the
+            bottom, and no clue that anything was missing. It held while every
+            screen was built to fit exactly one viewport with its own inner
+            ScrollArea; a page that stacks cards is taller than that, and the
+            content below the fold simply vanished.
+
+            Pages that want to fill the height and scroll internally still can:
+            they set their own `h-full` and `overflow-hidden` inside this.
+          */}
+          <div className="flex-1 min-h-0 overflow-y-auto">
             <Outlet />
           </div>
         </SidebarInset>

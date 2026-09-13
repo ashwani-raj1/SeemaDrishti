@@ -175,16 +175,7 @@ function SidebarItem({
           </TooltipTrigger>
           <TooltipContent>Requires {section.minRole}</TooltipContent>
         </Tooltip>
-      ) : (
-        !section.backed && (
-          <Tooltip>
-            <TooltipTrigger asChild>
-              <SidebarMenuBadge className="text-muted-foreground">·</SidebarMenuBadge>
-            </TooltipTrigger>
-            <TooltipContent>Defined in the design, no endpoint yet</TooltipContent>
-          </Tooltip>
-        )
-      )}
+      ) : null}
     </SidebarMenuItem>
   );
 }

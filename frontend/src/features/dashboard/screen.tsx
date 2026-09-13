@@ -1,95 +1,295 @@
-import { useState, useEffect } from "react";
-import { SectorMapCard } from "./sector-map-card";
-import { LiveCamerasCard } from "./live-cameras-card";
-import { RecentAlertsCard } from "./recent-alerts-card";
-import { DetectionFilterBar, type DetectionCategory } from "./detection-filter-bar";
-import { RecentEventsCarousel } from "./recent-events-carousel";
-import { useClient } from "@/client/context";
-import { useResource } from "@/lib/use-resource";
+import { useCallback, useEffect, useMemo, useState } from "react";
+import { Link } from "react-router-dom";
+import {
+  CarFrontIcon, LayersIcon, ScanEyeIcon, SirenIcon, TriangleAlertIcon, UsersIcon,
+} from "lucide-react";
+import type { LucideIcon } from "lucide-react";
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
+import { PageShell } from "@/components/ibvap/page-shell";
+import { SeverityBadge } from "@/components/ibvap/badges";
+import { LiveDot } from "@/components/ibvap/live-dot";
+import { VisionStatusCard, useVisionStatus } from "@/components/ibvap/vision-status";
+import { LoadingRows } from "@/components/ibvap/states";
 import { api } from "@/lib/api";
 import { onStream } from "@/lib/stream";
-import type { Incident, IbvapEvent } from "@/lib/types";
+import { relative } from "@/lib/format";
+import { useResource } from "@/lib/use-resource";
+import { SEVERITY_RANK, type Incident } from "@/lib/types";
+import { cn } from "@/lib/utils";
+
+/**
+ * The first screen of a shift: what needs a person, and what we can see.
+ *
+ * DELIBERATELY SMALL. The previous dashboard was six cards and about 1500 lines
+ * carrying a map, a camera wall, a filter bar and a carousel -- most of which
+ * existed in full elsewhere in the app. A summary screen that duplicates every
+ * other screen is not a summary, and a three-person control room reads the top
+ * of this page and then goes to the section that matters.
+ *
+ * So it answers three questions and stops:
+ *
+ *   does anything need me now     open incidents, worst first
+ *   can we see                    how many feeds are serving
+ *   what is each service doing    one tile per capability, with a way in
+ *
+ * Everything else is one click away and does it properly.
+ */
+
+interface ServiceTile {
+  id: string;
+  label: string;
+  icon: LucideIcon;
+  path: string;
+  /** Event kinds the node records for this service. */
+  kinds: string[];
+  blurb: string;
+}
+
+const SERVICES: ServiceTile[] = [
+  {
+    id: "fence",
+    label: "Virtual fence",
+    icon: LayersIcon,
+    path: "/services/fence",
+    kinds: ["zone_crossing"],
+    blurb: "Zone and line crossings",
+  },
+  {
+    id: "anpr",
+    label: "Number plates",
+    icon: CarFrontIcon,
+    path: "/services/anpr",
+    kinds: ["plate_detection"],
+    blurb: "Plate reads and watchlist hits",
+  },
+  {
+    id: "people",
+    label: "People",
+    icon: UsersIcon,
+    path: "/services/people",
+    kinds: ["reidentification"],
+    blurb: "Person tracking",
+  },
+  {
+    id: "health",
+    label: "Camera health",
+    icon: ScanEyeIcon,
+    path: "/services/health",
+    kinds: ["camera_health"],
+    blurb: "What we can see",
+  },
+];
 
 export function DashboardScreen() {
-  const { cameras, media } = useClient();
-  const [selectedCategory, setSelectedCategory] = useState<DetectionCategory>("all");
-  const [timeRange, setTimeRange] = useState("Last 24 Hours");
-  const [selectedCameraId, setSelectedCameraId] = useState<string | null>(null);
+  const hub = useResource(() => api.mediaCameras(), []);
+  const vision = useVisionStatus();
+  const [incidents, setIncidents] = useState<Incident[] | null>(null);
 
-  // Fetch real incidents from backend
-  const { data: initialIncidents, reload } = useResource(
-    () => api.incidents({ limit: 50 }),
-    []
-  );
-
-  const [liveIncidents, setLiveIncidents] = useState<Incident[]>([]);
-
-  useEffect(() => {
-    if (initialIncidents) {
-      setLiveIncidents(initialIncidents);
-    }
-  }, [initialIncidents]);
-
-  // Subscribe to real-time SSE stream for incidents
-  useEffect(() => {
-    return onStream("incident", (data) => {
-      const inc = data as Incident;
-      setLiveIncidents((curr) => {
-        const idx = curr.findIndex((i) => i.id === inc.id);
-        if (idx >= 0) {
-          const updated = [...curr];
-          updated[idx] = inc;
-          return updated;
-        }
-        return [inc, ...curr];
-      });
-    });
+  const load = useCallback(async () => {
+    setIncidents(await api.incidents({ limit: 100 }));
   }, []);
 
+  useEffect(() => {
+    void load();
+  }, [load]);
+
+  // Pushed, not polled. An incident that opened while somebody was looking at
+  // this page has to appear on it.
+  useEffect(() => {
+    const offIncident = onStream("incident", () => void load());
+    const offEvent = onStream("event", () => void load());
+    return () => {
+      offIncident();
+      offEvent();
+    };
+  }, [load]);
+
+  const open = useMemo(
+    () =>
+      (incidents ?? [])
+        .filter((i) => i.status === "OPEN" || i.status === "ACKNOWLEDGED")
+        .sort(
+          (a, b) =>
+            SEVERITY_RANK[b.severity] - SEVERITY_RANK[a.severity] ||
+            Date.parse(b.lastEventAt) - Date.parse(a.lastEventAt),
+        ),
+    [incidents],
+  );
+
+  const critical = open.filter((i) => i.severity === "CRITICAL").length;
+  const cameras = hub.data?.cameras ?? [];
+  const serving = cameras.filter((camera) => camera.ready).length;
+  // A camera taken out of service on purpose is not blindness — see the
+  // camera health page for why those two are never merged.
+  const blind = cameras.filter((c) => !c.ready && c.enabled !== false).length;
+  const unseeded = cameras.filter((c) => !c.seeded).length;
+
   return (
-    <div className="h-full flex flex-col justify-between gap-2 p-2.5 sm:p-3 bg-slate-50/60 dark:bg-slate-950/40 overflow-hidden">
-      {/* Upper Grid: Sector Map (5 cols), Live Cameras (4 cols), Recent Alerts (3 cols) */}
-      <div className="flex-1 min-h-0 grid grid-cols-1 lg:grid-cols-12 gap-2.5 items-stretch overflow-hidden">
-        {/* Column 1: Sector Map */}
-        <div className="lg:col-span-5 h-full min-h-0">
-          <SectorMapCard
-            cameras={cameras}
-            incidents={liveIncidents}
-            onSelectCamera={(id) => setSelectedCameraId(id)}
-            onSelectIncident={(id) => console.log("Incident selected:", id)}
-          />
-        </div>
+    <PageShell
+      title="Dashboard"
+      description="What needs a decision, and what we can currently see."
+      actions={<LiveDot withLabel />}
+    >
+      {blind > 0 && (
+        <Alert variant="destructive">
+          <TriangleAlertIcon />
+          <AlertTitle>
+            {blind} camera{blind === 1 ? "" : "s"} not sending frames
+          </AlertTitle>
+          <AlertDescription>
+            No video is arriving from {blind === 1 ? "it" : "them"}. A feed that
+            stopped looks exactly like a quiet night —{" "}
+            <Link to="/services/health" className="underline">check camera health</Link>.
+          </AlertDescription>
+        </Alert>
+      )}
 
-        {/* Column 2: Live Cameras */}
-        <div className="lg:col-span-4 h-full min-h-0">
-          <LiveCamerasCard
-            cameras={cameras}
-            selectedCameraId={selectedCameraId}
-            onSelectCamera={(id) => setSelectedCameraId(id)}
-            whepBase={media?.whepBase}
-          />
-        </div>
+      {unseeded > 0 && (
+        <Alert variant="destructive">
+          <TriangleAlertIcon />
+          <AlertTitle>
+            {unseeded} camera{unseeded === 1 ? "" : "s"} serving but unknown to the node
+          </AlertTitle>
+          <AlertDescription>
+            Video arrives and every detection from{" "}
+            {unseeded === 1 ? "it" : "them"} is rejected, so no incident can ever
+            open —{" "}
+            <Link to="/cameras" className="underline">add {unseeded === 1 ? "it" : "them"} on the Cameras page</Link>.
+          </AlertDescription>
+        </Alert>
+      )}
 
-        {/* Column 3: Recent Alerts */}
-        <div className="lg:col-span-3 h-full min-h-0">
-          <RecentAlertsCard liveIncidents={liveIncidents} />
-        </div>
-      </div>
-
-      {/* Filter Bar: Show Detections */}
-      <div className="shrink-0">
-        <DetectionFilterBar
-          selectedCategory={selectedCategory}
-          onSelectCategory={setSelectedCategory}
-          timeRange={timeRange}
-          onSelectTimeRange={setTimeRange}
+      <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+        <Stat
+          label="Open incidents"
+          value={incidents === null ? "—" : String(open.length)}
+          tone={critical > 0 ? "bad" : open.length > 0 ? "warn" : "good"}
+          detail={critical > 0 ? `${critical} critical` : "nothing critical"}
+          to="/incidents"
+        />
+        <Stat
+          label="Feeds serving"
+          value={hub.loading ? "—" : `${serving}/${cameras.length}`}
+          tone={blind > 0 ? "bad" : "good"}
+          detail={blind > 0 ? `${blind} blind` : "all cameras up"}
+          to="/services/health"
+        />
+        <Stat
+          label="Media hub"
+          value={hub.data?.hub.reachable ? "up" : hub.loading ? "—" : "down"}
+          tone={hub.data?.hub.reachable ? "good" : "bad"}
+          detail={hub.data?.hub.reachable ? "answering" : (hub.data?.hub.error ?? "")}
+          to="/services/health"
+        />
+        <Stat
+          label="Vision service"
+          value={vision.up ? "up" : vision.link === "connecting" ? "—" : "down"}
+          tone={vision.up ? "good" : "bad"}
+          detail={
+            vision.up
+              ? `${vision.status?.cameras.length ?? 0} camera(s) detecting`
+              : "not reporting — overlay only, record unaffected"
+          }
+          to="/services/health"
         />
       </div>
 
-      {/* Lower Row: Recent Events Filmstrip Carousel */}
-      <div className="shrink-0">
-        <RecentEventsCarousel categoryFilter={selectedCategory} />
+      <div className="grid gap-4 lg:grid-cols-[minmax(0,2fr)_minmax(0,1fr)]">
+        <Card>
+          <CardHeader className="flex-row items-center justify-between space-y-0 pb-3">
+            <CardTitle className="text-sm font-medium">Needs a decision</CardTitle>
+            <Button asChild size="sm" variant="outline">
+              <Link to="/incidents">All incidents</Link>
+            </Button>
+          </CardHeader>
+          <CardContent>
+            {incidents === null && <LoadingRows rows={4} />}
+            {incidents !== null && open.length === 0 && (
+              <p className="py-8 text-center text-sm text-muted-foreground">
+                Nothing open. Everything raised has been acted on.
+              </p>
+            )}
+            <div className="flex flex-col gap-2">
+              {open.slice(0, 6).map((incident) => (
+                <Link
+                  key={incident.id}
+                  to={`/incidents/${incident.id}`}
+                  className="flex items-center justify-between gap-3 rounded-md border p-3 text-sm hover:bg-muted/50"
+                >
+                  <span className="flex min-w-0 items-center gap-2">
+                    <SirenIcon className="size-4 shrink-0 text-muted-foreground" />
+                    <span className="truncate">{incident.title}</span>
+                  </span>
+                  <span className="flex shrink-0 items-center gap-2">
+                    <span className="text-xs text-muted-foreground">
+                      {relative(incident.lastEventAt)}
+                    </span>
+                    <SeverityBadge severity={incident.severity} />
+                  </span>
+                </Link>
+              ))}
+            </div>
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader className="pb-3">
+            <CardTitle className="text-sm font-medium">Services</CardTitle>
+          </CardHeader>
+          <CardContent className="flex flex-col gap-2">
+            {SERVICES.map((service) => (
+              <Link
+                key={service.id}
+                to={service.path}
+                className="flex items-center gap-3 rounded-md border p-3 text-sm hover:bg-muted/50"
+              >
+                <service.icon className="size-4 shrink-0 text-muted-foreground" />
+                <span className="flex min-w-0 flex-1 flex-col">
+                  <span className="font-medium">{service.label}</span>
+                  <span className="truncate text-xs text-muted-foreground">
+                    {service.blurb}
+                  </span>
+                </span>
+              </Link>
+            ))}
+          </CardContent>
+        </Card>
       </div>
-    </div>
+    </PageShell>
+  );
+}
+
+function Stat({
+  label, value, detail, tone, to,
+}: {
+  label: string;
+  value: string;
+  detail: string;
+  tone: "good" | "warn" | "bad";
+  to: string;
+}) {
+  return (
+    <Link to={to}>
+      <Card className="transition-colors hover:bg-muted/50">
+        <CardContent className="flex flex-col gap-1 pt-6">
+          <span className="text-xs uppercase tracking-wide text-muted-foreground">
+            {label}
+          </span>
+          <span
+            className={cn(
+              "text-3xl font-semibold tabular-nums",
+              tone === "bad" && "text-destructive",
+              tone === "warn" && "text-amber-600 dark:text-amber-400",
+            )}
+          >
+            {value}
+          </span>
+          <span className="truncate text-xs text-muted-foreground">{detail}</span>
+        </CardContent>
+      </Card>
+    </Link>
   );
 }

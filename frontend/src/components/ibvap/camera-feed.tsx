@@ -1,11 +1,11 @@
 /**
- * One camera's live picture, with the fence drawn on it.
+ * One camera's live picture, with a module's observations drawn on it.
  *
  * Three independent sources compose this tile, and keeping them independent is
  * the whole design:
  *
  *   video   WHEP, hub -> browser        lib/whep.ts
- *   boxes   WS, vision -> browser       lib/boxes.ts     ephemeral
+ *   tracks  WS, vision -> browser       lib/live.ts      ephemeral
  *   zones   /api/config                 static until edited
  *
  * None of them can take the others down. The detector restarting freezes the
@@ -14,8 +14,13 @@
  * still and letting somebody assume the rest is fine -- a screen that has
  * quietly stopped updating is the failure this whole console exists to prevent.
  *
+ * ONE MODULE AT A TIME, by default. Each service page draws its own module's
+ * view: the fence page wants pending crossings, the ANPR page wants plate
+ * guesses. Passing `module={null}` merges every module's tracks, which is what
+ * a general camera tile wants and what no service page should ask for.
+ *
  * OVERLAY ALIGNMENT IS BEST-EFFORT. WebRTC frame timestamps and detection
- * timestamps come from different clocks; the latest boxes are drawn over the
+ * timestamps come from different clocks; the latest tracks are drawn over the
  * current frame without reconciling them. On a walking person the error is not
  * visible. Frame-accurate alignment needs a detection ring buffer keyed on
  * capture time and requestVideoFrameCallback, and is deliberately not built --
@@ -25,7 +30,7 @@
 import { useEffect, useRef, useState } from "react";
 import { Badge } from "@/components/ui/badge";
 import { cn } from "@/lib/utils";
-import { onBoxes, type Box } from "@/lib/boxes";
+import { onLive, type AnprExtra, type LiveTrack } from "@/lib/live";
 import { playWhep, whepUrl, type FeedState } from "@/lib/whep";
 import type { Point, Severity, ZoneGeometry } from "@/lib/types";
 
@@ -38,6 +43,18 @@ const SEVERITY_COLOUR: Record<Severity, string> = {
 /** Recent-movement aid, not a record (see trailsRef comment below). */
 const TRAIL_MAX_POINTS = 50;
 const TRAIL_STALE_SECONDS = 3;
+
+/**
+ * A stable key for one tracked subject.
+ *
+ * Prefers the run-scoped `track_ref` the vision service already computes,
+ * because a bare integer id is reused once a track dies -- two different people
+ * would share a trail and a colour. Falls back only when a module omits it.
+ */
+const keyOf = (track: LiveTrack): string => {
+  const ref = (track.extra as { track_ref?: string } | undefined)?.track_ref;
+  return ref ?? `id:${track.track_id ?? "?"}`;
+};
 
 /** Deterministic per-track colour so two overlapping trails stay readable
  * without a legend -- same track, same colour, every tile, every render. */
@@ -64,6 +81,8 @@ export interface CameraFeedProps {
   streamPath?: string;
   whepBase?: string;
   zones?: FeedZone[];
+  /** Which module's view to draw. `null` merges all of them. */
+  module?: string | null;
   /** Off for a wall of tiles where the boxes would be too small to read. */
   showBoxes?: boolean;
   className?: string;
@@ -74,17 +93,18 @@ export function CameraFeed({
   streamPath,
   whepBase,
   zones = [],
+  module = null,
   showBoxes = true,
   className,
 }: CameraFeedProps) {
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
-  // Boxes live in a ref, not state: they arrive several times a second and
+  // Tracks live in a ref, not state: they arrive several times a second and
   // re-rendering React that often to move a rectangle would be pure waste.
   // The canvas is redrawn from an animation frame instead.
-  const boxesRef = useRef<Box[]>([]);
-  // Client-side only, by design: the box channel is stateless per-frame (see
-  // module comment above) and the backend never stores a live path either --
+  const tracksRef = useRef<LiveTrack[]>([]);
+  // Client-side only, by design: the live channel is stateless per-frame (see
+  // module comment above) and the edge node never stores a live path either --
   // it only keeps one in RAM per track, flushed to a row when a zone crossing
   // actually fires. A short recent trail here is purely a viewing aid, gone
   // the moment this tile unmounts, never a record of anything.
@@ -110,44 +130,45 @@ export function CameraFeed({
     return () => handle.close();
   }, [whepBase, path]);
 
-  // ── boxes ──────────────────────────────────────────────────────────────
+  // ── observations ───────────────────────────────────────────────────────
   useEffect(() => {
     if (!showBoxes) {
-      boxesRef.current = [];
+      tracksRef.current = [];
       trailsRef.current.clear();
       return;
     }
-    return onBoxes(cameraId, (frame) => {
-      boxesRef.current = frame.boxes;
+    return onLive(cameraId, module, (observation) => {
+      tracksRef.current = observation.tracks;
 
       const seen = new Set<string>();
-      for (const box of frame.boxes) {
-        seen.add(box.track_ref);
-        const [x, y, w, h] = box.bbox;
-        // Bottom centre -- the ground point, matching how the backend's
-        // fence judges a crossing (a box's centre would place a tall
-        // person's "position" half a body above their feet).
-        const point: [number, number] = [x + w / 2, y + h];
+      for (const track of observation.tracks) {
+        const key = keyOf(track);
+        seen.add(key);
+        const [x1, , x2, y2] = track.bbox;
+        // Bottom centre -- the ground point, matching how the fence judges a
+        // crossing (a box's centre would place a tall person's "position"
+        // half a body above their feet).
+        const point: [number, number] = [(x1 + x2) / 2, y2];
 
-        const trail = trailsRef.current.get(box.track_ref);
+        const trail = trailsRef.current.get(key);
         if (trail) {
           trail.pts.push(point);
           if (trail.pts.length > TRAIL_MAX_POINTS) trail.pts.shift();
-          trail.mono = frame.capture_mono;
+          trail.mono = observation.frame_ts;
         } else {
-          trailsRef.current.set(box.track_ref, { pts: [point], mono: frame.capture_mono });
+          trailsRef.current.set(key, { pts: [point], mono: observation.frame_ts });
         }
       }
-      // Drop trails for tracks that vanished a while ago, so a person who
-      // left frame doesn't leave a permanent ghost line behind. Anything
-      // still in `seen` this tick was just refreshed above.
+      // Drop trails for tracks that vanished a while ago, so a person who left
+      // frame doesn't leave a permanent ghost line behind. Anything still in
+      // `seen` this tick was just refreshed above.
       for (const [ref, trail] of trailsRef.current) {
-        if (!seen.has(ref) && frame.capture_mono - trail.mono > TRAIL_STALE_SECONDS) {
+        if (!seen.has(ref) && observation.frame_ts - trail.mono > TRAIL_STALE_SECONDS) {
           trailsRef.current.delete(ref);
         }
       }
     });
-  }, [cameraId, showBoxes]);
+  }, [cameraId, module, showBoxes]);
 
   // ── drawing ────────────────────────────────────────────────────────────
   useEffect(() => {
@@ -212,28 +233,50 @@ export function CameraFeed({
         context.stroke();
       }
 
-      // Boxes are neutral by design. The vision service does not know what a
-      // zone is or what a severity means -- that lives one layer up -- so a
-      // box says "a person is here", never "this is an alarm". The alarm
-      // arrives separately, as an incident.
-      for (const box of boxesRef.current) {
-        const [x, y, w, h] = box.bbox;
-        const px = x * width;
-        const py = y * height;
-        const pw = w * width;
-        const ph = h * height;
+      // Boxes are neutral by design. The vision service reports that a subject
+      // crossed; it does not decide what that is worth -- severity follows the
+      // zone's operator-editable targets, one layer up. So a box says "a person
+      // is here", never "this is an alarm". The alarm arrives separately, as an
+      // incident, from the node.
+      for (const track of tracksRef.current) {
+        const [x1, y1, x2, y2] = track.bbox;
+        const px = x1 * width;
+        const py = y1 * height;
+        const pw = (x2 - x1) * width;
+        const ph = (y2 - y1) * height;
 
         context.strokeStyle = "#38bdf8";
         context.lineWidth = 2;
         context.strokeRect(px, py, pw, ph);
 
-        const label = `${box.class} ${(box.confidence * 100).toFixed(0)}%`;
+        const label = `${track.class} ${(track.confidence * 100).toFixed(0)}%`;
         context.font = "11px ui-monospace, monospace";
         const textWidth = context.measureText(label).width;
         context.fillStyle = "#38bdf8";
         context.fillRect(px, Math.max(0, py - 15), textWidth + 8, 15);
         context.fillStyle = "#0c223a";
         context.fillText(label, px + 4, Math.max(11, py - 4));
+
+        // A live plate guess, when the ANPR module supplied one. Drawn in a
+        // different colour and never styled like a confirmation: this is an
+        // unconfirmed read off the live channel, and the accepted one arrives
+        // from the node as a plate_detection record.
+        const plate = (track.extra as AnprExtra | undefined)?.plate;
+        if (plate) {
+          const [bx1, by1, bx2, by2] = plate.bbox;
+          context.strokeStyle = "#fbbf24";
+          context.lineWidth = 2;
+          context.strokeRect(
+            bx1 * width, by1 * height,
+            (bx2 - bx1) * width, (by2 - by1) * height,
+          );
+          context.font = "12px ui-monospace, monospace";
+          const plateWidth = context.measureText(plate.text).width;
+          context.fillStyle = "#fbbf24";
+          context.fillRect(bx1 * width, Math.max(0, by1 * height - 16), plateWidth + 8, 16);
+          context.fillStyle = "#1c1917";
+          context.fillText(plate.text, bx1 * width + 4, Math.max(12, by1 * height - 4));
+        }
       }
     };
 

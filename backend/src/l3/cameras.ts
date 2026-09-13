@@ -206,3 +206,50 @@ export function setCameraStatus(cameraId: string, status: CameraStatus): boolean
   });
   return true;
 }
+
+export interface CreateCameraInput {
+  id: string;
+  siteId: string;
+  name: string;
+  streamUrl?: string | null;
+}
+
+/**
+ * Register a camera the media hub is already serving.
+ *
+ * WHY THIS EXISTS RATHER THAN "just edit seed.ts": `seed()` returns early once
+ * the organisation row is present, so editing the seed changes nothing on a
+ * database that has been used. Applying it would mean deleting the file --
+ * destroying every incident, event and audit row to add one camera. A post
+ * that has been running for a week cannot be asked to do that.
+ *
+ * `id` is the hub's path name and the id the vision service puts in every
+ * detection. They must match exactly or the node rejects the frames, so it is
+ * taken as given rather than generated -- this is adoption of something that
+ * already exists, not creation of something new.
+ *
+ * `status` starts at FULL, which is honest rather than optimistic: the vision
+ * service overwrites it from what it can actually see within a frame or two,
+ * and starting at DEAD would raise an alert for a camera nobody has looked at
+ * yet.
+ */
+export function createCamera(input: CreateCameraInput) {
+  const existing = one<{ id: string }>("SELECT id FROM camera WHERE id = $id", {
+    $id: input.id,
+  });
+  if (existing) return null;
+
+  run(
+    `INSERT INTO camera (id, site_id, name, stream_url, status, enabled, created_at)
+     VALUES ($id, $site, $name, $stream, 'FULL', 1, $at)`,
+    {
+      $id: input.id,
+      $site: input.siteId,
+      $name: input.name,
+      $stream: input.streamUrl ?? null,
+      $at: nowIso(),
+    },
+  );
+
+  return cameraDetail(input.id);
+}

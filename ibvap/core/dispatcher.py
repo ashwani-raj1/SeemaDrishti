@@ -42,12 +42,27 @@ class _Client:
     policy, applied everywhere it applies.
     """
 
-    __slots__ = ("ws", "cameras", "queue", "dropped")
+    __slots__ = ("ws", "cameras", "pending", "status", "wake", "dropped")
 
     def __init__(self, ws):
         self.ws = ws
         self.cameras: set[str] | None = None  # None = every camera
-        self.queue: asyncio.Queue = asyncio.Queue(maxsize=1)
+        # LATEST-WINS PER (camera, module), NOT PER CLIENT. This was a single
+        # slot, which was correct when the channel carried one message per
+        # frame. It no longer does: every module publishes its own view of the
+        # same frame, back to back in one tick. With one slot the last module
+        # to publish overwrote all the others EVERY time -- not occasionally,
+        # deterministically -- so the fence and ANPR pages received nothing at
+        # all while multi_human (last in the list) looked fine. Keying by
+        # stream keeps the drop-oldest policy where it belongs: a stale fence
+        # box is replaced by a fresher fence box, never by an ANPR one.
+        self.pending: dict[str, dict] = {}
+        # Service-level messages ride a SEPARATE queue. They are low-rate and
+        # must not be dropped, but observations are deliberately drop-oldest --
+        # sharing one lane would let a busy camera at 6/s discard the one
+        # message that says the detector is alive.
+        self.status: asyncio.Queue = asyncio.Queue(maxsize=8)
+        self.wake = asyncio.Event()
         self.dropped = 0
 
     def wants(self, camera_id: str) -> bool:
@@ -56,16 +71,11 @@ class _Client:
     def offer(self, message: dict) -> None:
         if not self.wants(message.get("camera_id", "")):
             return
-        if self.queue.full():
-            try:
-                self.queue.get_nowait()
-                self.dropped += 1
-            except asyncio.QueueEmpty:
-                pass
-        try:
-            self.queue.put_nowait(message)
-        except asyncio.QueueFull:
-            pass
+        key = f'{message.get("camera_id")}/{message.get("module")}'
+        if key in self.pending:
+            self.dropped += 1  # a fresher frame for this same stream
+        self.pending[key] = message
+        self.wake.set()
 
 
 class LiveChannel:
@@ -98,6 +108,21 @@ class LiveChannel:
 
     def publish_observation(self, observation: LiveObservation) -> None:
         self.publish(observation.to_dict())
+
+    def broadcast(self, message: dict) -> None:
+        """
+        A service-level message, to every client regardless of subscription.
+
+        A console watching one camera still needs to know the detector is up --
+        that is a fact about the process, not about a camera, so it is not
+        subject to camera filtering.
+        """
+        for client in self._clients:
+            try:
+                client.status.put_nowait(message)
+                client.wake.set()
+            except asyncio.QueueFull:
+                pass
 
     async def serve_forever(self, stop: asyncio.Event) -> None:
         async with serve(self._handle, self.bind, self.port,
@@ -147,10 +172,30 @@ class LiveChannel:
             self._clients.discard(client)
 
     async def _pump(self, client: _Client) -> None:
+        """
+        Drain everything waiting, status first.
+
+        One wake-up drains every pending stream rather than one message, so N
+        modules on N cameras all get through on the same tick. Status is sent
+        before observations because it is rare and load-bearing: it is what
+        separates a quiet scene from a dead detector.
+        """
         while True:
-            message = await client.queue.get()
-            await client.ws.send(json.dumps(message))
-            self.sent += 1
+            await client.wake.wait()
+            # Cleared BEFORE draining: anything offered while we are sending
+            # sets it again and is picked up on the next pass, rather than
+            # being silently swallowed by a clear that came after.
+            client.wake.clear()
+
+            while not client.status.empty():
+                await client.ws.send(json.dumps(client.status.get_nowait()))
+
+            for key in list(client.pending):
+                message = client.pending.pop(key, None)
+                if message is None:
+                    continue
+                await client.ws.send(json.dumps(message))
+                self.sent += 1
 
     async def _control(self, client: _Client) -> None:
         """A console showing one tile fullscreen can stop paying for the rest."""
@@ -284,11 +329,17 @@ class Dispatcher:
     def dispatch(self, camera_id: str, module: str, frame_ts: float,
                  live_items: list[dict], durable_items: list[dict],
                  simulated: bool) -> None:
-        if live_items:
-            self.live.publish_observation(LiveObservation(
-                camera_id=camera_id, module=module,
-                frame_ts=frame_ts, tracks=live_items,
-            ))
+        # PUBLISHED EVEN WHEN EMPTY, and this is not an oversight to optimise
+        # away. An empty track list is how the overlay learns a subject LEFT;
+        # skipping empties freezes the last box on screen after the frame
+        # cleared, which reads as a stuck detector. It is also the only signal
+        # that separates "running, nothing in view" from "process is dead" --
+        # a quiet border and a crashed detector look identical otherwise, and
+        # that is the exact failure this console exists to prevent.
+        self.live.publish_observation(LiveObservation(
+            camera_id=camera_id, module=module,
+            frame_ts=frame_ts, tracks=live_items,
+        ))
         if not self.durable:
             return
         for item in durable_items:

@@ -71,6 +71,20 @@ export function NewZoneDialog({
 
   const nameOf = useMemo(() => new Map(cameras.map((c) => [c.id, c.name])), [cameras]);
 
+  /**
+   * Cameras an area does NOT account for.
+   *
+   * `camerasInSector` matches on surveyed position in client/geography.ts, so a
+   * camera nobody has surveyed belongs to no area. It was therefore impossible
+   * to put in a zone at all -- you could add the camera, watch it, and never be
+   * able to judge anything on it. A zone needs a camera and a shape, not a
+   * grid reference, so position is a convenience here and never a requirement.
+   */
+  const elsewhere = useMemo(
+    () => cameras.filter((camera) => !inArea.includes(camera.id)),
+    [cameras, inArea],
+  );
+
   function reset() {
     setSectorId(null);
     setPicked([]);
@@ -104,8 +118,7 @@ export function NewZoneDialog({
     );
 
   const problem =
-    !sectorId ? "Choose an area to see the cameras covering it."
-    : picked.length === 0 ? "Pick at least one camera."
+    picked.length === 0 ? "Pick at least one camera."
     : !name.trim() ? "Give the zone a name."
     : targets.length === 0 ? "Add at least one thing to detect against."
     : null;
@@ -292,6 +305,53 @@ export function NewZoneDialog({
                   </Field>
                 </>
               )}
+
+              <Separator />
+              <Field>
+                <FieldLabel>
+                  {sector ? "Other cameras" : "Cameras"}
+                </FieldLabel>
+                <FieldDescription>
+                  {sector
+                    ? "Not standing in that area, but you can still watch them from this zone."
+                    : "Pick the cameras this zone is watched from. Choosing an area above just ticks the ones standing in it."}
+                </FieldDescription>
+                <div className="grid gap-1.5 pt-1">
+                  {elsewhere.length === 0 && (
+                    <p className="rounded-md border border-dashed px-3 py-4 text-center text-sm text-muted-foreground">
+                      Every camera is accounted for by the area above.
+                    </p>
+                  )}
+                  {elsewhere.map((camera) => (
+                    <label
+                      key={camera.id}
+                      className={cn(
+                        "flex cursor-pointer items-center gap-3 rounded-md border p-2.5 transition-colors",
+                        picked.includes(camera.id)
+                          ? "border-primary/50 bg-accent"
+                          : "hover:bg-accent/50",
+                      )}
+                    >
+                      <Checkbox
+                        checked={picked.includes(camera.id)}
+                        onCheckedChange={() => toggle(camera.id)}
+                      />
+                      <CctvIcon className="size-4 shrink-0 text-muted-foreground" />
+                      <span className="min-w-0 flex-1">
+                        <span className="block truncate text-sm">{camera.name}</span>
+                        {!ATTARI_SECTOR.cameras[camera.id] && (
+                          // Said plainly. The zone will work; only the map
+                          // placement is missing, and guessing one would draw
+                          // coverage over ground nobody can see.
+                          <span className="block text-xs text-muted-foreground">
+                            no surveyed position — it will not appear on the map
+                          </span>
+                        )}
+                      </span>
+                    </label>
+                  ))}
+                </div>
+              </Field>
             </div>
           </ScrollArea>
 

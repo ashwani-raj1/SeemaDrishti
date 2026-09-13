@@ -11,6 +11,8 @@ a dead uplink runs the complete feature set.
 
 - [`docs/CODE_GUIDELINES.md`](docs/CODE_GUIDELINES.md) — architecture and code rules
 - [`docs/UI_GUIDELINES.md`](docs/UI_GUIDELINES.md) — console design rules
+- [`docs/API.md`](docs/API.md) — every endpoint, across all four processes
+- [`docs/ADDING_A_CAMERA.md`](docs/ADDING_A_CAMERA.md) — the full camera flow, hub to zone
 - [`backend/README.md`](backend/README.md) — what the node serves, route by route
 - [`media/README.md`](media/README.md) — the video hub, clips, and where footage comes from
 - [`plans/IBVAP_live_feed_path.html`](plans/IBVAP_live_feed_path.html) — why the live path is shaped this way

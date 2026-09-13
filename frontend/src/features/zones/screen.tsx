@@ -1,6 +1,8 @@
 import { useEffect, useMemo, useState } from "react";
 import { useSearchParams } from "react-router-dom";
-import { CctvIcon, PlusIcon, SaveIcon, Trash2Icon, TriangleAlertIcon } from "lucide-react";
+import {
+  CctvIcon, PencilRulerIcon, PlusIcon, SaveIcon, Trash2Icon, TriangleAlertIcon,
+} from "lucide-react";
 import { toast } from "sonner";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -25,6 +27,7 @@ import { humanise } from "@/lib/format";
 import { cn } from "@/lib/utils";
 import type { Direction, MonitoringZone, ZoneCamera } from "@/lib/types";
 import { NewZoneDialog } from "./new-zone-dialog";
+import { ShapeEditor } from "./shape-editor";
 import { TargetEditor, TargetList, toDraft, type DraftTarget } from "./target-editor";
 
 /**
@@ -240,6 +243,7 @@ function CameraRow({
   const [confirmSeconds, setConfirmSeconds] = useState(camera.confirmSeconds);
   const [overrides, setOverrides] = useState<DraftTarget[]>(() => toDraft(camera.overrides));
   const [editingOverrides, setEditingOverrides] = useState(camera.overrides.length > 0);
+  const [drawing, setDrawing] = useState(false);
   const [busy, setBusy] = useState(false);
 
   useEffect(() => {
@@ -270,6 +274,19 @@ function CameraRow({
 
   return (
     <div className="rounded-md border">
+      <ShapeEditor
+        open={drawing}
+        onOpenChange={setDrawing}
+        zoneId={zone.id}
+        zoneName={zone.name}
+        cameraId={camera.cameraId}
+        cameraName={camera.cameraName}
+        geometry={camera.geometry}
+        points={camera.points}
+        direction={camera.direction}
+        confirmSeconds={camera.confirmSeconds}
+        onSaved={onChanged}
+      />
       <div className="grid gap-4 p-3 md:grid-cols-[220px_minmax(0,1fr)]">
         <div className="space-y-2">
           <EvidenceOverlay
@@ -286,9 +303,20 @@ function CameraRow({
           />
           {!camera.placed && (
             <p className="text-[11px] leading-snug text-amber-600 dark:text-amber-500">
-              Placeholder shape — nobody has positioned this against the camera's view yet.
+              Placeholder shape — nobody has positioned this against the camera's
+              view yet, so it judges nothing useful.
             </p>
           )}
+          <Button
+            size="sm"
+            variant={camera.placed ? "outline" : "default"}
+            className="w-full"
+            disabled={!canEdit}
+            onClick={() => setDrawing(true)}
+          >
+            <PencilRulerIcon className="size-3.5" />
+            {camera.placed ? "Redraw on camera" : "Draw on camera"}
+          </Button>
         </div>
 
         <div className="min-w-0 space-y-3">
