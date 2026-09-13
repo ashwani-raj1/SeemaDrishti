@@ -39,8 +39,14 @@ python media/fetch.py --synthetic      # or point cameras.yml at real footage
 python media/configure.py
 media/bin/mediamtx.exe media/mediamtx.yml   # terminal 1
 bun run dev                                  # terminal 2 — node + console
-python ibvap/service.py                      # terminal 3 — detection
+python ibvap/people_service.py               # terminal 3 — human detection + tracking + faces
+# python ibvap/service.py                    # or: vehicle detection + ANPR instead
 ```
+
+`ibvap/` splits into two independent pipelines that do not share a filename (see
+[`ibvap/README.md`](ibvap/README.md#two-domains-four-files-on-purpose)) — `people_*.py` for
+people (this project's scope items #1–#2), `run.py`/`service.py` for vehicles/ANPR. Only run
+one at a time unless you've given each a distinct `--boxes-port`.
 
 Adding a camera is one block in [`media/cameras.yml`](media/cameras.yml).
 Which cameras *this* machine runs detection on is `IBVAP_WORKER_CAMERAS` in
@@ -85,12 +91,11 @@ curl localhost:8000/api/health
 ## Running the real detector
 
 `ibvap/` is a separate Python 3.11 process — not part of `bun run setup`/`dev`. Needs
-`opencv-python` and `ultralytics` (`pip install opencv-python ultralytics`); `yolo11n.pt`
-auto-downloads on first run.
+`pip install -r ibvap/requirements.txt`; `yolo11n.pt` auto-downloads on first run.
 
 ```bash
 cd ibvap
-python run.py --source data/test1.mp4 --show --post-url http://localhost:8000
+python people_run.py --source data/test1.mp4 --show --post-url http://localhost:8000
 ```
 
 `--post-url` is off by default (the demo runs fully standalone otherwise) — set it to feed
@@ -99,6 +104,9 @@ same `/hooks/ingress/detections` seam, unset `simulated` this time. `--camera-id
 match one already seeded in `backend/src/db/seed.ts` (default `cam_fence_north`). See
 `ibvap/claude.md` for the full CPU-budget tuning knobs and known limitations (no
 re-identification across long occlusion, face detection needs a close/choke-point range).
+
+`run.py` (no `people_` prefix) is the equivalent tool for the separate vehicle/ANPR
+pipeline — see [`ibvap/README.md`](ibvap/README.md) for why the two never share a file.
 
 ## Configuration
 
@@ -134,12 +142,19 @@ frontend/
   src/client/       per-deployment config, geography, profiles
   src/lib/          api client, SSE stream, types, formatting
 ibvap/      L1 -- Python, separate process, posts through the same ingress hook
-  run.py            demo/production CLI: source, tuning flags, --post-url
-  core/ingest.py    RTSP/file/webcam ingest, source-aware frame policy
-  core/person.py    YOLO11n + ByteTrack, movement trails
-  core/face.py      cascaded YuNet, scoped to each tracked person's head region
+  people_run.py     people: single-source debug CLI, --post-url, --show
+  people_service.py people: real multi-camera shape, cameras.yml + .env
+  run.py            vehicles/ANPR: single-source debug CLI (same shape as above)
+  service.py        vehicles/ANPR: real multi-camera shape
+  ai_service.py     vehicles/ANPR: local FastAPI plate-OCR helper, browser-driven
+  core/ingest.py    RTSP/file/webcam ingest, source-aware frame policy (shared)
+  core/person.py    YOLO11n + ByteTrack, movement trails (people)
+  core/face.py      cascaded YuNet, scoped to each tracked person's head region (people)
+  core/vehicle.py   YOLO11n + ByteTrack, vehicle classes (vehicles)
+  core/plate.py     cascaded plate OCR, scoped to each tracked vehicle's box (vehicles)
+  core/box_channel.py      WS detections -> console overlay, ephemeral (shared)
   core/ingress_client.py   DetectionFrame shape + POST, backgrounded so a
-                            down node can never stall the detection loop
+                            down node can never stall the detection loop (shared)
 ```
 
 ## Troubleshooting

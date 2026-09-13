@@ -42,6 +42,11 @@ history, duplicates on reconnect, and operator decisions taken against events
 that were never persisted. Two contracts prevent that by construction: **nothing
 durable is ever only in a browser.**
 
+Running both domains on one machine at once needs two box-channel ports — `people_service.py
+--boxes-port 8101` alongside `service.py`'s default `8100`, say — since only one process may
+bind a given port. On a normal team laptop you run whichever domain you're actually
+demoing, not both.
+
 ## Requirements
 
 Python 3.11, separate from the Bun workspace — `bun run setup` does **not**
@@ -137,6 +142,7 @@ Three sources, deliberately not merged:
 | `IBVAP_BACKEND_HOST` / `IBVAP_BACKEND_PORT` | `127.0.0.1` / `8000` | Where the edge node is |
 | `IBVAP_BOXES_BIND` / `IBVAP_BOXES_PORT` | `0.0.0.0` / `8100` | Where the console reads observations |
 | `IBVAP_WEIGHTS` | `yolo11n.pt` | Detector weights |
+| `IBVAP_FACE_MODEL` | `data/face_detection_yunet_2023mar.onnx` | YuNet weights (people domain) |
 | `IBVAP_IMGSZ` | `480` | Inference size |
 | `IBVAP_CONF` | `0.35` | Confidence floor |
 | `IBVAP_TARGET_FPS` | `6` | Processed frames per second, per camera |
