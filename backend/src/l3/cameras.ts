@@ -181,3 +181,28 @@ export function cameraEnabled(cameraId: string): boolean {
   });
   return row ? row.enabled === 1 : false;
 }
+
+/**
+ * Record what the analysis engine can currently see on this feed.
+ *
+ * OBSERVED, never decided: this is written by the vision service reporting that
+ * frames stopped or resumed, and by nothing else. An operator taking a camera
+ * out of service sets `enabled` instead -- see the note at the top of this
+ * file. Writing the same fact into both columns is how a status board loses the
+ * ability to tell a dead camera from a switched-off one.
+ *
+ * Returns true when the status actually changed, so a caller can avoid
+ * recording an event for a camera repeating what it already said.
+ */
+export function setCameraStatus(cameraId: string, status: CameraStatus): boolean {
+  const row = one<{ status: string }>("SELECT status FROM camera WHERE id = $id", {
+    $id: cameraId,
+  });
+  if (!row || row.status === status) return false;
+  run("UPDATE camera SET status = $status, updated_at = $at WHERE id = $id", {
+    $status: status,
+    $at: nowIso(),
+    $id: cameraId,
+  });
+  return true;
+}

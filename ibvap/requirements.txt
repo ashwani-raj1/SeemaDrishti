@@ -4,18 +4,12 @@
 # that fails to set up the night before submission. Every line here carries the
 # reason it is not removable.
 
-# Local HTTP endpoint used by the browser live/video ANPR scanner.
-fastapi>=0.115,<1
-uvicorn[standard]>=0.30,<1
-
-# Plate OCR after a vehicle is localised. Kept separate from vehicle tracking
-# so a detector result without a readable plate is still valid.
-easyocr>=1.7,<2
-
-# YOLO11n + the ByteTrack integration. Pulls torch (CPU wheels) with it.
+# YOLO11n + the ByteTrack integration behind core/detection.py's single shared
+# pass. Pulls torch (CPU wheels) with it.
 ultralytics>=8.3
 
-# Frame decode, RTSP ingest, and YuNet face detection (cv2.FaceDetectorYN).
+# Frame decode and RTSP ingest (core/capture.py), plus the crop/CLAHE
+# preprocessing modules/anpr.py runs before OCR.
 opencv-python>=4.10
 
 # Required BY ByteTrack for its linear-assignment step. ultralytics auto-installs
@@ -24,14 +18,35 @@ opencv-python>=4.10
 # the demo rather than during it.
 lap>=0.5.12
 
-# The box channel (core/box_channel.py). Ships with no transitive dependencies.
+# Plate OCR after a vehicle is localised (modules/anpr.py). Kept separate from
+# vehicle tracking so a detection without a readable plate is still valid.
+easyocr>=1.7,<2
+
+# The live observation channel (core/dispatcher.py). Ships with no transitive
+# dependencies.
 websockets>=12.0
 
-# Reading media/cameras.yml. Already present as an ultralytics dependency;
-# named explicitly so it is not silently lost if that changes.
+# Reading media/cameras.yml in config.py. Already present as an ultralytics
+# dependency; named explicitly so it is not silently lost if that changes.
 PyYAML>=6.0
 
+# The local HTTP surface used by the browser plate scanner (ai_service.py).
+# Not used by the vision service itself -- main.py runs on asyncio and posts
+# with urllib.
+fastapi>=0.115,<1
+uvicorn[standard]>=0.30,<1
+
 # NOT listed, on purpose:
-#   python-dotenv  -- core/settings.py reads .env in fifteen lines
+#   python-dotenv  -- config.py reads .env in fifteen lines
+#   aiohttp/httpx  -- core/dispatcher.py posts a handful of events a minute
+#                     through urllib inside asyncio.to_thread. An async HTTP
+#                     client would buy nothing at that rate and cost a
+#                     dependency; the property that matters is that the socket
+#                     never runs on the event loop, which to_thread already
+#                     gives us.
 #   numpy          -- arrives with opencv and ultralytics; pinning it here
 #                     invites a version fight between the two
+#   a ReID model   -- modules/reid.py ships the interface and a no-op provider.
+#                     An embedding model is a real CPU cost that has not been
+#                     measured on team hardware yet (claude.md §7), and adding
+#                     the dependency before the measurement is backwards.

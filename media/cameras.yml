@@ -34,6 +34,24 @@
 #                        false still publishes video — the tile is live, it
 #                        just has no boxes. That is a legitimate v0 state and
 #                        the console shows it honestly.
+#
+#   modules:             which detection sub-modules run on this camera. The
+#                        vision service loads one shared YOLO+ByteTrack pass per
+#                        camera and hands its output to each of these; a module
+#                        never runs a detector of its own.
+#
+#                        modules: [fence, anpr]          names, default params
+#                        modules:                        names with params
+#                          fence: {confirm_frames: 4}
+#                          anpr:  {report_interval: 12}
+#
+#                        Omit it to take `defaults.modules` below. Available:
+#                        fence (zone/line intrusion), anpr (plate reading),
+#                        multi_human (person tracking; re-ID is interface-only).
+#                        Fence ZONES are not configured here — they are drawn by
+#                        an operator, stored by the edge node, and pulled from
+#                        its /api/config while running, so an edit takes effect
+#                        without touching this file or restarting a worker.
 
 defaults:
   detect: true
@@ -41,6 +59,11 @@ defaults:
   # 1080p into the hub buys nothing and costs decode on every worker.
   # null = publish at the source's own resolution.
   height: 480
+
+  # Cheap by default: both are arithmetic over the shared detection pass. ANPR
+  # is opt-in per camera because it loads EasyOCR and reads pixels — and
+  # because plate reading only works where plates face the camera anyway.
+  modules: [fence, multi_human]
 
 cameras:
   - id: cam_fence_north
@@ -53,6 +76,9 @@ cameras:
 
   - id: cam_farm_gate
     label: BOP-02 Farm Gate
+    # A gate is where ANPR works: plates face the camera at a
+    # readable size. This is the camera to quote plate numbers from.
+    modules: [fence, anpr, multi_human]
     detect: true
     source:
       kind: file
@@ -61,6 +87,9 @@ cameras:
 
   - id: cam_patrol_road
     label: BOP-03 Patrol Road
+    # Vehicles pass at an angle here, so reads are sparser than at the
+    # gate. Kept on because a sparse read is still a read; measure it.
+    modules: [fence, anpr, multi_human]
     detect: true
     source:
       kind: file
@@ -74,3 +103,18 @@ cameras:
       kind: file
       path: clips/waterline.mp4
       # url: https://www.youtube.com/watch?v=...
+      #
+  
+  - id: cam_garden
+    label: BOP-05 Garden
+    detect: true
+    modules: [fence, multi_human]
+    source:
+      kind: file
+      path: clips/virtual_fence.mp4
+      # url: https://www.youtube.com/watch?v=...
+ 
+  
+  
+  
+

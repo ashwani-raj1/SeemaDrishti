@@ -1,168 +1,249 @@
 # ibvap — the vision service
 
-Turns video into detections. Nothing else.
+Turns video into observations. One process, many cameras, one detection pass per
+frame, several pluggable modules reading it.
 
-This is the L1 half of the system: it pulls RTSP, runs vehicle detection and tracking per
-camera, and pushes what it finds down two channels. It does **not** know what a zone is,
-what a severity is, or what an incident is — that lives one layer up in the edge node.
-Keeping it ignorant is deliberate: the moment force-specific configuration reaches the
-pixel pipeline, the "one program, many configuration files" claim is gone.
+**The vision service owns realtime observation. The edge node owns durable truth
+and operator decisions.** That sentence settles every argument about where a
+piece of logic belongs.
 
 ```
-RTSP ──> ingest ──> YOLO11n + ByteTrack ──> plate OCR ────┬──> box channel  (WS)  → console
-         latest-      one tracker per       inside vehicle │     hot, ephemeral
-         frame-wins   camera                boxes only     └──> ingress client (HTTP) → node
-                                                                 cold, durable
+RTSP ─> capture ─> ONE YOLO11n + ByteTrack pass ─> fence ───────┐
+        latest-    per camera, shared by          anpr          ├─> LiveObservation
+        frame-wins every module                   multi_human ──┘   WS :8100 → console
+                                                                │   ephemeral, droppable
+                                                                └─> DurableEvent
+                                                                    HTTP :8000 → edge node
+                                                                    confirmed, retried
 ```
 
-Two channels carrying the same detections, on purpose. The console needs them *now* and
-can lose them; the node needs every one and must keep them. Muxing the two would mean a
-dropped websocket frame silently losing a record.
+This service evaluates fence geometry — a crossing has to be judged against the
+frame it happened in, at the rate frames arrive. It does **not** decide what a
+crossing means. Severity, and whether a human is woken, follow the zone's
+targets, which a supervisor edits on the console and the node stores and audits.
+The wire carries a fact; the node applies the policy.
+
+It never writes a database, never learns that an operator acknowledged anything,
+and never receives a command.
+
+## Two contracts, not one payload with two destinations
+
+| | Live (WebSocket) | Durable (HTTP) |
+|---|---|---|
+| Carries | boxes, tracks, unconfirmed guesses | confirmed intrusions, accepted plate reads, camera health |
+| Rate | every processed frame | seconds to minutes apart |
+| Slow consumer | **dropped** | **queued, retried with backoff, drained on exit** |
+| Stored | never | always, by the node |
+| Authoritative | no | yes |
+
+If a confirmed intrusion went to the browser *and* the node in parallel, a slow
+console or a failed POST would give you alerts visible live but missing from
+history, duplicates on reconnect, and operator decisions taken against events
+that were never persisted. Two contracts prevent that by construction: **nothing
+durable is ever only in a browser.**
 
 ## Requirements
 
-Python 3.11, separate from the Bun workspace — `bun run setup` does **not** install this.
+Python 3.11, separate from the Bun workspace — `bun run setup` does **not**
+install this.
 
-```bash
-pip install -r requirements.txt      # ultralytics, opencv-python, lap, websockets, PyYAML
+```powershell
+python -m pip install -r requirements.txt
 ```
 
-`yolo11n.pt` downloads itself on first run. Videos and weights live in `data/`, which is
-gitignored. CPU-only throughout: there is no CUDA path and none is assumed — the target is
-a commodity CPU box, because that is what a BOP actually has.
+`yolo11n.pt` downloads itself on first run. Videos and weights live in `data/`,
+which is gitignored. CPU-only throughout: there is no CUDA path and none is
+assumed — the target is a commodity CPU box, because that is what a BOP has.
 
 **Status: prototype.** Every module says so in its own docstring.
 
-## Two ways to run it
+## Run
 
-**`run.py`** — one video source, for looking at the detector itself.
-
-```bash
-python run.py --source data/test1.mp4 --show
-python run.py --source data/test1.mp4 --post-url http://localhost:8000
+```powershell
+python main.py                           # cameras from IBVAP_WORKER_CAMERAS
+python main.py --cameras cam_farm_gate
+python main.py --no-backend              # live channel only, nothing recorded
+python main.py --seconds 60              # comparable baseline row per laptop
+python main.py --imgsz 384 --target-fps 4
 ```
 
-**`service.py`** — the real shape: cameras from `media/cameras.yml`, RTSP from the media
-hub, both output channels live.
+Full system, three terminals from the repo root:
 
-```bash
-python service.py                        # cameras from IBVAP_WORKER_CAMERAS
-python service.py --cameras cam_farm_gate
-python service.py --no-backend           # overlay only, nothing written down
+```powershell
+media\bin\mediamtx.exe media\mediamtx.yml   # 1 — media hub  (see media/README.md)
+bun run dev                                  # 2 — edge node + console
+python ibvap\main.py                         # 3 — vision service
 ```
 
-## Flags that matter (`run.py`)
+Start the node before the vision service when you can: zones come from its
+`/api/config`. If it is down, fence modules start with **no zones**, say so on
+stdout, and pick them up within `IBVAP_ZONE_REFRESH_SECONDS` of it returning.
+No restart needed.
 
-| Flag | Default | Why you would change it |
+The browser plate scanner is a separate surface on `:8001`, launched from inside
+this directory:
+
+```powershell
+.\run-anpr.ps1        # installs deps, then uvicorn ai_service:app on :8001
+```
+
+## Modules
+
+One shared detection pass per frame; its output goes to every active module. A
+module that runs its own detector has misunderstood the design.
+
+| Module | Does | Durable event |
 |---|---|---|
-| `--source` | *required* | File, RTSP URL, or webcam index |
-| `--post-url` | off | Feed the edge node. **Off by default** so the demo runs standalone |
-| `--camera-id` | `cam_fence_north` | Must match a camera seeded in `backend/src/db/seed.ts` |
-| `--imgsz` | `640` | Drop to `480` to buy frame rate on a slow box |
-| `--conf` | `0.35` | Detector confidence floor |
-| `--detect-every` | `1` | Run the detector every Nth frame |
-| `--show` | off | Open the overlay window |
-| `--loop` | off | Replay the file forever, for a demo that has to keep running |
+| `fence` | polygon intrusion + line crossing, debounce, per-direction cooldown | `intrusion` |
+| `anpr` | plate crop → OCR inside a tracked vehicle box | `plate_read` |
+| `multi_human` | within-camera person tracking; re-ID is interface-only | `reidentification` |
 
-When it is too slow, tune in this order: `--imgsz 480`, then `--detect-every 2`, then
-`--detect-every 3`. `--imgsz` is the biggest single win and costs accuracy on small distant
-vehicles and plates — which is the trade to state out loud rather than discover on stage.
+Which modules run is per camera, in `media/cameras.yml`:
+
+```yaml
+defaults:
+  modules: [fence, multi_human]            # cheap: arithmetic over the shared pass
+
+cameras:
+  - id: cam_farm_gate
+    modules: [fence, anpr, multi_human]    # ANPR is opt-in — it loads EasyOCR
+  - id: cam_waterline
+    modules:                               # mapping form takes params
+      fence: { confirm_frames: 4, cooldown_seconds: 30 }
+```
+
+Fence **zones** are never written here. They are drawn by an operator, stored by
+the node, and pulled from `/api/config` while running — so an edit takes effect
+without touching a file or restarting a worker.
+
+**Adding a module:** a new file in `modules/`, a `@register`, and a name in the
+manifest. The dispatcher, the WebSocket server and the HTTP sink do not change.
+That is the test of whether this layer is actually pluggable.
 
 ## Configuration
 
-Addresses come from `.env` at the repo root; the camera manifest comes from
-`media/cameras.yml`. The two are deliberately not merged — they answer different
-questions and have different lifetimes:
+Three sources, deliberately not merged:
 
-| | Answers | Shared? |
+| | Answers | Lifetime |
 |---|---|---|
-| `media/cameras.yml` | **what** cameras exist | committed |
+| `media/cameras.yml` | **what** cameras exist, and which modules each runs | committed |
 | `.env` | **where** modules run, and what **this** box does | per-machine, gitignored |
-
-That split is what makes one-worker-per-laptop work: every machine reads the same
-manifest and a different `IBVAP_WORKER_CAMERAS`.
+| the node's `/api/config` | **zones**, as the operator has them drawn | live |
 
 | Variable | Default | Meaning |
 |---|---|---|
-| `IBVAP_WORKER_CAMERAS` | all | Which cameras *this* machine runs detection on |
+| `IBVAP_WORKER_CAMERAS` | `all` | Which cameras *this* machine runs detection on |
 | `IBVAP_MEDIA_HOST` / `IBVAP_RTSP_PORT` | `127.0.0.1` / `8554` | Where the media hub is |
 | `IBVAP_BACKEND_HOST` / `IBVAP_BACKEND_PORT` | `127.0.0.1` / `8000` | Where the edge node is |
-| `IBVAP_BOXES_BIND` / `IBVAP_BOXES_PORT` | `0.0.0.0` / `8100` | Where the console reads boxes |
+| `IBVAP_BOXES_BIND` / `IBVAP_BOXES_PORT` | `0.0.0.0` / `8100` | Where the console reads observations |
 | `IBVAP_WEIGHTS` | `yolo11n.pt` | Detector weights |
 | `IBVAP_IMGSZ` | `480` | Inference size |
 | `IBVAP_CONF` | `0.35` | Confidence floor |
-| `IBVAP_DETECT_EVERY` | `2` | Run the detector every Nth frame |
+| `IBVAP_TARGET_FPS` | `6` | Processed frames per second, per camera |
+| `IBVAP_ZONE_REFRESH_SECONDS` | `15` | How often zones are re-read from the node |
 
-`service.py` deliberately runs leaner than `run.py`: `480`/every-2nd-frame against
-`640`/every-frame. `run.py` is for looking at the detector on one source; the service has
-to share a CPU with the other workers on the box.
+Every machine reads the same manifest and a different `IBVAP_WORKER_CAMERAS` —
+that is what makes one-worker-per-laptop work.
 
-## The seam
+## The durable seam
 
-Detections reach the node through one door, the same one the simulator uses:
+`POST /hooks/ingress/events`, handled by `backend/src/l4/vision.ts`:
 
-```
-POST /hooks/ingress/detections
+```json
 {
   "camera_id": "cam_fence_north",
-  "occurred_at": "2026-09-06T02:14:00Z",
-  "capture_mono": 1234.567,
+  "module": "fence",
+  "event_type": "intrusion",
+  "track_id": 7,
+  "timestamp": 91821.44,
+  "occurred_at": "2026-09-13T02:14:00.000Z",
   "simulated": false,
-  "detections": [
-    { "track_ref": "a1b2:7", "class": "vehicle", "vehicle_type": "car",
-      "confidence": 0.86, "bbox": [0.48, 0.74, 0.12, 0.16],
-      "plate": { "text": "PB02AK4821", "confidence": 0.91,
-                 "bbox": [0.50, 0.84, 0.07, 0.03] } }
-  ]
+  "source_id": "vision.a1b2",
+  "data": {
+    "track_ref": "a1b2:7", "class": "person", "zone_id": "zone_fence_line",
+    "direction": "inbound", "rule": "zone.crossing.confirmed",
+    "bbox": [0.44, 0.52, 0.11, 0.27], "crossed_at": [0.50, 0.79],
+    "held_seconds": 1.4, "held_frames": 4,
+    "confirm_seconds": 3.0, "confirm_frames": 3
+  }
 }
 ```
 
-`bbox` is `[x, y, w, h]` normalised 0–1. The subject's ground point is the bottom centre
-of the box — using the centre would make a vehicle cross a line too early.
+`event_type` is one of `intrusion`, `plate_read`, `camera_health`,
+`reidentification`.
 
-`capture_mono` is a monotonic clock in seconds. It is optional, but send it: the fence
-measures how long a crossing was held, and wall-clock time can step backwards under NTP.
-A malformed value is rejected rather than coerced, because a `NaN` there would silently
-poison the confirm window.
+- `bbox` on the durable side is `[x, y, w, h]` normalised 0–1; the live side uses
+  `[x1, y1, x2, y2]`, also normalised. Normalised is what lets detection run on a
+  480p substream while the console displays 720p, and lets a zone survive a
+  camera swap. `SharedDetector` produces every form once, in one place.
+- The subject's ground point is the **bottom centre** of the box. Using the
+  centre would make a subject cross a line half a body-height early.
+- `data.track_ref` is `{run_id}:{track_id}`. ByteTrack reuses integer ids and
+  restarts from 1 on restart; the node keys `tracked_thing` on
+  `(camera_id, track_ref)`, so a bare id lets a new subject inherit a dead one's
+  record.
+- `timestamp` is producer-monotonic seconds. It cannot step backwards when the
+  host clock is corrected, which is what every held-time measurement relies on.
+  A malformed value is rejected, not coerced.
+- `simulated` is set once, from the manifest's source kind. The console renders a
+  **SIMULATED** badge from it.
 
-`simulated` is set once, by the adapter. The console renders a **SIMULATED** badge from
-it, so a synthetic detection can never be mistaken for a real one downstream.
+There is a **second door** on the node and it is not the same door.
+`/hooks/ingress/detections` takes raw per-frame detections and judges them with
+the node's own `l2/fence.ts` — the simulator posts there. Do not collapse them.
 
 ## Design decisions worth defending
 
-- **YOLO11n (nano).** On CPU there is no headroom for s/m/l. This is the only size that
+- **One detection pass, many modules.** Three modules each running their own
+  detector is three times the only cost that matters, for the same boxes three
+  times over.
+- **YOLO11n (nano).** On CPU there is no headroom for s/m/l. The only size that
   leaves budget for tracking and plate OCR on the same core.
-- **One tracker per camera.** ByteTrack state lives on the model object and `persist=True`
-  means "this frame continues the previous sequence". Sharing one tracker across cameras
-  interleaves four unrelated scenes into one association problem and produces constant id
-  switches. The cost is N models resident — which is the real reason worker count is a
-  per-machine setting rather than a constant.
-- **Cascaded plate OCR.** OCR runs only in the lower-centre portion of an already-tracked
-  vehicle box, never across the full frame. A recent read is reused briefly per track to
-  keep CPU usage bounded while retaining a stable plate label on the overlay.
-- **Source-aware frame policy.** `cv2.VideoCapture.read()` pulls sequentially from an
-  internal buffer, so if inference is slower than the camera's frame rate that buffer grows
-  and a "live" feed silently goes stale. A live source therefore drops: the reader drains
-  to the newest frame and latency stays bounded. **A file does the opposite** — it blocks
-  and keeps every frame, because a file has no real time to fall behind and dropping
-  frames there silently discards most of the footage and corrupts any evaluation run
-  against it. `core/ingest.py` picks per source; do not "simplify" it to one behaviour.
-- **Vehicle-only inference** (`classes=[2,3,5,7]`). This detects cars, two-wheelers,
-  buses and trucks while excluding people and unrelated COCO classes.
+- **One tracker per camera.** ByteTrack state lives on the model object;
+  `persist=True` means "this frame continues the previous sequence". Sharing one
+  tracker across cameras interleaves unrelated scenes into one association
+  problem and produces constant id switches.
+- **Capped cadence, not stream rate.** The overlay still reads as live at 5–10
+  fps because a person crossing a fence does not move far in 150 ms, while the
+  detector does a fraction of the work. Held time is measured in seconds, so
+  changing the cadence does not silently change what a confirm window means.
+- **Confirm on frames AND seconds.** Frames alone mean four times longer on a
+  slower laptop. Seconds alone let a stalled stream "hold" a crossing while
+  showing one frozen image.
+- **Cascaded plate OCR.** OCR runs only in the lower-centre slice of an
+  already-tracked vehicle box, never across the full frame. It excludes
+  hallucinations on signage and foliage by construction, not by threshold
+  tuning, and binds every read to a track so a watchlist check happens once per
+  vehicle rather than once per frame.
+- **Source-aware frame policy.** `cv2.VideoCapture.read()` pulls sequentially
+  from an internal buffer, so if inference is slower than the camera's rate that
+  buffer grows and a "live" feed silently goes stale. A live source therefore
+  drops to the newest frame. **A file does the opposite** — it blocks and keeps
+  every frame, because a file cannot fall behind and dropping frames there
+  discards most of the footage. `core/capture.py` picks per source; do not
+  "simplify" it to one behaviour.
 
 ## Known limits
 
 Stated plainly rather than discovered in a demo:
 
-- **No re-identification.** ByteTrack carries no appearance model, so a long occlusion
-  produces a *new* track id. Short occlusions are recovered by its low-confidence
-  association pass. Never claim persistent re-ID.
-- **Plate OCR is resolution-bound.** A plate that occupies only a few pixels cannot be read
-  reliably. It works at a gate or checkpoint where plates face the camera, not across a
-  wide open scene. The working range needs measuring on the installed camera.
-- Four workers on one CPU box contend for the same cores and each one's frame rate falls
-  roughly in proportion. The design answer is one worker per machine. No throughput figure
-  is quoted here because none has been measured on team hardware — `service.py` prints the
-  numbers you need at exit, and those are the only ones worth repeating.
+- **No re-identification.** `modules/reid.py` ships the interface and a no-op
+  provider that answers "I don't know" for every crop. ByteTrack carries no
+  appearance model, so a long occlusion produces a *new* track id and a subject
+  moving between cameras has no relationship to themselves. Never claim
+  persistent re-ID, and never call a tracker id an identity.
+- **Plate OCR is resolution-bound.** A plate a few pixels tall cannot be read.
+  It works at a gate or checkpoint where plates face the camera, not across a
+  wide open scene — which is why `anpr` is opt-in per camera. The working range
+  needs measuring in metres on the installed camera.
+- **Threads, not processes.** One asyncio task per camera with the CPU work in
+  `asyncio.to_thread`. Fine while the GIL is released inside ultralytics/OpenCV
+  native code. Not fine for many cameras on one box, where they contend for the
+  same cores — the answer there is a process per camera, and the honest first
+  answer is one worker per laptop.
+- No throughput figure is quoted anywhere because none has been measured on team
+  hardware. `main.py` prints the numbers you need at exit, and those are the only
+  ones worth repeating.
 
-`claude.md` in this directory carries the full tuning notes.
+`claude.md` in this directory carries the full tuning notes and the evidence
+rules.

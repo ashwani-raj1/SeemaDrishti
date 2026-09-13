@@ -25,6 +25,7 @@ import {
   parseDetectionFrame,
   parseSensorContact,
 } from "./l4/hooks";
+import { ingestVisionEvent, parseVisionEvent } from "./l4/vision";
 import {
   actorOf, CORS, fail, handled, json, NotFound, query, readJson, requireRole,
 } from "./http";
@@ -243,10 +244,29 @@ const routes = {
 
   // ---------------------------------------------------------------- ingress
 
+  /**
+   * Raw per-frame detections, judged here by the fence (l2/fence.ts).
+   * The simulator posts through this door.
+   */
   "/hooks/ingress/detections": {
     POST: handled(async (req) => {
       const frame = parseDetectionFrame(await readJson(req));
       return json(ingestDetections(frame), 202);
+    }),
+  },
+
+  /**
+   * Already-confirmed events from the vision service, which runs fence
+   * geometry and plate OCR itself. It sends a FACT ("person crossed zone_3
+   * inbound, held 1.4s"); this node applies the POLICY (severity, whether a
+   * human is woken), because that policy lives in operator-editable zone
+   * targets and is audited here. See l4/vision.ts for why that line is drawn
+   * where it is.
+   */
+  "/hooks/ingress/events": {
+    POST: handled(async (req) => {
+      const event = parseVisionEvent(await readJson(req));
+      return json(ingestVisionEvent(event), 202);
     }),
   },
 
@@ -308,6 +328,7 @@ const server = Bun.serve({
 
 console.log(`IBVAP edge node on ${server.url}`);
 console.log(`  detections  POST ${server.url}hooks/ingress/detections`);
+console.log(`  vision      POST ${server.url}hooks/ingress/events`);
 console.log(`  live stream  GET ${server.url}api/stream`);
 
 export { server, routes };
