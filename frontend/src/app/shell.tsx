@@ -21,17 +21,21 @@ export function AppShell() {
   return (
     <TooltipProvider delayDuration={200}>
       <SidebarProvider>
-        <AppSidebar />
-        <SidebarInset className="h-screen overflow-hidden flex flex-col">
-          <CommandHeader />
-          <div className="flex-1 min-h-0 overflow-hidden flex flex-col">
-            <Outlet />
-          </div>
-        </SidebarInset>
+        <ShellLayout />
       </SidebarProvider>
       <Toaster position="top-right" />
     </TooltipProvider>
   );
+}
+
+/** The analytics landing screen is deliberately a full-width workspace. */
+function ShellLayout() {
+  const { pathname } = useLocation();
+  const analyticsWorkspace = pathname === "/cameras";
+  const content = <><CommandHeader /><div className="flex-1 min-h-0 overflow-hidden flex flex-col"><Outlet /></div></>;
+
+  if (analyticsWorkspace) return <div className="h-screen overflow-hidden flex flex-col">{content}</div>;
+  return <><AppSidebar /><SidebarInset className="h-screen overflow-hidden flex flex-col">{content}</SidebarInset></>;
 }
 
 function Header() {

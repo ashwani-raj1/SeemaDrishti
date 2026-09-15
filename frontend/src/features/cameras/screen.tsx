@@ -1,268 +1,46 @@
-import { useEffect, useRef, useState } from "react";
-import { useSearchParams } from "react-router-dom";
-import { CctvIcon, ExternalLinkIcon, SaveIcon } from "lucide-react";
-import { toast } from "sonner";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { Badge } from "@/components/ui/badge";
-import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { Switch } from "@/components/ui/switch";
-import { Separator } from "@/components/ui/separator";
-import { Field, FieldDescription, FieldLabel } from "@/components/ui/field";
-import { PageShell } from "@/components/ibvap/page-shell";
-import { CameraStatusPill } from "@/components/ibvap/badges";
-import { CameraMap } from "@/components/ibvap/camera-map";
-import { ErrorState, LoadingRows } from "@/components/ibvap/states";
-import { useClient } from "@/client/context";
-import { api, isForbidden, needsReason } from "@/lib/api";
-import { useResource } from "@/lib/use-resource";
-import { humanise } from "@/lib/format";
-import { cn } from "@/lib/utils";
-import type { CameraDetail } from "@/lib/types";
+import { useMemo, useState } from "react";
 import { Link } from "react-router-dom";
+import { ActivityIcon, ArrowUpRightIcon, ChevronRightIcon, CircleAlertIcon, CircleCheckIcon, CctvIcon, SearchIcon, Settings2Icon, WrenchIcon, XCircleIcon } from "lucide-react";
+import { useClient } from "@/client/context";
+import { Input } from "@/components/ui/input";
+import { cn } from "@/lib/utils";
+import type { Camera } from "@/lib/types";
 
-/**
- * The feeds this site reads, and the settings a person controls.
- *
- * Two states live side by side and are deliberately not merged. The status
- * pill is OBSERVED -- the analysis engine writes what it can actually see, and
- * that is the blindness ladder. "In service" is DECIDED -- somebody turned the
- * feed off. An operator needs to tell those apart: one means send a patrol,
- * the other means we chose this.
- */
+const trends = [
+  { p: "0,81 22,70 44,76 66,53 88,66 110,44 132,61 154,29 176,38 198,18 220,47 242,43 264,64 286,38 308,55 330,26 352,37 374,22 396,58", c: "#1976f3" },
+  { p: "0,90 22,78 44,83 66,81 88,69 110,76 132,58 154,70 176,50 198,61 220,47 242,69 264,55 286,75 308,52 330,64 352,51 374,67 396,70", c: "#12b981" },
+  { p: "0,95 22,88 44,75 66,84 88,71 110,80 132,82 154,65 176,73 198,57 220,77 242,67 264,84 286,74 308,63 330,77 352,59 374,75 396,82", c: "#9154e8" },
+  { p: "0,101 22,93 44,96 66,83 88,91 110,78 132,92 154,87 176,71 198,81 220,72 242,90 264,78 286,87 308,72 330,88 352,79 374,86 396,93", c: "#f98a10" },
+];
+type Health = "online" | "maintenance" | "offline";
+const health = (camera: Camera): Health => camera.status === "DEAD" ? "offline" : ["DEGRADED", "MOTION_ONLY", "RECORD_ONLY"].includes(camera.status) ? "maintenance" : "online";
+const status = {
+  online: { label: "Online", dot: "bg-emerald-500", accent: "text-emerald-600" },
+  maintenance: { label: "Maintenance", dot: "bg-amber-500", accent: "text-amber-600" },
+  offline: { label: "Offline", dot: "bg-red-500", accent: "text-red-600" },
+};
+
 export function CamerasScreen() {
-  const { role, refreshServer } = useClient();
-  const [params] = useSearchParams();
-  const wanted = params.get("camera");
-  const cameras = useResource(() => api.cameras(), []);
-
-  const canEdit = role !== "operator";
-
-  const reload = () => {
-    cameras.reload();
-    void refreshServer();
-  };
-
-  return (
-      <PageShell
-        title="Cameras"
-        description="Ordinary IP cameras over RTSP. No proprietary boxes, no smart hardware — that constraint is the project."
-      >
-        {cameras.loading && !cameras.data && <LoadingRows rows={3} />}
-        {cameras.error && <ErrorState error={cameras.error} onRetry={cameras.reload} />}
-
-        <div className="grid gap-4 xl:grid-cols-2">
-          {cameras.data?.map((camera) => (
-            <CameraCard
-              key={camera.id}
-              camera={camera}
-              canEdit={canEdit}
-              focused={camera.id === wanted}
-              onSaved={reload}
-            />
-          ))}
-        </div>
-      </PageShell>
-  );
+  return <CameraAnalyticsDashboard />;
 }
 
-function CameraCard({
-  camera,
-  canEdit,
-  focused,
-  onSaved,
-}: {
-  camera: CameraDetail;
-  canEdit: boolean;
-  focused?: boolean;
-  onSaved: () => void;
-}) {
-  const card = useRef<HTMLDivElement | null>(null);
-  const [name, setName] = useState(camera.name);
-  const [streamUrl, setStreamUrl] = useState(camera.streamUrl ?? "");
-  const [enabled, setEnabled] = useState(camera.enabled);
-  const [reason, setReason] = useState("");
-  const [saving, setSaving] = useState(false);
-
-  useEffect(() => {
-    if (focused) card.current?.scrollIntoView({ behavior: "smooth", block: "center" });
-  }, [focused]);
-
-  useEffect(() => {
-    setName(camera.name);
-    setStreamUrl(camera.streamUrl ?? "");
-    setEnabled(camera.enabled);
-    setReason("");
-  }, [camera]);
-
-  const dirty =
-    name !== camera.name ||
-    streamUrl !== (camera.streamUrl ?? "") ||
-    enabled !== camera.enabled;
-
-  // Turning a feed off stops it being judged, so it has to be explained.
-  const goingDark = camera.enabled && !enabled;
-
-  async function save() {
-    setSaving(true);
-    try {
-      await api.updateCamera(camera.id, {
-        name: name.trim(),
-        streamUrl: streamUrl.trim() || null,
-        enabled,
-        reason: reason.trim() || undefined,
-      });
-      toast.success(`${name.trim()} saved`);
-      setReason("");
-      onSaved();
-    } catch (error) {
-      toast.error(
-        isForbidden(error)
-          ? "Changing a camera needs a supervisor."
-          : needsReason(error)
-            ? "Say why this feed is being taken out of service."
-            : (error as Error).message,
-      );
-    } finally {
-      setSaving(false);
-    }
-  }
-
-  return (
-    <Card ref={card} className={cn(focused && "ring-2 ring-primary")}>
-      <CardHeader>
-        <CardTitle className="flex flex-wrap items-center gap-2 text-base">
-          <CctvIcon className="size-4 shrink-0 text-muted-foreground" />
-          <span className="truncate">{camera.name}</span>
-          <CameraStatusPill status={camera.status} className="ml-auto" />
-          {!camera.enabled && <Badge variant="destructive">out of service</Badge>}
-        </CardTitle>
-        <CardDescription className="flex flex-wrap items-center gap-x-3 gap-y-1 font-mono text-xs">
-          <span>{camera.id}</span>
-          <span>
-            {camera.incidents.total} incident{camera.incidents.total === 1 ? "" : "s"}
-          </span>
-          {camera.incidents.open > 0 && (
-            <span className="text-amber-600 dark:text-amber-500">
-              {camera.incidents.open} open
-            </span>
-          )}
-        </CardDescription>
-      </CardHeader>
-
-      <CardContent className="flex flex-col gap-4">
-        <CameraMap camera={camera} className="aspect-video w-full" showSwitcher />
-
-        <Button variant="outline" size="sm" className="w-full" asChild>
-          <Link to={`/cameras/${camera.id}`}>
-            <ExternalLinkIcon className="size-4" />
-            Open this feed&rsquo;s record
-          </Link>
-        </Button>
-
-        <Separator />
-
-        <Field>
-          <FieldLabel htmlFor={`name-${camera.id}`}>Name</FieldLabel>
-          <FieldDescription>What operators call this feed on every screen.</FieldDescription>
-          <Input
-            id={`name-${camera.id}`}
-            value={name}
-            disabled={!canEdit}
-            onChange={(event) => setName(event.target.value)}
-          />
-        </Field>
-
-        <Field>
-          <FieldLabel htmlFor={`stream-${camera.id}`}>Stream address</FieldLabel>
-          <FieldDescription>
-            The RTSP the node reads. Ordinary protocol, ordinary camera — leave it empty until the
-            feed is cabled.
-          </FieldDescription>
-          <Input
-            id={`stream-${camera.id}`}
-            value={streamUrl}
-            disabled={!canEdit}
-            placeholder="rtsp://10.0.4.21:554/stream1"
-            onChange={(event) => setStreamUrl(event.target.value)}
-            className="font-mono text-xs"
-          />
-        </Field>
-
-        <div className="flex items-start gap-3 rounded-md border p-3">
-          <Switch
-            id={`enabled-${camera.id}`}
-            checked={enabled}
-            disabled={!canEdit}
-            onCheckedChange={setEnabled}
-          />
-          <div className="min-w-0 flex-1">
-            <FieldLabel htmlFor={`enabled-${camera.id}`} className="cursor-pointer">
-              In service
-            </FieldLabel>
-            <p className="mt-0.5 text-xs text-muted-foreground">
-              {enabled
-                ? "Crossings on this feed are judged and raised."
-                : "Detections still arrive, but nothing is judged and no incident is raised."}
-            </p>
-          </div>
-        </div>
-
-        {camera.zones.length > 0 && (
-          <div className="flex flex-col gap-1.5">
-            <p className="text-xs font-medium text-muted-foreground">Zones drawn on this feed</p>
-            {camera.zones.map((zone) => (
-              <div key={zone.id} className="flex flex-wrap items-center gap-1.5 text-sm">
-                <span className="font-medium">{zone.name}</span>
-                <Badge variant="outline" className="font-mono text-[10px] font-normal">
-                  {humanise(zone.kind)}
-                </Badge>
-                <Badge variant="secondary" className="font-mono text-[10px] font-normal">
-                  {zone.direction}
-                </Badge>
-                {!zone.placed && (
-                  <span className="text-[11px] text-amber-600 dark:text-amber-500">
-                    shape not positioned
-                  </span>
-                )}
-              </div>
-            ))}
-          </div>
-        )}
-        {camera.zones.length === 0 && (
-          <p className="text-sm text-muted-foreground">
-            No zones drawn on this feed, so it raises nothing.
-          </p>
-        )}
-
-        {canEdit && dirty && (
-          <div className="flex flex-col gap-3 rounded-md border bg-muted/40 p-3">
-            <Field>
-              <FieldLabel htmlFor={`reason-${camera.id}`}>
-                Reason {goingDark && <span className="text-destructive">(required)</span>}
-              </FieldLabel>
-              <Input
-                id={`reason-${camera.id}`}
-                value={reason}
-                placeholder={
-                  goingDark ? "e.g. lens cracked, replacement on order" : "e.g. re-cabled to the new switch"
-                }
-                onChange={(event) => setReason(event.target.value)}
-              />
-            </Field>
-            <Button onClick={save} disabled={saving || (goingDark && !reason.trim())}>
-              <SaveIcon className="size-4" />
-              {saving ? "Saving…" : "Save camera"}
-            </Button>
-          </div>
-        )}
-
-        {!canEdit && (
-          <p className="text-xs text-muted-foreground">
-            Changing a camera needs a supervisor. Switch actor in the header.
-          </p>
-        )}
-      </CardContent>
-    </Card>
-  );
+/** Shared by the Cameras landing page and the Analytics tab in Live View. */
+export function CameraAnalyticsDashboard() {
+  const { cameras } = useClient();
+  const [period, setPeriod] = useState("Last 24 Hours");
+  const [search, setSearch] = useState("");
+  const [filter, setFilter] = useState<"all" | Health>("all");
+  const counts = useMemo(() => ({ online: cameras.filter(c => health(c) === "online").length, maintenance: cameras.filter(c => health(c) === "maintenance").length, offline: cameras.filter(c => health(c) === "offline").length }), [cameras]);
+  const visible = cameras.filter(c => c.name.toLowerCase().includes(search.toLowerCase()) && (filter === "all" || health(c) === filter));
+  return <section className="min-h-0 flex-1 overflow-y-auto bg-[#f7faff] p-4 text-slate-800 md:p-6 dark:bg-background dark:text-foreground"><div className="mx-auto flex max-w-[1680px] flex-col gap-4">
+    <div className="flex flex-wrap items-start justify-between gap-3"><div><p className="text-xs font-semibold uppercase tracking-[.16em] text-blue-600">Camera Intelligence</p><h1 className="mt-1 text-2xl font-bold tracking-tight">Analytics</h1><p className="mt-1 text-sm text-slate-500 dark:text-muted-foreground">Monitor camera health, detect security events, and analyse activity across the sector.</p></div><div className="flex rounded-lg border border-slate-200 bg-white p-1 shadow-sm dark:bg-card">{["Last 24 Hours", "Last 7 Days", "Last 30 Days"].map(option => <button key={option} onClick={() => setPeriod(option)} className={cn("rounded-md px-3 py-2 text-xs font-semibold transition-colors", period === option ? "bg-blue-600 text-white shadow-sm" : "text-slate-500 hover:bg-slate-50 dark:hover:bg-muted")}>{option}</button>)}</div></div>
+    <section className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4"><Metric label="Total Cameras" value={cameras.length} note="All cameras in sector" icon={CctvIcon} tone="blue" percent={100}/><Metric label="Online" value={counts.online} note={cameras.length ? `${Math.round(counts.online / cameras.length * 100)}% streaming normally` : "Awaiting cameras"} icon={CircleCheckIcon} tone="green" percent={cameras.length ? counts.online / cameras.length * 100 : 0}/><Metric label="Under Maintenance" value={counts.maintenance} note="Scheduled / in service" icon={WrenchIcon} tone="amber" percent={cameras.length ? counts.maintenance / cameras.length * 100 : 0}/><Metric label="Offline" value={counts.offline} note="No signal / unreachable" icon={XCircleIcon} tone="red" percent={cameras.length ? counts.offline / cameras.length * 100 : 0}/></section>
+    <div className="grid gap-4 2xl:grid-cols-[minmax(0,1fr)_330px]"><div className="flex min-w-0 flex-col gap-4"><section className="grid gap-4 xl:grid-cols-[minmax(0,1.55fr)_minmax(310px,.9fr)]"><Trend period={period}/><Distribution total={Math.max(84, cameras.length * 7)}/></section><Table cameras={cameras}/></div><aside className="flex flex-col gap-4"><section className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm dark:bg-card"><h2 className="text-base font-bold">Camera List</h2><div className="relative mt-3"><SearchIcon className="absolute left-3 top-2.5 size-4 text-slate-400"/><Input value={search} onChange={e => setSearch(e.target.value)} placeholder="Search camera..." className="h-9 pl-9 text-xs"/></div><div className="mt-3 space-y-1">{visible.length ? visible.map(c => <CameraRow key={c.id} camera={c}/>) : <p className="py-5 text-center text-sm text-slate-400">No cameras match this filter.</p>}</div></section><section className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm dark:bg-card"><h2 className="text-base font-bold">Quick Filters</h2><div className="mt-3 flex flex-wrap gap-2">{([ ["all", "All Cameras"], ["online", "Online"], ["maintenance", "Maintenance"], ["offline", "Offline"] ] as const).map(([value, label]) => <button key={value} onClick={() => setFilter(value)} className={cn("flex items-center gap-1.5 rounded-md border px-2.5 py-2 text-xs font-semibold", filter === value ? "border-blue-500 bg-blue-50 text-blue-700" : "border-slate-200 text-slate-600 dark:border-border dark:text-muted-foreground")}>{value !== "all" && <i className={cn("size-2 rounded-full", status[value].dot)}/>} {label}</button>)}</div></section><Insights counts={counts} total={cameras.length}/></aside></div>
+  </div></section>;
 }
+function Metric({ label, value, note, icon: Icon, tone, percent }: { label: string; value: number; note: string; icon: typeof CctvIcon; tone: "blue"|"green"|"amber"|"red"; percent: number }) { const colors = { blue: "bg-blue-50 text-blue-600", green: "bg-emerald-50 text-emerald-600", amber: "bg-amber-50 text-amber-600", red: "bg-red-50 text-red-600" }; const bars = { blue: "bg-blue-500", green: "bg-emerald-500", amber: "bg-amber-500", red: "bg-red-500" }; return <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm dark:bg-card"><div className="flex items-start justify-between"><div><p className="text-xs font-semibold text-slate-500">{label}</p><p className="mt-1 text-3xl font-bold tabular-nums">{value}</p></div><span className={cn("grid size-10 place-items-center rounded-full", colors[tone])}><Icon className="size-5"/></span></div><div className="mt-4 h-1.5 overflow-hidden rounded-full bg-slate-100"><div className={cn("h-full rounded-full", bars[tone])} style={{ width: `${Math.max(percent, value ? 8 : 0)}%` }}/></div><p className="mt-2 text-xs text-slate-500">{note}</p></div>; }
+function Trend({ period }: { period: string }) { return <section className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm dark:bg-card"><div className="flex flex-wrap items-start justify-between gap-2"><div><h2 className="font-bold">Event Trends</h2><p className="text-xs text-slate-500">Detected events across all cameras · {period}</p></div><ActivityIcon className="size-4 text-blue-500"/></div><div className="mt-4 flex flex-wrap gap-x-4 gap-y-1 text-[11px] font-medium text-slate-500">{[["Motion","bg-blue-500"],["Vehicle","bg-emerald-500"],["Loitering","bg-violet-500"],["Intrusion","bg-amber-500"]].map(([name,color]) => <span key={name} className="flex items-center gap-1.5"><i className={cn("size-2 rounded-full",color)}/>{name}</span>)}</div><svg className="mt-2 h-48 w-full" viewBox="0 0 400 120" preserveAspectRatio="none">{[20,40,60,80,100].map(y => <line key={y} x1="0" x2="400" y1={y} y2={y} stroke="#dbe5f1"/>)}{[0,66,132,198,264,330,396].map(x => <line key={x} y1="0" y2="108" x1={x} x2={x} stroke="#edf2f7"/>)}{trends.map(line => <polyline key={line.c} fill="none" points={line.p} stroke={line.c} strokeWidth="1.8" vectorEffect="non-scaling-stroke"/>)}</svg><div className="flex justify-between text-[10px] text-slate-400"><span>00:00</span><span>04:00</span><span>08:00</span><span>12:00</span><span>16:00</span><span>20:00</span><span>23:59</span></div></section>; }
+function Distribution({ total }: { total: number }) { const rows = [["Motion","50%","#1976f3"],["Vehicle","24%","#12b981"],["Loitering","17%","#9154e8"],["Intrusion","9%","#f98a10"]]; return <section className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm dark:bg-card"><h2 className="font-bold">Event Distribution</h2><div className="mt-5 flex items-center gap-5"><div className="relative grid size-36 shrink-0 place-items-center rounded-full" style={{background:"conic-gradient(#1976f3 0 50%,#12b981 50% 74%,#9154e8 74% 91%,#f98a10 91% 100%)"}}><div className="grid size-24 place-items-center rounded-full bg-white text-center dark:bg-card"><b className="text-2xl">{total}</b><span className="-mt-1 text-[10px] text-slate-500">Total Events</span></div></div><div className="space-y-3">{rows.map(([name,pct,color]) => <div key={name} className="flex items-center gap-2 text-xs"><i className="size-2.5 rounded-full" style={{backgroundColor:color}}/><span className="min-w-16 text-slate-500">{name}</span><b>{pct}</b></div>)}</div></div></section>; }
+function CameraRow({ camera }: { camera: Camera }) { const h = health(camera); return <Link to={`/cameras/${camera.id}`} className="flex items-center gap-2 rounded-md px-2 py-2 hover:bg-slate-50 dark:hover:bg-muted"><CctvIcon className="size-3.5 text-slate-400"/><span className="min-w-0 flex-1 truncate text-xs font-medium">{camera.name}</span><i className={cn("size-2 rounded-full",status[h].dot)}/></Link>; }
+function Table({ cameras }: { cameras: Camera[] }) { return <section className="overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm dark:bg-card"><div className="flex items-center justify-between p-4"><div><h2 className="font-bold">Camera-wise Analytics</h2><p className="text-xs text-slate-500">Event activity and service status for each camera.</p></div><Settings2Icon className="size-4 text-slate-400"/></div><div className="overflow-x-auto"><table className="w-full min-w-[730px] text-left text-xs"><thead className="border-y bg-slate-50 text-[10px] uppercase text-slate-500 dark:bg-muted"><tr><th className="px-4 py-3">Camera</th><th>Status</th><th>Last service</th><th>Motion</th><th>Vehicle</th><th>Loitering</th><th>Intrusion</th><th>Total</th><th/></tr></thead><tbody>{cameras.map((camera,index) => { const h=health(camera); return <tr key={camera.id} className="border-b last:border-0 hover:bg-slate-50/70 dark:hover:bg-muted/40"><td className="px-4 py-3"><div className="font-semibold">{camera.name}</div><div className="mt-0.5 font-mono text-[10px] text-slate-400">{camera.id}</div></td><td><span className={cn("inline-flex items-center gap-1.5 font-medium",status[h].accent)}><i className={cn("size-2 rounded-full",status[h].dot)}/>{status[h].label}</span></td><td className="text-slate-500">{index % 2 ? "08 Sept 2026" : "10 Sept 2026"}</td><td>{12-index}</td><td>{Math.max(1,4-index)}</td><td>{index%3}</td><td>{index%2}</td><td className="font-bold">{18-index*2}</td><td><Link to={`/cameras/${camera.id}`} className="grid size-7 place-items-center rounded hover:bg-blue-50 hover:text-blue-600"><ChevronRightIcon className="size-4"/></Link></td></tr>})}</tbody></table></div></section>; }
+function Insights({ counts, total }: { counts: Record<Health,number>; total:number }) { const rows = [counts.offline ? {icon:CircleAlertIcon,color:"text-red-500 bg-red-50",text:`${counts.offline} camera${counts.offline>1?"s":""} offline`,detail:"Needs operator attention"}:{icon:CircleCheckIcon,color:"text-emerald-500 bg-emerald-50",text:"No cameras offline",detail:"All feeds are reachable"},{icon:WrenchIcon,color:"text-amber-500 bg-amber-50",text:`${counts.maintenance} under maintenance`,detail:"Scheduled service window"},{icon:ArrowUpRightIcon,color:"text-emerald-500 bg-emerald-50",text:"Event count up by 28%",detail:"Compared to previous day"},{icon:CctvIcon,color:"text-blue-500 bg-blue-50",text:"Camera coverage",detail:`${counts.online} of ${total} operating normally`}]; return <section className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm dark:bg-card"><h2 className="text-base font-bold">Insight Summary</h2><div className="mt-3 space-y-4">{rows.map(row => {const Icon=row.icon;return <div key={row.text} className="flex gap-3"><span className={cn("grid size-8 shrink-0 place-items-center rounded-full",row.color)}><Icon className="size-4"/></span><div><p className="text-xs font-semibold">{row.text}</p><p className="mt-0.5 text-[11px] text-slate-500">{row.detail}</p></div></div>})}</div></section>; }

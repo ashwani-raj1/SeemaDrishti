@@ -78,6 +78,8 @@ export function CommandHeader() {
   const { theme, setTheme } = useTheme();
   const { config, site, cameras, actor, users, chooseActor } = useClient();
   const navigate = useNavigate();
+  const { pathname } = useLocation();
+  const analyticsWorkspace = pathname === "/cameras";
 
   // Zone filter state defaulting to Attari
   const [selectedZone, setSelectedZone] = useState("Attari");
@@ -131,7 +133,7 @@ export function CommandHeader() {
 
       {/* LEFT: Sidebar toggle + Sector Details dynamically updating with selected Zone */}
       <div className="relative z-10 flex items-center gap-2 sm:gap-3 min-w-0">
-        <SidebarTrigger className="-ml-1 text-slate-600 dark:text-slate-300 hover:text-slate-900" />
+        {!analyticsWorkspace && <SidebarTrigger className="-ml-1 text-slate-600 dark:text-slate-300 hover:text-slate-900" />}
 
         {/* Sector Name & Operational Posture */}
         <div className="flex flex-col text-left">

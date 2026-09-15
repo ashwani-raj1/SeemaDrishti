@@ -21,6 +21,7 @@ STATUS: prototype.
 """
 
 import argparse
+import json
 import os
 import sys
 from pathlib import Path
@@ -159,6 +160,33 @@ def path_entry(cam, problems):
     }
 
 
+def playback_manifest(cameras):
+    """The local VOD seam for file-backed demo cameras.
+
+    The browser never receives an absolute path or an RTSP URL.  The console
+    server resolves this short, generated mapping locally and range-serves the
+    clip to a native <video>, which gives us honest pause and seek behaviour.
+    A real RTSP feed has no historic file until a recorder is installed, so it
+    is deliberately absent rather than pretending the live WHEP stream is a
+    recording.
+    """
+    entries = {}
+    for cam in cameras:
+        source = cam["source"]
+        if source.get("kind", "file") != "file" or not source.get("path"):
+            continue
+        clip = Path(source["path"])
+        resolved = (MEDIA / clip) if not clip.is_absolute() else clip
+        try:
+            relative = resolved.resolve().relative_to(MEDIA.resolve())
+        except ValueError:
+            # An absolute path outside media/ must not accidentally become a
+            # browser-readable file through the playback endpoint.
+            continue
+        entries[cam["id"]] = {"file": relative.as_posix()}
+    return {"version": 1, "cameras": entries}
+
+
 # ─────────────────────────────────────────────────────────── output
 
 HEADER = """\
@@ -221,9 +249,14 @@ def main():
     config = build(values, cameras, problems)
 
     out = MEDIA / "mediamtx.yml"
+    playback_out = MEDIA / "playback.json"
     if not args.check:
         out.write_text(
             HEADER + yaml.safe_dump(config, sort_keys=False, width=10_000),
+            encoding="utf-8",
+        )
+        playback_out.write_text(
+            json.dumps(playback_manifest(cameras), indent=2) + "\n",
             encoding="utf-8",
         )
 
@@ -248,6 +281,7 @@ def main():
 
     if not args.check:
         print(f"\n[configure] wrote {out}")
+        print(f"[configure] wrote {playback_out}")
     return 1 if (problems and args.check) else 0
 
 

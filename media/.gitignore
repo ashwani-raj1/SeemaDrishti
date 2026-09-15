@@ -8,6 +8,7 @@ clips/
 
 # Generated from cameras.yml + .env by configure.py.
 mediamtx.yml
+playback.json
 
 # Self-signed TLS cert MediaMTX generated for its MoQ listener on the first
 # boot, before that listener was turned off. Regenerated if ever needed.

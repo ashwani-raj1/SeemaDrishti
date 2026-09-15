@@ -56,6 +56,18 @@ python media\configure.py
 media\bin\mediamtx.exe media\mediamtx.yml
 ```
 
+## Playback of file cameras
+
+`python media/configure.py` also writes `media/playback.json`. The console
+uses that generated, local-only mapping to range-serve a configured file clip
+at `/archive/<camera_id>`, so the Playback screen can pause and seek it with
+the browser's native video controls. It never exposes a source path or RTSP
+credential to the browser.
+
+This is a VOD path for `source.kind: file`, useful for the shipped demo and
+offline review. An `rtsp` camera has no past footage until a local recorder is
+configured; the console says so instead of presenting a fake archive.
+
 Then check it:
 
 ```powershell
