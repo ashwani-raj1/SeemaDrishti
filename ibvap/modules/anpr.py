@@ -60,7 +60,7 @@ class PlateReader:
 
     ALLOWLIST = "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789"
 
-    def __init__(self, ocr_confidence=0.45, read_interval=1.5, languages=("en",)):
+    def __init__(self, ocr_confidence=0.32, read_interval=1.5, languages=("en",)):
         import easyocr  # heavy; imported here so a fence-only camera never pays
 
         # verbose=False is NOT cosmetic on Windows. EasyOCR's download progress
@@ -117,37 +117,48 @@ class PlateReader:
         crop = frame[py1:py2, px1:px2]
         if crop is None or crop.size == 0:
             return None
-        # Small plates need enlargement and contrast recovery before OCR. This
-        # is still an OCR result, never a guessed plate.
-        crop = cv2.resize(crop, None, fx=4, fy=4, interpolation=cv2.INTER_CUBIC)
-        gray = cv2.cvtColor(crop, cv2.COLOR_BGR2GRAY)
-        gray = cv2.createCLAHE(clipLimit=2.0, tileGridSize=(8, 8)).apply(gray)
+        # Plates in a night feed are small and usually hit by headlight glare.
+        # Read the same tightly-scoped crop two ways: contrast recovery keeps
+        # faded dark lettering, while Otsu separates a bright plate from the
+        # bumper. We still require a plausible OCR result -- this improves
+        # pixels, it never invents a registration number.
+        enlarged = cv2.resize(crop, None, fx=6, fy=6, interpolation=cv2.INTER_CUBIC)
+        gray = cv2.cvtColor(enlarged, cv2.COLOR_BGR2GRAY)
+        enhanced = cv2.createCLAHE(clipLimit=3.0, tileGridSize=(8, 8)).apply(gray)
+        _, thresholded = cv2.threshold(enhanced, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)
 
-        readings = self.reader.readtext(gray, detail=1, allowlist=self.ALLOWLIST)
-        if not readings:
-            return None
-
-        # OCR often yields state, series and number as separate tokens. Preserve
-        # their left-to-right order before validating, or "PB02" + "AK4821"
-        # reassembles backwards on a whim.
-        readings.sort(key=lambda item: min(point[0] for point in item[0]))
-        text = normalise_plate("".join(item[1] for item in readings))
-        confidence = sum(float(item[2]) for item in readings) / len(readings)
-
-        if not (6 <= len(text) <= 12
+        best = None
+        for prepared in (enhanced, thresholded):
+            readings = self.reader.readtext(prepared, detail=1, allowlist=self.ALLOWLIST)
+            if not readings:
+                continue
+            # OCR often yields state, series and number as separate tokens.
+            # Preserve their left-to-right order before validating.
+            readings.sort(key=lambda item: min(point[0] for point in item[0]))
+            text = normalise_plate("".join(item[1] for item in readings))
+            confidence = sum(float(item[2]) for item in readings) / len(readings)
+            plausible = (
+                6 <= len(text) <= 12
                 and confidence >= self.ocr_confidence
                 and any(c.isalpha() for c in text)
-                and any(c.isdigit() for c in text)):
+                and any(c.isdigit() for c in text)
+            )
+            if plausible and (best is None or confidence > best[1]):
+                best = (text, confidence, readings)
+
+        if best is None:
             return None
 
-        # OCR polygons are on the 4x crop. Convert back to a tight source-frame
+        text, confidence, readings = best
+
+        # OCR polygons are on the 6x crop. Convert back to a tight source-frame
         # box, so what gets saved as evidence is the registration plate and not
         # the whole car body.
         points = [point for reading in readings for point in reading[0]]
-        rx1 = max(px1, px1 + int(min(p[0] for p in points) / 4) - 8)
-        ry1 = max(py1, py1 + int(min(p[1] for p in points) / 4) - 5)
-        rx2 = min(px2, px1 + int(max(p[0] for p in points) / 4) + 8)
-        ry2 = min(py2, py1 + int(max(p[1] for p in points) / 4) + 5)
+        rx1 = max(px1, px1 + int(min(p[0] for p in points) / 6) - 8)
+        ry1 = max(py1, py1 + int(min(p[1] for p in points) / 6) - 5)
+        rx2 = min(px2, px1 + int(max(p[0] for p in points) / 6) + 8)
+        ry2 = min(py2, py1 + int(max(p[1] for p in points) / 6) + 5)
 
         if cache_key is not None:
             self._recent[cache_key] = (now, text, confidence)
@@ -167,7 +178,7 @@ class AnprModule(VisionModule):
         super().configure(params)
         self.report_interval = float(params.get("report_interval", 8.0))
         self.ocr_every = max(1, int(params.get("ocr_every", 1)))
-        self._ocr_confidence = float(params.get("ocr_confidence", 0.45))
+        self._ocr_confidence = float(params.get("ocr_confidence", 0.32))
         self._read_interval = float(params.get("read_interval", 1.5))
 
         if not hasattr(self, "_reader"):
