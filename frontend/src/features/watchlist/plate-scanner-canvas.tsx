@@ -44,6 +44,10 @@ interface PlateScannerCanvasProps {
   scanning: boolean;
   onRunScan: (presetKey: string) => void;
   onManualScan: (plate: string, vehicleType: string, cameraId: string) => void;
+  /** Number-plates workbench starts an uploaded clip immediately. */
+  autoStartUpload?: boolean;
+  /** Count a stable track when first seen instead of waiting for it to exit. */
+  countOnFirstDetection?: boolean;
 }
 
 const PRESET_FEEDS = [
@@ -64,6 +68,8 @@ export function PlateScannerCanvas({
   scanning,
   onRunScan,
   onManualScan,
+  autoStartUpload = false,
+  countOnFirstDetection = false,
 }: PlateScannerCanvasProps) {
   const [sourceMode, setSourceMode] = useState<"preset" | "live" | "upload" | "manual">("preset");
   const [selectedPreset, setSelectedPreset] = useState("flagged_scorpio");
@@ -652,20 +658,19 @@ export function PlateScannerCanvas({
       if (detections.some((item) => item.match_status === "MATCHED")) playWatchlistSiren();
       setActiveDetections(detections);
       setSelectedVehicleIndex(0);
-      // Count a vehicle when its tracked box disappears from the camera. This
-      // is a traffic count: the live figure remains the vehicles visible now;
-      // the captured total increases only after one leaves the frame.
       const now = Date.now();
       const current = new Map(detections.map((vehicle) => [vehicle.id, vehicle]));
       for (const vehicle of detections) {
         visibleVehiclesRef.current.set(vehicle.id, { vehicle, lastSeen: now });
       }
-      // A detector can miss several scans on motion blur. Wait five seconds before
-      // declaring a vehicle gone, rather than counting that brief gap as an exit.
-      const departed = [...visibleVehiclesRef.current.entries()]
-        .filter(([key, state]) => !current.has(key) && now - state.lastSeen >= 5_000)
-        .map(([key, state]) => ({ key, vehicle: state.vehicle }));
-      const newlyCounted = departed.filter(({ key }) => !countedVehiclesRef.current.has(key));
+      const candidates = countOnFirstDetection
+        ? detections.map((vehicle) => ({ key: vehicle.id, vehicle }))
+        : [...visibleVehiclesRef.current.entries()]
+          // A detector can miss several scans on motion blur. Wait five seconds
+          // before treating that gap as an exit in the Watchlist traffic view.
+          .filter(([key, state]) => !current.has(key) && now - state.lastSeen >= 5_000)
+          .map(([key, state]) => ({ key, vehicle: state.vehicle }));
+      const newlyCounted = candidates.filter(({ key }) => !countedVehiclesRef.current.has(key));
       if (newlyCounted.length) {
         newlyCounted.forEach(({ key }) => countedVehiclesRef.current.add(key));
         setTotalVehiclesCaptured((count) => count + newlyCounted.length);
@@ -674,7 +679,7 @@ export function PlateScannerCanvas({
           ...previous,
         ].slice(0, 100));
       }
-      newlyCounted.forEach(({ key }) => visibleVehiclesRef.current.delete(key));
+      if (!countOnFirstDetection) newlyCounted.forEach(({ key }) => visibleVehiclesRef.current.delete(key));
       for (const item of detections.filter((candidate) => candidate.plate_number)) {
         const last = submittedPlatesRef.current.get(item.plate_number) ?? 0;
         if (Date.now() - last > 8_000) {
@@ -691,7 +696,7 @@ export function PlateScannerCanvas({
     } finally {
       analysisInFlightRef.current = false;
     }
-  }, [onManualScan, playWatchlistSiren]);
+  }, [countOnFirstDetection, onManualScan, playWatchlistSiren]);
 
   // Continuous Video Scan Interval Loop
   useEffect(() => {
@@ -792,6 +797,10 @@ export function PlateScannerCanvas({
                 onLoadedMetadata={() => {
                   if (uploadVideoRef.current) {
                     setVideoDuration(uploadVideoRef.current.duration);
+                    if (autoStartUpload) {
+                      void uploadVideoRef.current.play();
+                      setIsPlaying(true);
+                    }
                   }
                 }}
                 onEnded={() => setIsPlaying(false)}
