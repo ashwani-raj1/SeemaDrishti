@@ -47,7 +47,10 @@
 #
 #                        Omit it to take `defaults.modules` below. Available:
 #                        fence (zone/line intrusion), anpr (plate reading),
-#                        multi_human (person tracking; re-ID is interface-only).
+#                        multi_human (person tracking; re-ID is interface-only),
+#                        face (cascaded face detection inside a person box --
+#                        detection only, never recognition; opt-in per camera
+#                        the same way anpr is, because it loads its own model).
 #                        Fence ZONES are not configured here — they are drawn by
 #                        an operator, stored by the edge node, and pulled from
 #                        its /api/config while running, so an edit takes effect
@@ -68,6 +71,10 @@ defaults:
 cameras:
   - id: cam_fence_north
     label: BOP-01 Fence North
+    # The human-tracking + face-detection demo camera: multi_human for
+    # within-camera tracking, face for the cascaded detector inside each
+    # tracked person's box.
+    modules: [fence, multi_human, face]
     detect: true
     source:
       kind: file

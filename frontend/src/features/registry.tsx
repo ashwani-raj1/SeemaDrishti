@@ -21,7 +21,7 @@
 import type { LucideIcon } from "lucide-react";
 import {
   CarFrontIcon, CctvIcon, FileClockIcon, HistoryIcon, LayersIcon,
-  LayoutDashboardIcon, MapIcon, ScanEyeIcon, SirenIcon, UsersIcon,
+  LayoutDashboardIcon, MapIcon, ScanEyeIcon, ScanFaceIcon, SirenIcon, UsersIcon,
 } from "lucide-react";
 import { canUse, GROUP_ORDER, selectEnabled, type SectionGroup, type SectionMeta } from "./sections";
 
@@ -38,6 +38,7 @@ import { WatchlistScreen } from "./watchlist/screen";
 import { FenceScreen } from "./services/fence";
 import { AnprScreen } from "./services/anpr";
 import { PeopleScreen } from "./services/people";
+import { FaceScreen } from "./services/face";
 import { CameraHealthScreen } from "./services/camera-health";
 
 export type { SectionGroup };
@@ -123,6 +124,15 @@ export const SECTIONS: Section[] = [
     path: "/services/people",
     minRole: "operator",
     element: <PeopleScreen />,
+  },
+  {
+    id: "face",
+    group: "Services",
+    label: "Face detection",
+    icon: ScanFaceIcon,
+    path: "/services/face",
+    minRole: "operator",
+    element: <FaceScreen />,
   },
   {
     id: "camera-health",

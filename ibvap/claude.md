@@ -106,6 +106,7 @@ cost that actually matters, for the same boxes three times over.
 | `fence` | zone polygon intrusion + line crossing, debounce, cooldown | `intrusion` |
 | `anpr` | plate crop → OCR inside a tracked vehicle box | `plate_read` |
 | `multi_human` | within-camera person tracking; re-ID is interface-only (§6) | `reidentification` |
+| `face` | cascaded YuNet inside a tracked person's box; detection only | none — live-only |
 
 Which modules run is per camera, in `media/cameras.yml`. Adding a capability is
 a new file in `modules/` plus a name in that manifest — **the dispatcher, the
@@ -113,9 +114,13 @@ WebSocket server and the HTTP sink do not change.** That is the test of whether
 this layer is actually pluggable.
 
 The person-tracking and YuNet face-detection modules that predated this
-refactor were deleted; they are in git history (`core/person.py`,
-`core/face.py`) and face detection would return as a module, not as a
-special case.
+refactor were deleted; the pre-refactor standalone files (`core/person.py`,
+`core/face.py`, and the `people_run.py`/`people_service.py` harnesses that
+imported them) are in git history. Face detection has returned as
+`modules/face.py` — a module, not a special case, exactly as this section
+said it would. It is detection only: a box and a score, never a match against
+anybody, and it emits nothing on the durable path (§14) — "a face was seen"
+with no watchlist to check it against is not evidence.
 
 **5 reliable features beat 15 half-working ones.** If asked for loitering
 detection, night mode or "suspicious activity", push back and ask what evidence
@@ -203,6 +208,12 @@ losing them quietly.
   camera, not across a wide open scene — which is why `anpr` is enabled per
   camera in the manifest rather than everywhere. The working range must be
   measured in **metres** on the installed camera and reported.
+- **Face detection is resolution-bound the same way.** A 60 px-tall person has
+  a face a few pixels tall; no CPU-sized detector finds that reliably. It
+  works at **choke points** (a gate, checkpost or doorway), not across open
+  terrain — the working range needs measuring in metres, same as ANPR's. YuNet
+  outputs a box and a score, never an identity; the word "recognition" must
+  never describe `modules/face.py`.
 - **Threads, not processes.** One asyncio task per camera with CPU work pushed
   through `asyncio.to_thread`. That works while the GIL is released inside
   ultralytics/OpenCV native code, which is where nearly all the time goes. It is
@@ -294,6 +305,7 @@ modules/fence.py       zone + line crossing, debounce, per-direction cooldown
 modules/anpr.py        PlateReader + AnprModule
 modules/multi_human.py within-camera person tracking, re-ID hook
 modules/reid.py        ReIDProvider interface, NullReID, Gallery
+modules/face.py        cascaded YuNet inside a person box; detection only, live-only
 
 data/                  videos + weights (git-ignored and claude-ignored)
 yolo11n.pt             detector weights; downloads itself on first run

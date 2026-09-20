@@ -30,7 +30,7 @@
 import { useEffect, useRef, useState } from "react";
 import { Badge } from "@/components/ui/badge";
 import { cn } from "@/lib/utils";
-import { onLive, type AnprExtra, type LiveTrack } from "@/lib/live";
+import { onLive, type AnprExtra, type FaceExtra, type LiveTrack } from "@/lib/live";
 import { playWhep, whepUrl, type FeedState } from "@/lib/whep";
 import type { Point, Severity, ZoneGeometry } from "@/lib/types";
 
@@ -276,6 +276,27 @@ export function CameraFeed({
           context.fillRect(bx1 * width, Math.max(0, by1 * height - 16), plateWidth + 8, 16);
           context.fillStyle = "#1c1917";
           context.fillText(plate.text, bx1 * width + 4, Math.max(12, by1 * height - 4));
+        }
+
+        // A face, when the face module found one inside this person's box.
+        // Detection only -- drawn the same neutral way a person box is, never
+        // styled as a match or a name, because it is neither.
+        const face = (track.extra as FaceExtra | undefined)?.face;
+        if (face) {
+          const [gx1, gy1, gx2, gy2] = face.bbox;
+          context.strokeStyle = "#a3e635";
+          context.lineWidth = 2;
+          context.strokeRect(
+            gx1 * width, gy1 * height,
+            (gx2 - gx1) * width, (gy2 - gy1) * height,
+          );
+          const label = `face ${(face.score * 100).toFixed(0)}%`;
+          context.font = "11px ui-monospace, monospace";
+          const faceLabelWidth = context.measureText(label).width;
+          context.fillStyle = "#a3e635";
+          context.fillRect(gx1 * width, Math.max(0, gy1 * height - 15), faceLabelWidth + 8, 15);
+          context.fillStyle = "#052e16";
+          context.fillText(label, gx1 * width + 4, Math.max(11, gy1 * height - 4));
         }
       }
     };

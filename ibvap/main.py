@@ -56,6 +56,7 @@ from modules.base import FrameContext, build  # noqa: E402
 # Importing a module registers it. A new capability is a new file here plus a
 # name in cameras.yml — the dispatch layer below never learns it exists.
 import modules.anpr  # noqa: E402,F401
+import modules.face  # noqa: E402,F401
 import modules.fence  # noqa: E402,F401
 import modules.multi_human  # noqa: E402,F401
 
@@ -72,8 +73,15 @@ class CameraWorker:
 
         self.reader: RTSPStream | None = None
         self.detector: SharedDetector | None = None
-        self.modules = [build(name, camera.id, params)
-                        for name, params in camera.modules.items()]
+        # `face` gets its weights path from Settings, same as the shared
+        # detector's own `weights` -- unless a camera's own `face: {model:
+        # ...}` already says so, which wins.
+        self.modules = [
+            build(name, camera.id,
+                 {**params, "model": settings.face_model}
+                 if name == "face" and "model" not in params else params)
+            for name, params in camera.modules.items()
+        ]
 
         self.frames = 0
         self.started_at = 0.0

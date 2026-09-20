@@ -102,6 +102,7 @@ module that runs its own detector has misunderstood the design.
 | `fence` | polygon intrusion + line crossing, debounce, per-direction cooldown | `intrusion` |
 | `anpr` | plate crop → OCR inside a tracked vehicle box | `plate_read` |
 | `multi_human` | within-camera person tracking; re-ID is interface-only | `reidentification` |
+| `face` | cascaded YuNet inside a tracked person's box | none — detection only, live-only |
 
 Which modules run is per camera, in `media/cameras.yml`:
 
@@ -142,6 +143,7 @@ Three sources, deliberately not merged:
 | `IBVAP_BACKEND_HOST` / `IBVAP_BACKEND_PORT` | `127.0.0.1` / `8000` | Where the edge node is |
 | `IBVAP_BOXES_BIND` / `IBVAP_BOXES_PORT` | `0.0.0.0` / `8100` | Where the console reads observations |
 | `IBVAP_WEIGHTS` | `yolo11n.pt` | Detector weights |
+| `IBVAP_FACE_MODEL` | `data/face_detection_yunet_2023mar.onnx` | YuNet weights, for cameras running `face` |
 | `IBVAP_FACE_MODEL` | `data/face_detection_yunet_2023mar.onnx` | YuNet weights (people domain) |
 | `IBVAP_IMGSZ` | `480` | Inference size |
 | `IBVAP_CONF` | `0.35` | Confidence floor |
@@ -238,6 +240,11 @@ Stated plainly rather than discovered in a demo:
   appearance model, so a long occlusion produces a *new* track id and a subject
   moving between cameras has no relationship to themselves. Never claim
   persistent re-ID, and never call a tracker id an identity.
+- **Face detection is detection only.** `modules/face.py` runs YuNet inside
+  the upper fraction of a tracked person's box and outputs a bounding box and
+  a score — never a match against anybody. It works at choke points (a gate
+  or doorway), not across open terrain, for the same resolution reasons ANPR
+  is opt-in per camera.
 - **Plate OCR is resolution-bound.** A plate a few pixels tall cannot be read.
   It works at a gate or checkpoint where plates face the camera, not across a
   wide open scene — which is why `anpr` is opt-in per camera. The working range

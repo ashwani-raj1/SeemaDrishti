@@ -72,6 +72,16 @@ export interface AnprExtra {
   };
 }
 
+/** What the face module puts in `extra`. Detection only -- never identity. */
+export interface FaceExtra {
+  track_ref?: string;
+  face?: {
+    /** [x1, y1, x2, y2], normalised 0..1 -- same convention as the track box. */
+    bbox: [number, number, number, number];
+    score: number;
+  };
+}
+
 /** What the multi_human module puts in `extra`. */
 export interface PeopleExtra {
   track_ref?: string;
