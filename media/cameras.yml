@@ -111,7 +111,7 @@ cameras:
     # Real footage (a car park), unlike the synthetic test patterns on the
     # other paths -- so this is the one camera where detections actually
     # appear. ANPR is on because what is in frame is vehicles.
-    modules: [fence, anpr, multi_human]
+    modules: [fence]
     source:
       kind: file
       path: clips/virtual_fence.mp4

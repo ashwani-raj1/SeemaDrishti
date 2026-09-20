@@ -20,13 +20,15 @@ import { PageShell } from "@/components/ibvap/page-shell";
 import { EvidenceOverlay } from "@/components/ibvap/evidence-overlay";
 import { Spinner } from "@/components/ibvap/spinner";
 import { useClient } from "@/client/context";
+import { HistoryLink } from "@/components/ibvap/history-link";
 import { sectorById } from "@/client/geography";
-import { api, isForbidden } from "@/lib/api";
+import { api, isConflict, isForbidden } from "@/lib/api";
 import { useResource } from "@/lib/use-resource";
 import { humanise } from "@/lib/format";
 import { cn } from "@/lib/utils";
 import type { Direction, MonitoringZone, ZoneCamera } from "@/lib/types";
 import { NewZoneDialog } from "./new-zone-dialog";
+import { ZoneActions } from "./zone-actions";
 import { ShapeEditor } from "./shape-editor";
 import { TargetEditor, TargetList, toDraft, type DraftTarget } from "./target-editor";
 
@@ -118,6 +120,7 @@ function ZoneCard({
             </Badge>
           )}
           {!zone.active && <Badge variant="destructive">inactive</Badge>}
+          <ZoneActions zone={zone} canEdit={canEdit} onChanged={onChanged} />
         </CardTitle>
         <CardDescription className="flex flex-wrap items-center gap-x-3 gap-y-1">
           <span>
@@ -129,6 +132,7 @@ function ZoneCard({
               {unplaced} shape{unplaced === 1 ? "" : "s"} not positioned yet
             </span>
           )}
+          <HistoryLink zoneId={zone.id} label="Everything recorded here" />
         </CardDescription>
       </CardHeader>
 
@@ -483,12 +487,22 @@ function AddCamera({
   const [busy, setBusy] = useState(false);
 
   const already = new Set(zone.cameras.filter((c) => c.active).map((c) => c.cameraId));
-  const available = useMemo(
-    () => cameras.filter((camera) => !already.has(camera.id)),
+
+  // A camera belongs to exactly one zone. Cameras held elsewhere are shown
+  // DISABLED with the holder named, not filtered out: a camera that simply
+  // vanishes from a picker somebody expects to find it in reads as a bug,
+  // while a greyed-out row with the reason attached reads as the system
+  // working. Same lesson as the unsurveyed-camera case in new-zone-dialog.
+  const options = useMemo(
+    () =>
+      cameras
+        .filter((camera) => !already.has(camera.id))
+        .map((camera) => ({ camera, heldBy: camera.zones.find((z) => z.active) })),
     [cameras, zone.cameras],
   );
+  const free = options.filter((option) => !option.heldBy);
 
-  if (!canEdit || available.length === 0) return null;
+  if (!canEdit || options.length === 0) return null;
 
   async function add() {
     if (!choice) return;
@@ -501,7 +515,18 @@ function AddCamera({
       setChoice("");
       onChanged();
     } catch (error) {
-      toast.error((error as Error).message);
+      // The list this control was built from can be stale -- another
+      // supervisor in another tab is the ordinary case, not a rare one -- so
+      // the server's refusal has to be readable, and the list has to correct
+      // itself afterwards.
+      if (isConflict(error)) {
+        toast.error("That camera is already in another zone", {
+          description: `${error.message} Remove it there first.`,
+        });
+        onChanged();
+      } else {
+        toast.error((error as Error).message);
+      }
     } finally {
       setBusy(false);
     }
@@ -513,16 +538,27 @@ function AddCamera({
         <FieldLabel htmlFor={`add-${zone.id}`}>Add another camera</FieldLabel>
         <Select value={choice} onValueChange={setChoice}>
           <SelectTrigger id={`add-${zone.id}`} size="sm">
-            <SelectValue placeholder="Choose a camera" />
+            <SelectValue
+              placeholder={free.length ? "Choose a camera" : "Every camera is already in a zone"}
+            />
           </SelectTrigger>
           <SelectContent>
-            {available.map((camera) => (
-              <SelectItem key={camera.id} value={camera.id}>
+            {options.map(({ camera, heldBy }) => (
+              <SelectItem key={camera.id} value={camera.id} disabled={Boolean(heldBy)}>
                 {camera.name}
+                {heldBy && (
+                  <span className="text-muted-foreground"> · in {heldBy.name}</span>
+                )}
               </SelectItem>
             ))}
           </SelectContent>
         </Select>
+        {free.length === 0 && (
+          <FieldDescription>
+            Every other camera already belongs to a zone. A camera watches one
+            zone at a time — remove it from its current one to move it.
+          </FieldDescription>
+        )}
       </Field>
       <Button size="sm" variant="outline" disabled={!choice || busy} onClick={add}>
         <PlusIcon className="size-4" />

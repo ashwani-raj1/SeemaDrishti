@@ -40,6 +40,10 @@ const SEVERITY_COLOUR: Record<Severity, string> = {
   CRITICAL: "#dc2626",
 };
 
+/** Deliberately NOT a severity colour: a provisional shape has no severity,
+ *  because the node never alerts on one. Matches ProvisionalBadge. */
+const PROVISIONAL_COLOUR = "#a16207";
+
 /** Recent-movement aid, not a record (see trailsRef comment below). */
 const TRAIL_MAX_POINTS = 50;
 const TRAIL_STALE_SECONDS = 3;
@@ -74,6 +78,8 @@ export interface FeedZone {
   geometry: ZoneGeometry;
   points: Point[];
   severity: Severity;
+  /** Stock placeholder nobody drew; drawn differently, never alerted on. */
+  provisional?: boolean;
 }
 
 export interface CameraFeedProps {
@@ -194,25 +200,66 @@ export function CameraFeed({
       context.setTransform(ratio, 0, 0, ratio, 0, 0);
       context.clearRect(0, 0, width, height);
 
+      // WHERE THE PICTURE ACTUALLY IS.
+      //
+      // The container is a hard 16:9 box and the <video> inside it is
+      // object-contain, so any source that is not 16:9 is letterboxed -- but
+      // this canvas is inset-0 and spans the whole container. Mapping 0..1
+      // across the container therefore puts every zone, box and trail off by
+      // the width of the bar, and worst at the edges, which is exactly where a
+      // fence line is drawn.
+      //
+      // shape-editor.tsx solves the same problem the other way, by forcing the
+      // container to the frame's aspect -- it has to, because a CLICK must land
+      // in frame space. This tile only draws, so it maps into the fitted rect
+      // and leaves the grid layout above it alone. Before metadata arrives the
+      // fallback is full-bleed, which is the old behaviour.
+      const video = videoRef.current;
+      const vw = video?.videoWidth ?? 0;
+      const vh = video?.videoHeight ?? 0;
+      const fit = vw && vh ? Math.min(width / vw, height / vh) : 0;
+      const dw = fit ? vw * fit : width;
+      const dh = fit ? vh * fit : height;
+      const ox = (width - dw) / 2;
+      const oy = (height - dh) / 2;
+      /** Normalised frame coordinate -> canvas pixel. */
+      const sx = (x: number) => ox + x * dw;
+      const sy = (y: number) => oy + y * dh;
+
       // Zones first, so a box sits on top of the shape it may be crossing.
       for (const zone of zones) {
         if (zone.points.length < 2) continue;
-        context.strokeStyle = SEVERITY_COLOUR[zone.severity] ?? SEVERITY_COLOUR.INFO;
+        // A shape nobody drew must not be mistakable for one an operator
+        // placed. Muted amber, and dashed REGARDLESS of geometry -- dashing
+        // only polygons would leave a provisional LINE looking exactly like a
+        // real fence, which is the common case.
+        const colour = zone.provisional
+          ? PROVISIONAL_COLOUR
+          : SEVERITY_COLOUR[zone.severity] ?? SEVERITY_COLOUR.INFO;
+        context.strokeStyle = colour;
         context.lineWidth = 2;
-        context.setLineDash(zone.geometry === "line" ? [] : [6, 4]);
+        context.setLineDash(zone.provisional || zone.geometry !== "line" ? [6, 4] : []);
         context.beginPath();
         zone.points.forEach(([x, y], index) => {
-          const px = x * width;
-          const py = y * height;
+          const px = sx(x);
+          const py = sy(y);
           if (index === 0) context.moveTo(px, py);
           else context.lineTo(px, py);
         });
         if (zone.geometry === "polygon") {
           context.closePath();
-          context.fillStyle = `${SEVERITY_COLOUR[zone.severity] ?? "#78716c"}1a`;
+          context.fillStyle = `${colour}${zone.provisional ? "0d" : "1a"}`;
           context.fill();
         }
         context.stroke();
+
+        if (zone.provisional) {
+          const [fx, fy] = zone.points[0]!;
+          context.setLineDash([]);
+          context.font = "10px ui-monospace, monospace";
+          context.fillStyle = PROVISIONAL_COLOUR;
+          context.fillText("provisional", sx(fx) + 4, Math.max(10, sy(fy) - 5));
+        }
       }
       context.setLineDash([]);
 
@@ -225,8 +272,8 @@ export function CameraFeed({
         context.lineJoin = "round";
         context.beginPath();
         trail.pts.forEach(([x, y], index) => {
-          const px = x * width;
-          const py = y * height;
+          const px = sx(x);
+          const py = sy(y);
           if (index === 0) context.moveTo(px, py);
           else context.lineTo(px, py);
         });
@@ -240,10 +287,10 @@ export function CameraFeed({
       // incident, from the node.
       for (const track of tracksRef.current) {
         const [x1, y1, x2, y2] = track.bbox;
-        const px = x1 * width;
-        const py = y1 * height;
-        const pw = (x2 - x1) * width;
-        const ph = (y2 - y1) * height;
+        const px = sx(x1);
+        const py = sy(y1);
+        const pw = (x2 - x1) * dw;
+        const ph = (y2 - y1) * dh;
 
         context.strokeStyle = "#38bdf8";
         context.lineWidth = 2;
@@ -267,15 +314,15 @@ export function CameraFeed({
           context.strokeStyle = "#fbbf24";
           context.lineWidth = 2;
           context.strokeRect(
-            bx1 * width, by1 * height,
-            (bx2 - bx1) * width, (by2 - by1) * height,
+            sx(bx1), sy(by1),
+            (bx2 - bx1) * dw, (by2 - by1) * dh,
           );
           context.font = "12px ui-monospace, monospace";
           const plateWidth = context.measureText(plate.text).width;
           context.fillStyle = "#fbbf24";
-          context.fillRect(bx1 * width, Math.max(0, by1 * height - 16), plateWidth + 8, 16);
+          context.fillRect(sx(bx1), Math.max(0, sy(by1) - 16), plateWidth + 8, 16);
           context.fillStyle = "#1c1917";
-          context.fillText(plate.text, bx1 * width + 4, Math.max(12, by1 * height - 4));
+          context.fillText(plate.text, sx(bx1) + 4, Math.max(12, sy(by1) - 4));
         }
       }
     };

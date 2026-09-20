@@ -236,11 +236,23 @@ export interface EventQuery {
   incidentId?: string;
   severity?: Severity;
   class?: string;
-  alertableOnly?: boolean;
+  /** zone_crossing | camera_health | sensor_contact | reidentification */
+  kind?: string;
+  /**
+   * Tri-state: undefined means both. A plain boolean could only ever ask for
+   * "alertable = 1", and the question worth asking now is the opposite one --
+   * what did we record and deliberately NOT shout about, and why.
+   */
+  alertable?: boolean;
+  /** e.g. `zone_not_placed`, `target_is_log_only`, `zone_no_longer_bound`. */
+  suppressedReason?: string;
+  simulated?: boolean;
   since?: string;
   until?: string;
   afterSeq?: number;
   limit?: number;
+  /** @deprecated superseded by the tri-state `alertable`. */
+  alertableOnly?: boolean;
 }
 
 /** The searchable log. Also what a reconnecting peer replays, via afterSeq. */
@@ -253,7 +265,14 @@ export function queryEvents(orgId: string, q: EventQuery) {
   if (q.incidentId) (where.push("incident_id = $incident"), (params.$incident = q.incidentId));
   if (q.severity) (where.push("severity = $severity"), (params.$severity = q.severity));
   if (q.class) (where.push("class = $class"), (params.$class = q.class));
-  if (q.alertableOnly) where.push("alertable = 1");
+  if (q.kind) (where.push("kind = $kind"), (params.$kind = q.kind));
+  if (q.alertable !== undefined) where.push(`alertable = ${q.alertable ? 1 : 0}`);
+  else if (q.alertableOnly) where.push("alertable = 1");
+  if (q.suppressedReason) {
+    where.push("suppressed_reason = $suppressed");
+    params.$suppressed = q.suppressedReason;
+  }
+  if (q.simulated !== undefined) where.push(`simulated = ${q.simulated ? 1 : 0}`);
   if (q.since) (where.push("occurred_at >= $since"), (params.$since = q.since));
   if (q.until) (where.push("occurred_at <= $until"), (params.$until = q.until));
   if (q.afterSeq !== undefined) (where.push("seq > $after"), (params.$after = q.afterSeq));

@@ -12,6 +12,7 @@ import { SeverityBadge } from "@/components/ibvap/badges";
 import { ReasonDialog } from "@/components/ibvap/reason-dialog";
 import { LoadingRows, NothingHere } from "@/components/ibvap/states";
 import { useClient } from "@/client/context";
+import { HistoryLink } from "@/components/ibvap/history-link";
 import { ATTARI_SECTOR, formatLatLon, gridRef } from "@/client/geography";
 import { api } from "@/lib/api";
 import { onStream } from "@/lib/stream";
@@ -288,9 +289,12 @@ export function ServiceShell({
                 <CardTitle className="text-sm font-medium">
                   Incidents on this camera
                 </CardTitle>
-                <Badge variant={open.length ? "destructive" : "secondary"}>
-                  {open.length} open
-                </Badge>
+                <div className="flex items-center gap-3">
+                  <HistoryLink cameraId={cameraId} label="Search all events" />
+                  <Badge variant={open.length ? "destructive" : "secondary"}>
+                    {open.length} open
+                  </Badge>
+                </div>
               </CardHeader>
               <CardContent className="flex-1">
                 {loadingIncidents && <LoadingRows rows={3} />}

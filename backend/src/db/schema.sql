@@ -101,6 +101,23 @@ CREATE TABLE IF NOT EXISTS zone_camera (
 
 CREATE INDEX IF NOT EXISTS zone_camera_by_camera ON zone_camera(camera_id, active);
 
+-- A camera belongs to exactly ONE zone at a time.
+--
+-- A zone may still span many cameras -- the fence line seen from two angles is
+-- one place, and siblingCameras()/crossReference() depend on that. What this
+-- forbids is the other direction: one camera carrying several zones, and so
+-- several shapes.
+--
+-- PARTIAL, on `active`, because a binding is retired by setting active = 0 and
+-- never deleted: past events still point at it, and re-adding the camera has
+-- to find its old target overrides waiting. A plain UNIQUE(camera_id) would
+-- make a camera unusable the moment it had ever left a zone.
+--
+-- Enforced at the API too (requireFreeCameras in routes/zones.ts) so the caller
+-- gets a 409 naming the zone that holds it, rather than a raw constraint error.
+CREATE UNIQUE INDEX IF NOT EXISTS zone_camera_one_zone
+  ON zone_camera(camera_id) WHERE active = 1;
+
 -- What must be detected against here, in the order it matters.
 --
 -- `camera_id NULL` is the zone's own policy, applying to every camera in it.

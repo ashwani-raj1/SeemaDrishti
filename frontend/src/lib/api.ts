@@ -33,6 +33,11 @@ export const needsReason = (error: unknown): error is ApiError =>
 export const isForbidden = (error: unknown): error is ApiError =>
   error instanceof ApiError && error.status === 403;
 
+/** A well-formed request that collides with current state -- e.g. a camera
+ *  that already belongs to another zone. Not the caller's mistake. */
+export const isConflict = (error: unknown): error is ApiError =>
+  error instanceof ApiError && error.status === 409;
+
 let apiBase = "";
 let actorId = "usr_operator";
 
@@ -90,9 +95,14 @@ const qs = (params: Record<string, unknown>) => {
 export type EventQuery = {
   camera_id?: string;
   zone_id?: string;
+  incident_id?: string;
   severity?: string;
   class?: string;
+  kind?: string;
+  /** Tri-state: leave it out to get both alerted and suppressed events. */
   alertable?: boolean;
+  suppressed_reason?: string;
+  simulated?: boolean;
   since?: string;
   until?: string;
   after_seq?: number;

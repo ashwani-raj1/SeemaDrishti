@@ -20,6 +20,11 @@ const CAMERAS = [
   { id: "cam_farm_gate", name: "BOP-02 Farm Gate" },
   { id: "cam_patrol_road", name: "BOP-03 Patrol Road" },
   { id: "cam_waterline", name: "BOP-04 Waterline" },
+  // Declared in media/cameras.yml and, until now, missing here -- so every
+  // durable event from that worker was rejected by cameraContext() for an
+  // unknown camera, and the worker looked like it was running fine while
+  // producing nothing. It is also the one camera pointed at real footage.
+  { id: "cam_garden", name: "BOP-05 Garden" },
 ];
 
 interface TargetSeed {
@@ -49,20 +54,42 @@ interface ZoneSeed {
 }
 
 const ZONES: ZoneSeed[] = [
+  // ONE zone, every camera.
+  //
+  // A zone spans cameras; a camera belongs to exactly one zone
+  // (zone_camera_one_zone). Those two rules together make "one zone holding
+  // the whole post" the simplest configuration the schema can express, and it
+  // is the one to start a demo from: every feed is judged, nothing is bound
+  // twice, and there is a single policy to point at when somebody asks what
+  // this post alerts on.
+  //
+  // Per-camera differences that used to justify separate zones now live where
+  // they belong: the SHAPE is per binding (each camera sees different ground,
+  // so each gets its own geometry, direction and patience), and a class that
+  // matters differently on one camera is a camera OVERRIDE rather than a
+  // second zone. Splitting this back out is a console action, not a code
+  // change -- create a zone, move the camera into it.
   {
-    id: "zone_fence_line",
-    name: "Fence line north",
-    kind: "fence_line",
-    sector: "fence_north",
+    id: "zone_perimeter",
+    name: "BOP perimeter",
+    kind: "perimeter",
+    sector: "bop_attari",
+    // The union of what the four old zones watched for, in priority order.
+    // Animals are named on purpose: a zone that cannot name them has no way to
+    // say "write it down, never alert", which is what log_only exists for.
     targets: [
       { class: "person", severity: "CRITICAL", action: "alert" },
       { class: "vehicle", severity: "WARNING", action: "alert" },
+      { class: "boat", severity: "CRITICAL", action: "alert" },
       { class: "tractor", severity: "WARNING", action: "alert" },
       { class: "cattle", severity: "INFO", action: "log_only" },
       { class: "dog", severity: "INFO", action: "log_only" },
       { class: "nilgai", severity: "INFO", action: "log_only" },
       { class: "wild_boar", severity: "INFO", action: "log_only" },
     ],
+    // One shape per camera. The same place seen from five positions is five
+    // different polygons -- geometry drawn in one camera's frame means nothing
+    // in another's, which is why it lives on the binding and not on the zone.
     cameras: [
       {
         camera_id: "cam_fence_north",
@@ -74,53 +101,12 @@ const ZONES: ZoneSeed[] = [
         confirm_seconds: 2,
       },
       {
-        // The same fence, seen further along from the patrol road camera --
-        // a different shape entirely, which is exactly the point.
-        camera_id: "cam_patrol_road",
+        camera_id: "cam_farm_gate",
         geometry: "line",
         points: [[0.12, 0.30], [0.88, 0.38]],
         direction: "inbound",
         confirm_seconds: 3,
       },
-    ],
-  },
-  {
-    id: "zone_farm_gate",
-    name: "Farm gate",
-    kind: "gate",
-    sector: "gate_approach",
-    // Farmers cross here daily on a fixed schedule, so a gate is a warning,
-    // not a critical alarm.
-    targets: [
-      { class: "person", severity: "WARNING", action: "alert" },
-      { class: "tractor", severity: "WARNING", action: "alert" },
-      { class: "vehicle", severity: "WARNING", action: "alert" },
-      { class: "cattle", severity: "INFO", action: "log_only" },
-      { class: "dog", severity: "INFO", action: "log_only" },
-    ],
-    cameras: [
-      {
-        camera_id: "cam_farm_gate",
-        geometry: "polygon",
-        points: [[0.34, 0.42], [0.66, 0.42], [0.70, 0.86], [0.30, 0.86]],
-        direction: "both",
-        confirm_seconds: 3,
-      },
-    ],
-  },
-  {
-    id: "zone_patrol_road",
-    name: "Patrol road verge",
-    kind: "restricted_area",
-    sector: "patrol_road",
-    targets: [
-      { class: "person", severity: "WARNING", action: "alert" },
-      { class: "vehicle", severity: "WARNING", action: "alert" },
-      { class: "cattle", severity: "INFO", action: "log_only" },
-      { class: "dog", severity: "INFO", action: "log_only" },
-      { class: "nilgai", severity: "INFO", action: "log_only" },
-    ],
-    cameras: [
       {
         camera_id: "cam_patrol_road",
         geometry: "polygon",
@@ -128,19 +114,6 @@ const ZONES: ZoneSeed[] = [
         direction: "inbound",
         confirm_seconds: 2,
       },
-    ],
-  },
-  {
-    id: "zone_waterline",
-    name: "Waterline",
-    kind: "waterline",
-    sector: "waterline",
-    targets: [
-      { class: "person", severity: "CRITICAL", action: "alert" },
-      { class: "boat", severity: "CRITICAL", action: "alert" },
-      { class: "cattle", severity: "INFO", action: "log_only" },
-    ],
-    cameras: [
       {
         camera_id: "cam_waterline",
         geometry: "line",
@@ -148,7 +121,20 @@ const ZONES: ZoneSeed[] = [
         direction: "inbound",
         confirm_seconds: 2,
       },
+      {
+        camera_id: "cam_garden",
+        geometry: "polygon",
+        points: [[0.34, 0.42], [0.66, 0.42], [0.70, 0.86], [0.30, 0.86]],
+        direction: "inbound",
+        confirm_seconds: 2,
+      },
     ],
+    // Kept so the override mechanism is still exercised by the seed: herds move
+    // towards the river, so on the waterline camera cattle are worth an alert
+    // rather than a log line. Same zone, same policy, one camera's exception.
+    overrides: {
+      cam_waterline: [{ class: "cattle", severity: "WARNING", action: "alert" }],
+    },
   },
 ];
 
@@ -338,7 +324,7 @@ export function seed(): void {
     {
       id: "pd_seed_01",
       camera_id: "cam_fence_north",
-      zone_id: "zone_fence_line",
+      zone_id: "zone_perimeter",
       plate_number: "PB 02 AK 4821",
       vehicle_type: "suv",
       confidence: 0.94,
@@ -355,7 +341,7 @@ export function seed(): void {
     {
       id: "pd_seed_02",
       camera_id: "cam_farm_gate",
-      zone_id: "zone_farm_gate",
+      zone_id: "zone_perimeter",
       plate_number: "PB 02 T 9182",
       vehicle_type: "tractor",
       confidence: 0.91,
@@ -372,7 +358,7 @@ export function seed(): void {
     {
       id: "pd_seed_03",
       camera_id: "cam_patrol_road",
-      zone_id: "zone_patrol_road",
+      zone_id: "zone_perimeter",
       plate_number: "PB 02 E 3391",
       vehicle_type: "car",
       confidence: 0.96,
@@ -389,7 +375,7 @@ export function seed(): void {
     {
       id: "pd_seed_04",
       camera_id: "cam_farm_gate",
-      zone_id: "zone_farm_gate",
+      zone_id: "zone_perimeter",
       plate_number: "PB 02 AB 1042",
       vehicle_type: "tractor",
       confidence: 0.88,

@@ -4,6 +4,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { useClient } from "@/client/context";
+import { ProvisionalBadge } from "@/components/ibvap/badges";
 import type { FeedZone } from "@/components/ibvap/camera-feed";
 import { SEVERITY_RANK, type Severity } from "@/lib/types";
 import { ServiceShell } from "./service-shell";
@@ -33,6 +34,7 @@ export function FenceScreen() {
         geometry: zone.geometry,
         points: zone.points,
         severity: zone.severity,
+        provisional: zone.provisional,
       }));
     },
     [known],
@@ -74,10 +76,24 @@ export function FenceScreen() {
                     <div key={zone.bindingId ?? zone.id} className="rounded-md border p-3">
                       <div className="flex items-start justify-between gap-2">
                         <span className="text-sm font-medium">{zone.name}</span>
-                        <Badge variant="outline" className="text-[10px] uppercase">
-                          {zone.geometry}
-                        </Badge>
+                        <div className="flex shrink-0 items-center gap-1">
+                          {zone.provisional && <ProvisionalBadge />}
+                          <Badge variant="outline" className="text-[10px] uppercase">
+                            {zone.geometry}
+                          </Badge>
+                        </div>
                       </div>
+                      {zone.provisional && (
+                        // The fence operator's page is where somebody notices,
+                        // so name the consequence and offer the cure in place.
+                        <p className="mt-1 text-xs text-amber-600 dark:text-amber-500">
+                          Nobody has drawn this shape on this camera. Crossings
+                          are recorded and never alerted.{" "}
+                          <Link to="/zones" className="underline underline-offset-2">
+                            Draw it
+                          </Link>
+                        </p>
+                      )}
                       <dl className="mt-2 grid grid-cols-2 gap-x-3 gap-y-1 text-xs text-muted-foreground">
                         <dt>Direction</dt>
                         <dd className="text-right font-mono">{zone.direction}</dd>

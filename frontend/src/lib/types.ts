@@ -86,6 +86,17 @@ export interface Zone {
   logOnlyClasses: string[];
   severity: Severity;
   active: boolean;
+  /**
+   * True when nobody has drawn this shape against this camera's view -- it is
+   * the stock placeholder handed out when the camera joined the zone. The node
+   * records crossings of it and never alerts on them.
+   *
+   * `provisional === !placed` on ZoneCamera. Two words for one bit, kept apart
+   * on purpose: `placed` is the editor's question ("has a supervisor
+   * positioned this?"), `provisional` is the detector's ("is this a shape
+   * nobody chose?"). Same answer, different reader.
+   */
+  provisional: boolean;
 }
 
 /** One camera's membership of a zone, as the zone screen sees it. */
@@ -193,6 +204,8 @@ export interface Evidence {
   confirmSeconds?: number;
   /** What the track actually held for. Shown side by side with the above. */
   heldSeconds?: number;
+  /** The crossing was judged against a shape nobody drew (see Zone). */
+  provisional?: boolean;
   [key: string]: unknown;
 }
 
@@ -215,6 +228,12 @@ export interface IbvapEvent {
   occurredAt: string;
   receivedAt: string;
   evidence: Evidence;
+  /**
+   * The incident this event was grouped into. The node has always sent it --
+   * this mirror simply omitted it, which is the drift this file's docstring
+   * warns about. It is what makes a row in a search clickable.
+   */
+  incidentId: string | null;
 }
 
 export interface Incident {

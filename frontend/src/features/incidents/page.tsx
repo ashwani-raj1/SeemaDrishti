@@ -7,6 +7,7 @@ import { SeverityBadge, SimulatedBadge, SuppressedBadge } from "@/components/ibv
 import { EvidenceMap } from "@/components/ibvap/evidence-map";
 import { ErrorState, LoadingRows } from "@/components/ibvap/states";
 import { PageShell } from "@/components/ibvap/page-shell";
+import { HistoryLink } from "@/components/ibvap/history-link";
 import { ShareLink } from "@/components/ibvap/share-link";
 import { api } from "@/lib/api";
 import { useResource } from "@/lib/use-resource";
@@ -90,6 +91,18 @@ export function IncidentPage() {
 
             <TabsContent value="cross" className="flex max-w-3xl flex-col gap-4 pt-4">
               <CrossReferencePanel cross={data.crossReference} />
+              {/* Widen the question: this incident is a window on one zone,
+                  and "what else has happened here" is the next thing asked. */}
+              <div className="flex gap-4">
+                <HistoryLink
+                  zoneId={data.incident.zoneId}
+                  label="Every event on this zone"
+                />
+                <HistoryLink
+                  cameraId={data.incident.cameraId}
+                  label="Every event on this camera"
+                />
+              </div>
             </TabsContent>
           </Tabs>
         </>

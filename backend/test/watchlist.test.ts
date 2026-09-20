@@ -1,5 +1,14 @@
-import { describe, expect, test } from "bun:test";
-import { DEFAULT_ORG } from "../src/db/seed";
+// MUST be the first import: it sets IBVAP_DB before ../src/db opens a handle.
+// This file used to run against backend/ibvap.db -- the developer's REAL
+// database -- writing entries, detections, events and audit rows into it on
+// every run, and reading seeded ids back out. It surfaced when the seed's zone
+// ids changed: the tests asked for a zone that existed only in the new seed
+// while the live database still held the old one, and the insert died on a
+// foreign key.
+import { removeTempDb } from "./helpers/temp-db";
+import { afterAll, describe, expect, test } from "bun:test";
+
+import { DEFAULT_ORG, seed } from "../src/db/seed";
 import {
   createWatchlistEntry,
   deleteWatchlistEntry,
@@ -16,6 +25,10 @@ import {
   updateWatchlistEntry,
 } from "../src/l3/watchlist";
 import { actionsFor } from "../src/l3/audit";
+
+seed();
+
+afterAll(removeTempDb);
 
 const SUPERVISOR = { id: "usr_supervisor", name: "Shift Supervisor", role: "supervisor" as const };
 const OPERATOR = { id: "usr_operator", name: "Duty Operator", role: "operator" as const };
@@ -147,7 +160,7 @@ describe("vehicle and license plate detection processing", () => {
     const detection = processVehicleAndPlateDetection({
       orgId: DEFAULT_ORG,
       cameraId: "cam_fence_north",
-      zoneId: "zone_fence_line",
+      zoneId: "zone_perimeter",
       plateNumber: "PB 02 AK 4821",
       vehicleType: "suv",
       confidence: 0.97,

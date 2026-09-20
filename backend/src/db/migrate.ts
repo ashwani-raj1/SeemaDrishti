@@ -43,11 +43,73 @@ function addColumn(db: Database, table: string, column: string, definition: stri
   console.log(`added ${table}.${column}`);
 }
 
+
+/**
+ * One camera, one zone: retire the duplicate bindings an older database has.
+ *
+ * MUST RUN BEFORE `schema.sql`. That file is applied whole on every boot, and
+ * its `CREATE UNIQUE INDEX zone_camera_one_zone` THROWS if duplicates already
+ * exist -- at module-import time, so the node would not boot and every test
+ * file that imports `../db` would die with it. The seeded data itself has a
+ * camera in two zones, so this is not a hypothetical.
+ *
+ * Rows are retired (`active = 0`), never deleted: past events point at them,
+ * and their target overrides come back if the camera rejoins that zone.
+ *
+ * Which binding survives, in order: the one somebody actually DREW, then the
+ * most recently touched, then the lowest id. Deterministic on purpose -- a
+ * developer's laptop and a fresh checkout must agree, and so must two runs of
+ * this function.
+ */
+function enforceOneZonePerCamera(db: Database): void {
+  // migrateBefore also runs against a :memory: database with no tables at all.
+  if (!tableExists(db, "zone_camera")) return;
+
+  const losers = db
+    .query(
+      `SELECT id, zone_id, camera_id FROM zone_camera zc
+        WHERE active = 1
+          AND id != (SELECT k.id FROM zone_camera k
+                      WHERE k.camera_id = zc.camera_id AND k.active = 1
+                      ORDER BY k.placed DESC, k.updated_at DESC, k.id ASC
+                      LIMIT 1)`,
+    )
+    .all() as Array<{ id: string; zone_id: string; camera_id: string }>;
+
+  for (const row of losers) {
+    db.query("UPDATE zone_camera SET active = 0, updated_at = $at WHERE id = $id").run({
+      $at: nowIso(),
+      $id: row.id,
+    });
+    detachments.push({ zoneId: row.zone_id, cameraId: row.camera_id, bindingId: row.id });
+    console.log(`[migrate] detached ${row.camera_id} from ${row.zone_id}: one camera, one zone`);
+  }
+}
+
+/**
+ * Bindings this migration retired, for the audit row `server.ts` writes.
+ *
+ * Not recorded here: `l3/audit.ts` imports `../db`, which is the module
+ * currently being constructed, so calling recordAction from inside a migration
+ * is an import cycle. A change to what is being watched belongs in the hash
+ * chain, so it is emitted from server.ts instead, immediately after seed().
+ */
+export interface Detachment {
+  zoneId: string;
+  cameraId: string;
+  bindingId: string;
+}
+export const detachments: Detachment[] = [];
+
 /**
  * Before the schema runs: if `zone` is still the old single-camera shape, move
  * it aside so the new definition can be created under the same name.
  */
 export function migrateBefore(db: Database): boolean {
+  // Before both early returns below: they fire for any database that is
+  // already on the new shape, which is every database that needs this.
+  enforceOneZonePerCamera(db);
+
   if (!tableExists(db, "zone")) return false;
   if (!hasColumn(db, "zone", "camera_id")) return false; // already migrated
 

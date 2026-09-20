@@ -211,8 +211,28 @@ function hydrate(zone: ZoneRow, binding: BindingRow): Zone {
     confirm_seconds: binding.confirm_seconds,
     targets: resolveTargets(zone.id, binding.camera_id),
     active: zone.active === 1 && binding.active === 1,
+    // Carried into judgement on purpose. Dropping it here was how an undrawn
+    // placeholder came to produce fully alertable intrusions against geometry
+    // nobody chose -- `zonesForCamera` is the judgement layer's only way in,
+    // so a flag absent here is a flag that cannot be honoured anywhere.
+    placed: binding.placed === 1,
   };
 }
+
+/**
+ * A shape nobody has drawn is a fallback, not a fence.
+ *
+ * Crossings of it are real -- somebody did walk over the stock line -- so they
+ * are recorded, attached to an incident and queryable. They are never alerted,
+ * because severity would be a claim that a specific place was crossed, and
+ * nobody chose that place. Drawing the shape turns the alarm on, by itself,
+ * within one zone-refresh interval.
+ *
+ * ibvap/CLAUDE.md section 15: "a fence judging against geometry nobody drew is
+ * worse than a fence that says out loud it has none."
+ */
+export const PROVISIONAL_SUPPRESSION = "zone_not_placed";
+export const isProvisional = (zone: Zone): boolean => !zone.placed;
 
 /** Every zone this camera watches, resolved. The judgement layer's only way in. */
 export function zonesForCamera(cameraId: string): Zone[] {
@@ -407,13 +427,19 @@ export function updateBinding(zoneId: string, cameraId: string, patch: BindingPa
   run(
     `UPDATE zone_camera SET
        geometry = $geometry, points = $points, direction = $direction,
-       confirm_seconds = $confirm, placed = 1, updated_at = $at
+       confirm_seconds = $confirm, placed = $placed, updated_at = $at
      WHERE zone_id = $zone AND camera_id = $camera`,
     {
       $geometry: patch.geometry ?? current.geometry,
       $points: JSON.stringify(points),
       $direction: patch.direction ?? current.direction,
       $confirm: patch.confirmSeconds ?? current.confirm_seconds,
+      // Only DRAWING places a shape. This used to be an unconditional 1, so a
+      // supervisor nudging confirmSeconds from 2 to 3 marked the stock line
+      // "positioned" -- which would decay the provisional flag into noise
+      // within a day of use, and with it the alert suppression that depends on
+      // it. Never un-places: a drawn shape stays drawn when a setting changes.
+      $placed: patch.points !== undefined ? 1 : current.placed,
       $at: nowIso(),
       $zone: zoneId,
       $camera: cameraId,

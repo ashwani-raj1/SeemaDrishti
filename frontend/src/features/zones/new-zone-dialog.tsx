@@ -16,7 +16,7 @@ import {
 } from "@/components/ui/select";
 import { useClient } from "@/client/context";
 import { ATTARI_SECTOR, camerasInSector } from "@/client/geography";
-import { api, isForbidden } from "@/lib/api";
+import { api, isConflict, isForbidden } from "@/lib/api";
 import { humanise } from "@/lib/format";
 import { cn } from "@/lib/utils";
 import type { MonitoringZone, ZoneKind } from "@/lib/types";
@@ -70,6 +70,18 @@ export function NewZoneDialog({
   const inArea = useMemo(() => (sectorId ? camerasInSector(sectorId) : []), [sectorId]);
 
   const nameOf = useMemo(() => new Map(cameras.map((c) => [c.id, c.name])), [cameras]);
+
+  // A camera belongs to exactly one zone, so one that is already spoken for
+  // cannot join this one. Shown disabled with the holder named rather than
+  // filtered away -- the same reasoning as the unsurveyed-position note below,
+  // where hiding the camera was itself the bug.
+  const heldBy = useMemo(
+    () => new Map(cameras.flatMap((c) => {
+      const zone = c.zones.find((z) => z.active);
+      return zone ? ([[c.id, zone.name]] as Array<[string, string]>) : [];
+    })),
+    [cameras],
+  );
 
   /**
    * Cameras an area does NOT account for.
@@ -142,9 +154,19 @@ export function NewZoneDialog({
       setOpen(false);
       reset();
     } catch (error) {
-      toast.error(
-        isForbidden(error) ? "Creating zones needs a supervisor." : (error as Error).message,
-      );
+      if (isConflict(error)) {
+        // Nothing was created: the node rejects the whole call rather than
+        // making the zone minus the offending camera, which would report
+        // success while leaving a camera the supervisor believes is covered
+        // watching nothing.
+        toast.error("A camera you picked is already in another zone", {
+          description: `${error.message} Nothing was created.`,
+        });
+      } else {
+        toast.error(
+          isForbidden(error) ? "Creating zones needs a supervisor." : (error as Error).message,
+        );
+      }
     } finally {
       setSaving(false);
     }
@@ -233,22 +255,39 @@ export function NewZoneDialog({
                           No cameras stand in this area.
                         </p>
                       )}
-                      {inArea.map((cameraId) => (
-                        <label
-                          key={cameraId}
-                          className={cn(
-                            "flex cursor-pointer items-center gap-3 rounded-md border p-2.5 transition-colors",
-                            picked.includes(cameraId) ? "border-primary/50 bg-accent" : "hover:bg-accent/50",
-                          )}
-                        >
-                          <Checkbox
-                            checked={picked.includes(cameraId)}
-                            onCheckedChange={() => toggle(cameraId)}
-                          />
-                          <CctvIcon className="size-4 shrink-0 text-muted-foreground" />
-                          <span className="flex-1 text-sm">{nameOf.get(cameraId) ?? cameraId}</span>
-                        </label>
-                      ))}
+                      {inArea.map((cameraId) => {
+                        const held = heldBy.get(cameraId);
+                        return (
+                          <label
+                            key={cameraId}
+                            className={cn(
+                              "flex items-center gap-3 rounded-md border p-2.5 transition-colors",
+                              held
+                                ? "cursor-not-allowed opacity-60"
+                                : picked.includes(cameraId)
+                                  ? "cursor-pointer border-primary/50 bg-accent"
+                                  : "cursor-pointer hover:bg-accent/50",
+                            )}
+                          >
+                            <Checkbox
+                              disabled={Boolean(held)}
+                              checked={picked.includes(cameraId)}
+                              onCheckedChange={() => toggle(cameraId)}
+                            />
+                            <CctvIcon className="size-4 shrink-0 text-muted-foreground" />
+                            <span className="min-w-0 flex-1">
+                              <span className="block truncate text-sm">
+                                {nameOf.get(cameraId) ?? cameraId}
+                              </span>
+                              {held && (
+                                <span className="block text-xs text-muted-foreground">
+                                  already in {held} — a camera watches one zone
+                                </span>
+                              )}
+                            </span>
+                          </label>
+                        );
+                      })}
                     </div>
                   </Field>
 
@@ -322,23 +361,33 @@ export function NewZoneDialog({
                       Every camera is accounted for by the area above.
                     </p>
                   )}
-                  {elsewhere.map((camera) => (
+                  {elsewhere.map((camera) => {
+                    const held = heldBy.get(camera.id);
+                    return (
                     <label
                       key={camera.id}
                       className={cn(
-                        "flex cursor-pointer items-center gap-3 rounded-md border p-2.5 transition-colors",
-                        picked.includes(camera.id)
-                          ? "border-primary/50 bg-accent"
-                          : "hover:bg-accent/50",
+                        "flex items-center gap-3 rounded-md border p-2.5 transition-colors",
+                        held
+                          ? "cursor-not-allowed opacity-60"
+                          : picked.includes(camera.id)
+                            ? "cursor-pointer border-primary/50 bg-accent"
+                            : "cursor-pointer hover:bg-accent/50",
                       )}
                     >
                       <Checkbox
+                        disabled={Boolean(held)}
                         checked={picked.includes(camera.id)}
                         onCheckedChange={() => toggle(camera.id)}
                       />
                       <CctvIcon className="size-4 shrink-0 text-muted-foreground" />
                       <span className="min-w-0 flex-1">
                         <span className="block truncate text-sm">{camera.name}</span>
+                        {held && (
+                          <span className="block text-xs text-muted-foreground">
+                            already in {held} — a camera watches one zone
+                          </span>
+                        )}
                         {!ATTARI_SECTOR.cameras[camera.id] && (
                           // Said plainly. The zone will work; only the map
                           // placement is missing, and guessing one would draw
@@ -349,7 +398,8 @@ export function NewZoneDialog({
                         )}
                       </span>
                     </label>
-                  ))}
+                    );
+                  })}
                 </div>
               </Field>
             </div>

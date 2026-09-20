@@ -47,7 +47,9 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
-from config import CameraConfig, Settings, fetch_zones, load_cameras  # noqa: E402
+from config import (  # noqa: E402
+    CameraConfig, Settings, cache_zones, cached_zones, fetch_zones, load_cameras,
+)
 from core.capture import RTSPStream  # noqa: E402
 from core.detection import SharedDetector  # noqa: E402
 from core.dispatcher import Dispatcher, DurableSink, LiveChannel  # noqa: E402
@@ -80,7 +82,20 @@ class CameraWorker:
         self._status = "UNKNOWN"
 
     def reconfigure(self, zones: list[dict]) -> None:
-        """Re-apply operator-edited zones to the fence module, in place."""
+        """Re-apply operator-edited zones to the fence module, in place.
+
+        The `params["zones"] = zones` below is an UNCONDITIONAL overwrite, and
+        that is the point: it is what makes "the node is the only writer of
+        geometry" true, so an operator's edit reaches the detector judging it
+        within one refresh interval and nothing local can outvote it.
+
+        A corollary worth knowing before you try it: a default zone written
+        into media/cameras.yml would survive exactly zero frames. It is read at
+        construction, then this line replaces it — and amain() blocks on the
+        first refresh before the first frame is ever read. The fallback for a
+        camera with no drawn area is the node's own labelled placeholder, not a
+        local file. See fetch_zones in config.py.
+        """
         for module in self.modules:
             if module.name != "fence":
                 continue
@@ -253,19 +268,39 @@ async def refresh_zones(settings: Settings, workers: list[CameraWorker],
     config it can survive without.
     """
     warned = False
+    started = False
     while not stop.is_set():
         try:
             zones = await asyncio.to_thread(fetch_zones, settings)
             for worker in workers:
                 worker.reconfigure(zones.get(worker.camera.id, []))
+            await asyncio.to_thread(cache_zones, settings, zones)
+            started = True
             if warned:
                 print("[zones] edge node reachable again; zones re-applied")
                 warned = False
         except Exception as error:  # noqa: BLE001
             if not warned:
-                print(f"[zones] cannot read {settings.backend_url}/api/config: {error}\n"
-                      f"        fence modules run with no zones until it returns.")
+                print(f"[zones] cannot read {settings.backend_url}/api/config: {error}")
                 warned = True
+            # The cache is a STARTUP fallback and nothing else. Mid-run, the
+            # modules already hold live zones, which are by definition fresher
+            # than anything on disk — so a later outage must change nothing.
+            if not started:
+                started = True
+                restored = await asyncio.to_thread(cached_zones, settings)
+                if restored is None:
+                    print("        no cached zones either; fence modules run with "
+                          "none until the node returns.")
+                else:
+                    cached, cached_at = restored
+                    for worker in workers:
+                        worker.reconfigure(cached.get(worker.camera.id, []))
+                    age_minutes = (time.time() - cached_at) / 60.0
+                    print(f"        judging from zones cached {age_minutes:.0f} min ago, "
+                          f"marked STALE. Their crossings are recorded and never "
+                          f"alerted: the operator may have moved a shape while the "
+                          f"node was away, and nothing here can know.")
         finally:
             first.set()
         try:

@@ -1,9 +1,11 @@
 import { all, one } from "./db";
 import { seed, DEFAULT_ORG, DEFAULT_SITE } from "./db/seed";
+import { detachments } from "./db/migrate";
 import { nowIso } from "./core/ids";
 import { SEVERITY_RANK, type Severity } from "./core/types";
 import { liveTrackCount } from "./l2/fence";
 import { listZones, zonesForCamera } from "./l3/zones";
+import { withLogging, logFallback, logFormat } from "./core/logger";
 import { zoneRoutes } from "./routes/zones";
 import { mediaConfig } from "./core/env";
 import { cameraRoutes } from "./routes/cameras";
@@ -34,7 +36,55 @@ import * as sim from "./sim/simulator";
 
 seed();
 
+// A schema migration can change what is being watched -- the one-zone-per-camera
+// rule retires duplicate bindings. That belongs in the hash chain like any other
+// change to coverage, and it cannot be written from inside migrate.ts, because
+// l3/audit.ts imports ../db and the migration runs while that module is still
+// being constructed. So it is recorded here, at the first moment it can be.
+for (const detached of detachments) {
+  recordAction({
+    actor: { id: "system", name: "schema migration", role: "admin" },
+    orgId: DEFAULT_ORG,
+    verb: "zone.camera.detach",
+    targetType: "zone",
+    targetId: detached.zoneId,
+    reason: "one camera belongs to one zone",
+    detail: { cameraId: detached.cameraId, bindingId: detached.bindingId },
+  });
+}
+
 const PORT = Number(process.env.PORT ?? 8000);
+
+/**
+ * The filters `/api/events` and `/api/history` share.
+ *
+ * One parser, two doors, on purpose: history is the audited door and must
+ * never be the weaker of the two. A filter that works on one and not the other
+ * sends an operator to the unaudited one to get their answer.
+ *
+ * `alertable` is tri-state -- absent means both. After the provisional-zone
+ * work the interesting query is `alertable=false`, i.e. what did we record and
+ * deliberately not shout about.
+ */
+function eventQuery(params: URLSearchParams): EventQuery {
+  const tri = (key: string) =>
+    params.has(key) ? params.get(key) === "true" : undefined;
+
+  return {
+    cameraId: params.get("camera_id") ?? undefined,
+    zoneId: params.get("zone_id") ?? undefined,
+    incidentId: params.get("incident_id") ?? undefined,
+    severity: (params.get("severity") as EventQuery["severity"]) ?? undefined,
+    class: params.get("class") ?? undefined,
+    kind: params.get("kind") ?? undefined,
+    alertable: tri("alertable"),
+    suppressedReason: params.get("suppressed_reason") ?? undefined,
+    simulated: tri("simulated"),
+    since: params.get("since") ?? undefined,
+    until: params.get("until") ?? undefined,
+    limit: Number(params.get("limit") ?? 200),
+  };
+}
 
 // ------------------------------------------------------------------ routes
 
@@ -89,6 +139,13 @@ const routes = {
           points: zone.points,
           direction: zone.direction,
           confirmSeconds: zone.confirm_seconds,
+          // True when nobody has drawn this shape against this camera's view:
+          // it is the stock placeholder, and the node records crossings of it
+          // without ever alerting. The vision service carries this through to
+          // the event as a FACT and never acts on it -- severity is the node's
+          // job (ibvap/CLAUDE.md sections 1 and 14). `provisional === !placed`;
+          // `placed` is the console's word for the same bit.
+          provisional: !zone.placed,
           targets: zone.targets,
           // Derived from the targets, for the map tooltips and status board
           // that only ever want "what is alerted on here, and how loudly".
@@ -176,15 +233,9 @@ const routes = {
   "/api/events": handled(async (req) => {
     const params = query(req);
     const q: EventQuery = {
-      cameraId: params.get("camera_id") ?? undefined,
-      zoneId: params.get("zone_id") ?? undefined,
-      severity: (params.get("severity") as EventQuery["severity"]) ?? undefined,
-      class: params.get("class") ?? undefined,
-      alertableOnly: params.get("alertable") === "true",
-      since: params.get("since") ?? undefined,
-      until: params.get("until") ?? undefined,
+      ...eventQuery(params),
+      // Replay for a reconnecting peer; history has no use for it.
       afterSeq: params.has("after_seq") ? Number(params.get("after_seq")) : undefined,
-      limit: Number(params.get("limit") ?? 200),
     };
     return json(queryEvents(DEFAULT_ORG, q));
   }),
@@ -199,15 +250,7 @@ const routes = {
     requireRole(actor, "supervisor", "admin");
 
     const params = query(req);
-    const q: EventQuery = {
-      cameraId: params.get("camera_id") ?? undefined,
-      zoneId: params.get("zone_id") ?? undefined,
-      severity: (params.get("severity") as EventQuery["severity"]) ?? undefined,
-      class: params.get("class") ?? undefined,
-      since: params.get("since") ?? undefined,
-      until: params.get("until") ?? undefined,
-      limit: Number(params.get("limit") ?? 200),
-    };
+    const q: EventQuery = eventQuery(params);
 
     const results = queryEvents(DEFAULT_ORG, q);
 
@@ -317,11 +360,16 @@ const server = Bun.serve({
   // ten seconds by default, which silently tore the operator's stream down and
   // made the screen flicker between "live" and "no link" all shift.
   idleTimeout: 0,
-  routes: routes as any,
-  fetch(req) {
+  // Wrapped once, over the whole table: a logger you have to remember
+  // to add at each route is a logger missing from the route you most need.
+  routes: withLogging(routes) as any,
+  // Logged too: an unmatched path is the symptom when a console or a worker
+  // is pointed at the wrong URL, and that is precisely when a silent 404 costs
+  // an hour.
+  fetch: logFallback((req) => {
     if (req.method === "OPTIONS") return new Response(null, { status: 204, headers: CORS });
     return fail("not found", 404);
-  },
+  }),
   error(error) {
     console.error(error);
     return fail(error.message, 500);
@@ -329,6 +377,7 @@ const server = Bun.serve({
 });
 
 console.log(`IBVAP edge node on ${server.url}`);
+console.log(`  request log  ${logFormat} (IBVAP_LOG=dev|combined|off)`);
 console.log(`  detections  POST ${server.url}hooks/ingress/detections`);
 console.log(`  vision      POST ${server.url}hooks/ingress/events`);
 console.log(`  live stream  GET ${server.url}api/stream`);

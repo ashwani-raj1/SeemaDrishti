@@ -11,7 +11,7 @@ import {
 } from "../l3/zones";
 import { publish } from "../l4/bus";
 import { BadRequest } from "../l4/hooks";
-import { actorOf, handled, json, NotFound, readJson, requireRole } from "../http";
+import { actorOf, Conflict, handled, json, NotFound, readJson, requireRole } from "../http";
 
 /**
  * Zone routes.
@@ -97,6 +97,33 @@ function requireCameras(ids: unknown): string[] {
   return ids as string[];
 }
 
+/**
+ * A camera belongs to exactly one zone.
+ *
+ * Enforced in the database by the partial unique index `zone_camera_one_zone`,
+ * but checked here first so the caller gets a 409 naming the zone that holds
+ * it, instead of a 500 with "UNIQUE constraint failed" as the body.
+ *
+ * `exceptZoneId` lets a zone re-check its own cameras without colliding with
+ * itself, which matters on the re-activation path below.
+ */
+function requireFreeCameras(ids: string[], exceptZoneId?: string): void {
+  for (const cameraId of ids) {
+    const held = one<{ zone_id: string; name: string }>(
+      `SELECT zc.zone_id, z.name FROM zone_camera zc
+         JOIN zone z ON z.id = zc.zone_id
+        WHERE zc.camera_id = $cam AND zc.active = 1 AND zc.zone_id != $except`,
+      { $cam: cameraId, $except: exceptZoneId ?? "" },
+    );
+    if (held) {
+      throw new Conflict(
+        `${cameraId} already watches "${held.name}" (${held.zone_id}); ` +
+          "a camera belongs to one zone - remove it there first",
+      );
+    }
+  }
+}
+
 const cameraView = (zone: any, cameraId: string) =>
   zone.cameras.find((c: any) => c.cameraId === cameraId);
 
@@ -126,6 +153,10 @@ export const zoneRoutes = {
       if (!name) throw new BadRequest("name is required");
 
       const cameraIds = requireCameras(body.cameraIds);
+      // All or nothing. Creating the zone minus the offending camera would
+      // show the supervisor a success and leave a camera they believe is
+      // covered watching nothing -- the worst outcome for a coverage tool.
+      requireFreeCameras(cameraIds);
       const targets = parseTargets(body.targets ?? []);
       if (targets.length === 0) {
         throw new BadRequest("a zone needs at least one thing to detect against");
@@ -176,12 +207,44 @@ export const zoneRoutes = {
       const body = await readJson(req);
       validateZoneFields(body);
 
-      const after = updateZone(zoneId, {
+      updateZone(zoneId, {
         name: body.name,
         kind: body.kind,
         sector: body.sector,
         active: body.active,
       });
+
+      // Bringing a zone back has to bring its cameras back too, or it returns
+      // alive and watching nothing -- a zone on screen, judging no ground, with
+      // nothing saying why. Deactivating released the bindings (see DELETE
+      // below); this is the other half.
+      //
+      // Only cameras that are still FREE can return: one may have joined
+      // another zone while this one was out of service, and that newer decision
+      // wins. Whoever reactivated is told which ones stayed behind rather than
+      // finding out from a quiet gap in coverage.
+      const stranded: string[] = [];
+      if (body.active === true && before.active === false) {
+        for (const camera of before.cameras) {
+          const taken = one<{ zone_id: string; name: string }>(
+            `SELECT zc.zone_id, z.name FROM zone_camera zc
+               JOIN zone z ON z.id = zc.zone_id
+              WHERE zc.camera_id = $cam AND zc.active = 1 AND zc.zone_id != $zone`,
+            { $cam: camera.cameraId, $zone: zoneId },
+          );
+          if (taken) {
+            stranded.push(`${camera.cameraId} (now in ${taken.name})`);
+            continue;
+          }
+          run(
+            `UPDATE zone_camera SET active = 1, updated_at = $at
+              WHERE zone_id = $zone AND camera_id = $cam`,
+            { $at: nowIso(), $zone: zoneId, $cam: camera.cameraId },
+          );
+        }
+      }
+
+      const after = requireZone(zoneId);
       forgetZone(zoneId);
 
       recordAction({
@@ -191,12 +254,13 @@ export const zoneRoutes = {
         targetType: "zone",
         targetId: zoneId,
         reason: body.reason ?? null,
+        detail: stranded.length ? { camerasNotReturned: stranded } : {},
         before,
         after,
       });
 
       publish({ type: "camera", data: { zoneChanged: zoneId } });
-      return json(after);
+      return json({ ...after, camerasNotReturned: stranded });
     }),
 
     DELETE: handled(async (req: any) => {
@@ -209,6 +273,15 @@ export const zoneRoutes = {
 
       // Deactivated, not deleted -- past events still point at it.
       const after = updateZone(zoneId, { active: false });
+      // And its cameras are RELEASED. The one-zone-per-camera index is on
+      // zone_camera.active, not zone.active, so leaving the bindings live
+      // would keep every camera hostage to a zone that no longer exists as far
+      // as an operator is concerned -- unable to join anything, with nothing on
+      // screen explaining why.
+      run(
+        "UPDATE zone_camera SET active = 0, updated_at = $at WHERE zone_id = $zone AND active = 1",
+        { $at: nowIso(), $zone: zoneId },
+      );
       forgetZone(zoneId);
 
       recordAction({
@@ -279,6 +352,9 @@ export const zoneRoutes = {
       if (existing && existing.active === 1) {
         throw new BadRequest("that camera is already in this zone");
       }
+      // Checked on the re-activation path too: flipping active back to 1 hits
+      // the same unique index as a fresh insert.
+      requireFreeCameras([cameraId!], zoneId);
 
       if (existing) {
         // Re-joining: its old shape and any overrides are still there.
@@ -329,7 +405,12 @@ export const zoneRoutes = {
 
       updateBinding(zoneId, cameraId, {
         geometry,
-        points,
+        // `body.points`, not the defaulted `points` above: passing the
+        // fallback would make every settings-only PATCH look like a drawing,
+        // and updateBinding uses "were points sent?" to decide whether this
+        // shape has now been positioned. Validation above still runs against
+        // the effective shape either way.
+        points: body.points,
         direction: body.direction,
         confirmSeconds: body.confirmSeconds,
       });
@@ -361,9 +442,12 @@ export const zoneRoutes = {
 
       const { zoneId, cameraId } = req.params;
       const before = requireZone(zoneId);
-      if (activeCameraIds(before).length <= 1) {
-        throw new BadRequest("a zone must keep at least one camera; deactivate the zone instead");
-      }
+      // A zone with no camera is now a legitimate state: "declared, not
+      // watched". It has to be, because a camera belongs to exactly one zone --
+      // refusing to release the last one would mean the only way to move a
+      // camera is to delete the zone and rebuild it, losing its targets, its
+      // history and its id. The zone keeps its identity and policy; geometry
+      // was never its job.
       const body = await readJson(req).catch(() => ({}) as Record<string, any>);
 
       removeCamera(zoneId, cameraId);

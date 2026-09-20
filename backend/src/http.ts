@@ -18,16 +18,29 @@ export const CORS = {
   "access-control-allow-methods": "GET, POST, PUT, PATCH, DELETE, OPTIONS",
 };
 
-export const json = (data: unknown, status = 200) =>
-  new Response(JSON.stringify(data), {
+export const json = (data: unknown, status = 200) => {
+  const body = JSON.stringify(data);
+  return new Response(body, {
     status,
-    headers: { "content-type": "application/json", ...CORS },
+    headers: {
+      "content-type": "application/json",
+      // Set explicitly so the request log can report a size. Bun does not add
+      // it for a string body, and a log column that is always "-" is a column
+      // nobody reads.
+      "content-length": String(Buffer.byteLength(body)),
+      ...CORS,
+    },
   });
+};
 
 export const fail = (message: string, status = 400) => json({ error: message }, status);
 
 export class Forbidden extends Error {}
 export class NotFound extends Error {}
+/** A well-formed request that collides with current state. 409, not 400: the
+ *  caller made no syntax mistake, the world is just not in the shape they
+ *  assumed -- e.g. a camera that already belongs to another zone. */
+export class Conflict extends Error {}
 
 /**
  * Who is acting. Every mutating route needs this, because an unattributed
@@ -72,6 +85,7 @@ export function handled(fn: (req: Request) => Response | Promise<Response>) {
       if (error instanceof BadRequest) return fail(error.message, 400);
       if (error instanceof Forbidden) return fail(error.message, 403);
       if (error instanceof NotFound) return fail(error.message, 404);
+      if (error instanceof Conflict) return fail(error.message, 409);
       console.error(error);
       return fail((error as Error).message ?? "internal error", 500);
     }

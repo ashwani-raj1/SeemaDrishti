@@ -133,10 +133,17 @@ export function ShapeEditor({
   const addPoint = useCallback(
     (event: React.MouseEvent) => {
       if (dragging !== null) return;
+      // The frame's shape is not known until onLoadedMetadata fires, and until
+      // then the container is holding a GUESSED 16/9. A click now would be
+      // normalised against a box that is not the picture, and land somewhere
+      // else the moment the real aspect arrives -- silently, since a point is
+      // a point wherever it is. The container already shows cursor-wait in
+      // this state; this makes the handler agree with it.
+      if (aspect === null) return;
       const point = toNormalised(event);
       if (point) setPoints((current) => [...current, point]);
     },
-    [dragging, toNormalised],
+    [aspect, dragging, toNormalised],
   );
 
   // Dragging is on the window, not the handle: a fast drag outruns the pointer
