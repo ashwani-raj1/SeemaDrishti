@@ -81,22 +81,11 @@ export function ZoneActions({
   return (
     <>
       <div className="ml-auto flex shrink-0 items-center gap-1">
-        <Button
-          size="sm"
-          variant="ghost"
-          onClick={() => {
-            // Reset from the zone on open, so an abandoned edit never leaks
-            // into the next one.
-            setName(zone.name);
-            setKind(zone.kind);
-            setReason("");
-            setEditing(true);
-          }}
-        >
-          <PencilIcon className="size-4" />
-          Edit
-        </Button>
-
+        {/* No Edit button here any more. Changing a zone -- its name, kind,
+            area, cameras, shapes or targets -- happens in the wizard that
+            created it, in one atomic call. What is left here is the pair that
+            are NOT edits: taking the whole zone out of service and putting it
+            back, each with its own confirmation and its own reason. */}
         {zone.active ? (
           <Button size="sm" variant="ghost" onClick={() => setConfirming(true)}>
             <PowerOffIcon className="size-4" />
@@ -120,88 +109,6 @@ export function ZoneActions({
           </Button>
         )}
       </div>
-
-      <Dialog open={editing} onOpenChange={setEditing}>
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>Edit {zone.name}</DialogTitle>
-            <DialogDescription>
-              The zone keeps its id, its cameras, its shapes and its history —
-              only what it is called and what kind of place it is change.
-            </DialogDescription>
-          </DialogHeader>
-
-          <div className="flex flex-col gap-4">
-            <Field>
-              <FieldLabel htmlFor={`name-${zone.id}`}>Name</FieldLabel>
-              <Input
-                id={`name-${zone.id}`}
-                value={name}
-                onChange={(event) => setName(event.target.value)}
-              />
-            </Field>
-
-            <Field>
-              <FieldLabel htmlFor={`kind-${zone.id}`}>Kind</FieldLabel>
-              <Select value={kind} onValueChange={(value) => setKind(value as ZoneKind)}>
-                <SelectTrigger id={`kind-${zone.id}`}>
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectGroup>
-                    {KINDS.map((option) => (
-                      <SelectItem key={option} value={option}>
-                        {label(option)}
-                      </SelectItem>
-                    ))}
-                  </SelectGroup>
-                </SelectContent>
-              </Select>
-              <FieldDescription>
-                A label, not behaviour — what a zone detects against is its
-                targets. It only decides the placeholder shape a camera gets
-                when it joins.
-              </FieldDescription>
-            </Field>
-
-            <Field>
-              <FieldLabel htmlFor={`why-${zone.id}`}>Reason</FieldLabel>
-              <Input
-                id={`why-${zone.id}`}
-                value={reason}
-                placeholder="Why is this changing?"
-                onChange={(event) => setReason(event.target.value)}
-              />
-              <FieldDescription>Recorded against your name in the audit log.</FieldDescription>
-            </Field>
-          </div>
-
-          <DialogFooter className="items-center gap-2">
-            {problem && <span className="mr-auto text-sm text-muted-foreground">{problem}</span>}
-            <DialogClose asChild>
-              <Button variant="outline">Cancel</Button>
-            </DialogClose>
-            <Button
-              disabled={Boolean(problem) || busy}
-              onClick={async () => {
-                const ok = await run(
-                  () =>
-                    api.updateZone(zone.id, {
-                      name: name.trim(),
-                      kind,
-                      reason: reason.trim(),
-                    }),
-                  "Zone updated",
-                );
-                if (ok) setEditing(false);
-              }}
-            >
-              {busy && <Spinner data-icon="inline-start" />}
-              Save
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
 
       <ReasonDialog
         open={confirming}

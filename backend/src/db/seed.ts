@@ -45,7 +45,8 @@ interface ZoneSeed {
   id: string;
   name: string;
   kind: string;
-  sector: string;
+  /** Free-text label grouping zones on the same stretch of ground. */
+  area: string;
   /** Ordered: the first entry is the highest priority. */
   targets: TargetSeed[];
   cameras: BindingSeed[];
@@ -73,7 +74,10 @@ const ZONES: ZoneSeed[] = [
     id: "zone_perimeter",
     name: "BOP perimeter",
     kind: "perimeter",
-    sector: "bop_attari",
+    // A label a supervisor would type, not an id. It used to read
+    // "bop_attari", which was the POST's id in a column that meant something
+    // else entirely -- the collision this rename exists to end.
+    area: "BOP Attari",
     // The union of what the four old zones watched for, in priority order.
     // Animals are named on purpose: a zone that cannot name them has no way to
     // say "write it down, never alert", which is what log_only exists for.
@@ -170,15 +174,15 @@ export function seed(): void {
 
   for (const zone of ZONES) {
     run(
-      `INSERT INTO zone (id, org_id, site_id, name, kind, sector, active, created_at, updated_at)
-       VALUES ($id, $org, $site, $name, $kind, $sector, 1, $at, $at)`,
+      `INSERT INTO zone (id, org_id, site_id, name, kind, area, active, created_at, updated_at)
+       VALUES ($id, $org, $site, $name, $kind, $area, 1, $at, $at)`,
       {
         $id: zone.id,
         $org: ORG,
         $site: SITE,
         $name: zone.name,
         $kind: zone.kind,
-        $sector: zone.sector,
+        $area: zone.area,
         $at: at,
       },
     );

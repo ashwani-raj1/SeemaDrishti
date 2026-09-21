@@ -169,18 +169,68 @@ export const api = {
   zones: () => request<MonitoringZone[]>("/api/zones"),
   zone: (id: string) => request<MonitoringZone>(`/api/zones/${id}`),
 
+  /** The area labels in use, for the new-zone picker. Derived from zones. */
+  zoneAreas: () =>
+    request<{ areas: string[] }>("/api/zones/areas").then((body) => body.areas),
+
+  /**
+   * Create a zone, with every camera's shape and exceptions in the same call.
+   *
+   * `cameras` carries the shapes the wizard drew before the zone existed, so a
+   * zone and the geometry it is judged by are written together or not at all.
+   * A camera sent without `points` joins on the placeholder with `placed`
+   * false, exactly as before.
+   */
   createZone: (body: {
     name: string;
     kind: string;
-    sector?: string | null;
-    cameraIds: string[];
+    area?: string | null;
+    cameras: Array<{
+      cameraId: string;
+      geometry?: string;
+      points?: Point[];
+      direction?: string;
+      confirmSeconds?: number;
+      targets?: Array<{ class: string; severity: string; action: string }>;
+    }>;
     targets: Array<{ class: string; severity: string; action: string }>;
     reason?: string;
   }) => post<MonitoringZone>("/api/zones", body),
 
+  /**
+   * Replace a zone's whole configuration in one call.
+   *
+   * The editing counterpart of `createZone`, and deliberately the same body.
+   * A camera sent WITHOUT `points` keeps whatever shape it already had -- the
+   * wizard sends every camera on every save, so omitting a shape means "not
+   * redrawn", never "un-drawn".
+   */
+  replaceZone: (
+    id: string,
+    body: {
+      name: string;
+      kind: string;
+      area?: string | null;
+      cameras: Array<{
+        cameraId: string;
+        geometry?: string;
+        points?: Point[];
+        direction?: string;
+        confirmSeconds?: number;
+        targets?: Array<{ class: string; severity: string; action: string }>;
+      }>;
+      targets: Array<{ class: string; severity: string; action: string }>;
+      reason?: string;
+    },
+  ) =>
+    request<MonitoringZone>(`/api/zones/${id}`, {
+      method: "PUT",
+      body: JSON.stringify(body),
+    }),
+
   updateZone: (
     id: string,
-    patch: { name?: string; kind?: string; sector?: string | null; active?: boolean; reason?: string },
+    patch: { name?: string; kind?: string; area?: string | null; active?: boolean; reason?: string },
   ) => request<MonitoringZone>(`/api/zones/${id}`, { method: "PATCH", body: JSON.stringify(patch) }),
 
   deleteZone: (id: string, reason: string) =>

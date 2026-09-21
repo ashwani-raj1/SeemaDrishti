@@ -283,7 +283,7 @@ describe("a shape nobody drew is recorded, never alerted", () => {
       siteId: SITE,
       name,
       kind: "fence_line",
-      cameraIds: [cameraId],
+      cameras: [{ cameraId: cameraId }],
       targets: [{ class: "person", severity: "CRITICAL", action: "alert" }],
       confirmSeconds: 2,
     });
@@ -345,7 +345,7 @@ describe("listing order", () => {
       siteId: SITE,
       name: "Ordering probe",
       kind: "fence_line",
-      cameraIds: [await freeCamera()],
+      cameras: [{ cameraId: await freeCamera() }],
       targets: [{ class: "person", severity: "WARNING", action: "alert" }],
     });
 
@@ -364,10 +364,10 @@ describe("creating and changing zones", () => {
       siteId: SITE,
       name: "Gate approach",
       kind: "gate",
-      sector: "gate_approach",
+      area: "Farm gate approach",
       // A zone may still SPAN cameras -- that direction is unchanged. What is
       // no longer allowed is one camera in two zones, so these are fresh.
-      cameraIds: [await freeCamera(), await freeCamera()],
+      cameras: [{ cameraId: await freeCamera() }, { cameraId: await freeCamera() }],
       targets: [{ class: "person", severity: "WARNING", action: "alert" }],
     });
 
@@ -375,7 +375,7 @@ describe("creating and changing zones", () => {
     expect(zone.cameras).toHaveLength(2);
     // Nothing may look positioned until somebody has positioned it.
     expect(zone.cameras.every((c) => c.placed === false)).toBe(true);
-    expect(zone.sector).toBe("gate_approach");
+    expect(zone.area).toBe("Farm gate approach");
     expect(zone.targets.map((t) => t.class)).toEqual(["person"]);
   });
 
@@ -386,7 +386,7 @@ describe("creating and changing zones", () => {
       siteId: SITE,
       name: "Jetty perimeter",
       kind: "perimeter",
-      cameraIds: [cam],
+      cameras: [{ cameraId: cam }],
       targets: [{ class: "boat", severity: "CRITICAL", action: "alert" }],
     });
 
@@ -399,6 +399,88 @@ describe("creating and changing zones", () => {
     expect(camera.points).toHaveLength(4);
   });
 
+  // The console draws every camera BEFORE the zone exists, so the shapes
+  // arrive with the create call. A zone half-written by a wizard somebody
+  // abandoned is the failure this path exists to make impossible.
+  test("a camera created with points is placed, one without is not", async () => {
+    const drawn = await freeCamera();
+    const undrawn = await freeCamera();
+
+    const zoneId = zones.createZone({
+      orgId: ORG,
+      siteId: SITE,
+      name: "Drawn on arrival",
+      kind: "fence_line",
+      cameras: [
+        {
+          cameraId: drawn,
+          geometry: "line",
+          points: [[0.1, 0.5], [0.9, 0.55]],
+          direction: "inbound",
+          confirmSeconds: 3,
+        },
+        { cameraId: undrawn },
+      ],
+      targets: [{ class: "person", severity: "CRITICAL", action: "alert" }],
+    });
+
+    const zone = zones.zoneDetail(zoneId)!;
+    const placed = zone.cameras.find((c) => c.cameraId === drawn)!;
+    const placeholder = zone.cameras.find((c) => c.cameraId === undrawn)!;
+
+    expect(placed.placed).toBe(true);
+    expect(placed.points).toEqual([[0.1, 0.5], [0.9, 0.55]]);
+    expect(placed.direction).toBe("inbound");
+    expect(placed.confirmSeconds).toBe(3);
+
+    // Unchanged behaviour, and deliberately so: a camera with no picture to
+    // draw on must still be able to join, carrying the flag that stops the
+    // detector alerting on a shape nobody chose.
+    expect(placeholder.placed).toBe(false);
+  });
+
+  test("per-camera targets can be set at create time", async () => {
+    const cam = await freeCamera();
+    const zoneId = zones.createZone({
+      orgId: ORG,
+      siteId: SITE,
+      name: "Exception on arrival",
+      kind: "gate",
+      cameras: [
+        {
+          cameraId: cam,
+          points: [[0.2, 0.2], [0.8, 0.2], [0.8, 0.8], [0.2, 0.8]],
+          geometry: "polygon",
+          targets: [{ class: "person", severity: "INFO", action: "log_only" }],
+        },
+      ],
+      targets: [{ class: "person", severity: "CRITICAL", action: "alert" }],
+    });
+
+    const camera = zones.zoneDetail(zoneId)!.cameras[0]!;
+    // The zone still says CRITICAL; this camera's exception overrides it,
+    // which is the whole point of setting severity per camera in the wizard.
+    expect(camera.effectiveTargets[0]!.severity).toBe("INFO");
+    expect(camera.overrides).toHaveLength(1);
+  });
+
+  test("areas are whatever the live zones carry", async () => {
+    zones.createZone({
+      orgId: ORG,
+      siteId: SITE,
+      name: "Area probe",
+      kind: "fence_line",
+      area: "Waterline south",
+      cameras: [{ cameraId: await freeCamera() }],
+      targets: [{ class: "person", severity: "WARNING", action: "alert" }],
+    });
+
+    const areas = zones.listAreas(SITE);
+    expect(areas).toContain("Waterline south");
+    // Derived from DISTINCT, so a label used twice is offered once.
+    expect(new Set(areas).size).toBe(areas.length);
+  });
+
   test("removing a camera keeps its overrides for when it comes back", async () => {
     const keep = await freeCamera();
     const leaving = await freeCamera();
@@ -407,7 +489,7 @@ describe("creating and changing zones", () => {
       siteId: SITE,
       name: "Rejoin test",
       kind: "fence_line",
-      cameraIds: [keep, leaving],
+      cameras: [{ cameraId: keep }, { cameraId: leaving }],
       targets: [{ class: "person", severity: "WARNING", action: "alert" }],
     });
 
@@ -428,14 +510,14 @@ describe("creating and changing zones", () => {
     const cam = await freeCamera();
     const first = zones.createZone({
       orgId: ORG, siteId: SITE, name: "First home", kind: "fence_line",
-      cameraIds: [cam],
+      cameras: [{ cameraId: cam }],
       targets: [{ class: "person", severity: "WARNING", action: "alert" }],
     });
     zones.removeCamera(first, cam);
 
     const second = zones.createZone({
       orgId: ORG, siteId: SITE, name: "Second home", kind: "fence_line",
-      cameraIds: [cam],
+      cameras: [{ cameraId: cam }],
       targets: [{ class: "person", severity: "WARNING", action: "alert" }],
     });
     expect(zones.zonesForCamera(cam).map((z) => z.id)).toEqual([second]);
@@ -448,7 +530,7 @@ describe("creating and changing zones", () => {
       siteId: SITE,
       name: "Temporary",
       kind: "fence_line",
-      cameraIds: [cam],
+      cameras: [{ cameraId: cam }],
       targets: [{ class: "person", severity: "WARNING", action: "alert" }],
     });
 
@@ -540,5 +622,116 @@ describe("cameras", () => {
       "cam_waterline",
     ]);
     expect(cross.cameras.find((c: any) => c.isSource)?.cameraId).toBe("cam_fence_north");
+  });
+});
+
+describe("replacing a zone wholesale", () => {
+  test("one call moves shapes, swaps cameras, and rewrites the policy", async () => {
+    const keep = await freeCamera();
+    const leaving = await freeCamera();
+    const joining = await freeCamera();
+
+    const zoneId = zones.createZone({
+      orgId: ORG,
+      siteId: SITE,
+      name: "Before",
+      kind: "fence_line",
+      area: "Old area",
+      cameras: [
+        { cameraId: keep, points: [[0.1, 0.5], [0.9, 0.5]], geometry: "line" },
+        { cameraId: leaving },
+      ],
+      targets: [{ class: "person", severity: "WARNING", action: "alert" }],
+    });
+
+    const after = zones.replaceZone(zoneId, {
+      name: "After",
+      kind: "gate",
+      area: "New area",
+      cameras: [
+        // Same camera, shape moved.
+        { cameraId: keep, geometry: "line", points: [[0.2, 0.7], [0.8, 0.7]] },
+        // New camera, no shape -- joins on the placeholder, unplaced.
+        { cameraId: joining },
+      ],
+      targets: [
+        { class: "person", severity: "CRITICAL", action: "alert" },
+        { class: "cattle", severity: "INFO", action: "log_only" },
+      ],
+    })!;
+
+    expect(after.name).toBe("After");
+    expect(after.kind).toBe("gate");
+    expect(after.area).toBe("New area");
+
+    const active = after.cameras.filter((c) => c.active).map((c) => c.cameraId);
+    expect(active).toContain(keep);
+    expect(active).toContain(joining);
+    // Retired, not deleted: past events still point at this binding.
+    expect(active).not.toContain(leaving);
+    expect(after.cameras.some((c) => c.cameraId === leaving)).toBe(true);
+
+    const moved = after.cameras.find((c) => c.cameraId === keep)!;
+    expect(moved.points).toEqual([[0.2, 0.7], [0.8, 0.7]]);
+    expect(moved.placed).toBe(true);
+
+    const fresh = after.cameras.find((c) => c.cameraId === joining)!;
+    expect(fresh.placed).toBe(false);
+
+    expect(after.targets.map((t) => t.class)).toEqual(["person", "cattle"]);
+  });
+
+  test("a camera sent without points keeps the shape it already had", async () => {
+    const cam = await freeCamera();
+    const zoneId = zones.createZone({
+      orgId: ORG,
+      siteId: SITE,
+      name: "Keeps its shape",
+      kind: "fence_line",
+      cameras: [{ cameraId: cam, geometry: "line", points: [[0.1, 0.4], [0.9, 0.45]] }],
+      targets: [{ class: "person", severity: "WARNING", action: "alert" }],
+    });
+
+    // Renaming the zone must not un-draw every camera in it.
+    const after = zones.replaceZone(zoneId, {
+      name: "Renamed only",
+      kind: "fence_line",
+      cameras: [{ cameraId: cam }],
+      targets: [{ class: "person", severity: "WARNING", action: "alert" }],
+    })!;
+
+    const camera = after.cameras[0]!;
+    expect(camera.points).toEqual([[0.1, 0.4], [0.9, 0.45]]);
+    expect(camera.placed).toBe(true);
+  });
+
+  test("an empty override list puts a camera back on the zone policy", async () => {
+    const cam = await freeCamera();
+    const zoneId = zones.createZone({
+      orgId: ORG,
+      siteId: SITE,
+      name: "Exception then not",
+      kind: "fence_line",
+      cameras: [
+        {
+          cameraId: cam,
+          points: [[0.1, 0.5], [0.9, 0.5]],
+          targets: [{ class: "person", severity: "INFO", action: "log_only" }],
+        },
+      ],
+      targets: [{ class: "person", severity: "CRITICAL", action: "alert" }],
+    });
+
+    expect(zones.zoneDetail(zoneId)!.cameras[0]!.overrides).toHaveLength(1);
+
+    const after = zones.replaceZone(zoneId, {
+      name: "Exception then not",
+      kind: "fence_line",
+      cameras: [{ cameraId: cam }],
+      targets: [{ class: "person", severity: "CRITICAL", action: "alert" }],
+    })!;
+
+    expect(after.cameras[0]!.overrides).toHaveLength(0);
+    expect(after.cameras[0]!.effectiveTargets[0]!.severity).toBe("CRITICAL");
   });
 });

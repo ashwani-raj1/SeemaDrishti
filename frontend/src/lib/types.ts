@@ -122,7 +122,8 @@ export interface MonitoringZone {
   siteId: string;
   name: string;
   kind: ZoneKind;
-  sector: string | null;
+  /** Free-text label grouping zones on the same stretch of ground. */
+  area: string | null;
   active: boolean;
   createdAt: string;
   updatedAt: string;
@@ -304,7 +305,7 @@ export interface CameraZone {
   id: string;
   name: string;
   kind: ZoneKind;
-  sector: string | null;
+  area: string | null;
   geometry: ZoneGeometry;
   points: Point[];
   direction: Direction | "both";

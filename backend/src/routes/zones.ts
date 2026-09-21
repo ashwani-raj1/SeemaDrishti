@@ -6,8 +6,8 @@ import { validateZonePoints } from "../l2/geometry";
 import { forgetZone } from "../l2/fence";
 import { recordAction } from "../l3/audit";
 import {
-  addCamera, createZone, getBinding, listZones, removeCamera, setTargets,
-  updateBinding, updateZone, zoneDetail, type TargetInput,
+  addCamera, createZone, getBinding, listAreas, listZones, removeCamera, replaceZone,
+  setTargets, updateBinding, updateZone, zoneDetail, type CreateZoneCamera, type TargetInput,
 } from "../l3/zones";
 import { publish } from "../l4/bus";
 import { BadRequest } from "../l4/hooks";
@@ -98,6 +98,68 @@ function requireCameras(ids: unknown): string[] {
 }
 
 /**
+ * The cameras of a new zone, each optionally carrying the shape drawn for it.
+ *
+ * Two request shapes are accepted and they are not equivalent:
+ *
+ *   cameraIds: ["cam_a"]                    -- joins on the placeholder
+ *   cameras:   [{ cameraId, points, ... }]  -- joins already positioned
+ *
+ * The first is kept because adding a camera without drawing it is still a real
+ * thing to want (a feed that is dark right now, a zone declared ahead of the
+ * survey). The second is what the console's wizard sends, so that a zone and
+ * every shape in it are written or not written together.
+ *
+ * Shapes are validated HERE, before anything is inserted. `createZone` runs one
+ * transaction and a shape rejected halfway through it would roll back the zone
+ * but not the caller's belief that it exists.
+ */
+function parseCreateCameras(body: Record<string, any>): CreateZoneCamera[] {
+  if (body.cameras === undefined) {
+    return requireCameras(body.cameraIds).map((cameraId) => ({ cameraId }));
+  }
+  if (!Array.isArray(body.cameras) || body.cameras.length === 0) {
+    throw new BadRequest("a zone needs at least one camera");
+  }
+
+  const seen = new Set<string>();
+  return body.cameras.map((entry: any, index: number) => {
+    if (!entry || typeof entry !== "object") {
+      throw new BadRequest(`cameras[${index}] must be an object`);
+    }
+    const cameraId = entry.cameraId;
+    if (typeof cameraId !== "string" || !cameraId.trim()) {
+      throw new BadRequest(`cameras[${index}].cameraId is required`);
+    }
+    if (!one("SELECT id FROM camera WHERE id = $id", { $id: cameraId })) {
+      throw new NotFound(`no camera ${cameraId}`);
+    }
+    // The database's one-zone-per-camera index would catch this, but as a
+    // UNIQUE failure naming neither the camera nor the duplicate.
+    if (seen.has(cameraId)) throw new BadRequest(`${cameraId} is listed twice`);
+    seen.add(cameraId);
+
+    validateZoneFields(entry);
+
+    const drawn = entry.points !== undefined;
+    if (drawn) {
+      const geometry = entry.geometry ?? "line";
+      const problem = validateZonePoints(geometry, entry.points);
+      if (problem) throw new BadRequest(`cameras[${index}]: ${problem}`);
+    }
+
+    return {
+      cameraId,
+      geometry: entry.geometry,
+      points: drawn ? entry.points : undefined,
+      direction: entry.direction,
+      confirmSeconds: entry.confirmSeconds,
+      targets: entry.targets === undefined ? undefined : parseTargets(entry.targets),
+    };
+  });
+}
+
+/**
  * A camera belongs to exactly one zone.
  *
  * Enforced in the database by the partial unique index `zone_camera_one_zone`,
@@ -136,11 +198,13 @@ export const zoneRoutes = {
     GET: handled(async () => json(listZones(DEFAULT_SITE))),
 
     /**
-     * Create a zone across a set of cameras.
+     * Create a zone across a set of cameras, with their shapes if they have
+     * been drawn.
      *
-     * The cameras come from an area the supervisor picked in the console; this
-     * only checks they exist. Each starts with a placeholder shape, so a zone
-     * never goes live pretending somebody positioned it.
+     * The whole call is one decision: name, area, cameras, every shape and
+     * every target, written together or not at all. The console walks a
+     * supervisor through all of it before sending anything, so a run abandoned
+     * halfway leaves nothing behind -- see `parseCreateCameras`.
      */
     POST: handled(async (req) => {
       const actor = actorOf(req);
@@ -152,23 +216,28 @@ export const zoneRoutes = {
       const name = typeof body.name === "string" ? body.name.trim() : "";
       if (!name) throw new BadRequest("name is required");
 
-      const cameraIds = requireCameras(body.cameraIds);
+      const cameras = parseCreateCameras(body);
       // All or nothing. Creating the zone minus the offending camera would
       // show the supervisor a success and leave a camera they believe is
       // covered watching nothing -- the worst outcome for a coverage tool.
-      requireFreeCameras(cameraIds);
+      requireFreeCameras(cameras.map((camera) => camera.cameraId));
       const targets = parseTargets(body.targets ?? []);
       if (targets.length === 0) {
         throw new BadRequest("a zone needs at least one thing to detect against");
       }
+
+      // Trimmed to nothing is no area, not an area named "". Otherwise a
+      // stray space becomes an entry in the picker that nobody can ever
+      // match, delete, or tell apart from the empty one next to it.
+      const area = typeof body.area === "string" ? body.area.trim() || null : null;
 
       const zoneId = createZone({
         orgId: DEFAULT_ORG,
         siteId: DEFAULT_SITE,
         name,
         kind: body.kind ?? "fence_line",
-        sector: body.sector ?? null,
-        cameraIds,
+        area,
+        cameras,
         targets,
         direction: body.direction,
         confirmSeconds: body.confirmSeconds,
@@ -183,8 +252,11 @@ export const zoneRoutes = {
         targetId: zoneId,
         reason: body.reason ?? null,
         detail: {
-          sector: body.sector ?? null,
-          cameras: cameraIds.length,
+          area,
+          cameras: cameras.length,
+          // Worth recording separately: it is the difference between a zone
+          // somebody positioned and one that went live on placeholders.
+          placed: cameras.filter((camera) => camera.points !== undefined).length,
           targets: targets.length,
         },
         after: created,
@@ -195,8 +267,95 @@ export const zoneRoutes = {
     }),
   },
 
+  /**
+   * The area labels currently in use, for the console's picker.
+   *
+   * Read-only and derived on purpose: there is nothing to create here. An area
+   * comes into existence when a zone is saved carrying the label and stops
+   * existing when the last zone using it stops. A POST would create a second
+   * list to keep in step with this one, which is the whole problem the old
+   * hardcoded area polygons had.
+   *
+   * Bun matches a literal segment ahead of `:zoneId` whatever the declaration
+   * order, so this cannot be read as a zone called "areas". Kept next to its
+   * sibling anyway, for the reader rather than the router.
+   */
+  "/api/zones/areas": {
+    GET: handled(async () => json({ areas: listAreas(DEFAULT_SITE) })),
+  },
+
   "/api/zones/:zoneId": {
     GET: handled(async (req: any) => json(requireZone(req.params.zoneId))),
+
+    /**
+     * Replace the zone's whole configuration: name, kind, area, cameras with
+     * their shapes, the policy, and every camera's exceptions.
+     *
+     * The editing counterpart of POST, and deliberately the same shape of
+     * call. The console walks a supervisor through all of it and sends one
+     * request, so a run they abandon changes nothing and a run that fails
+     * changes nothing -- rather than leaving a live zone holding half of what
+     * they asked for.
+     *
+     * PATCH is still here and still does name/kind/area/active on its own. It
+     * is the right call for a one-field change (the deactivate button uses
+     * it); this is the right call for "here is what the zone should now be".
+     */
+    PUT: handled(async (req: any) => {
+      const actor = actorOf(req);
+      requireRole(actor, "supervisor", "admin");
+
+      const zoneId = req.params.zoneId;
+      const before = requireZone(zoneId);
+      const body = await readJson(req);
+      validateZoneFields(body);
+
+      const name = typeof body.name === "string" ? body.name.trim() : "";
+      if (!name) throw new BadRequest("name is required");
+
+      const cameras = parseCreateCameras(body);
+      // `exceptZoneId` so a zone re-saving its OWN cameras does not collide
+      // with itself -- without it, editing a zone's name would 409 on every
+      // camera already in it.
+      requireFreeCameras(cameras.map((camera) => camera.cameraId), zoneId);
+
+      const targets = parseTargets(body.targets ?? []);
+      if (targets.length === 0) {
+        throw new BadRequest("a zone needs at least one thing to detect against");
+      }
+
+      const area = typeof body.area === "string" ? body.area.trim() || null : null;
+
+      const after = replaceZone(zoneId, { name, kind: body.kind ?? before.kind, area, cameras, targets });
+      if (!after) throw new NotFound(`no zone ${zoneId}`);
+
+      // Shapes may have moved, so a crossing held against the old geometry
+      // would otherwise confirm against a line that no longer exists.
+      forgetZone(zoneId);
+
+      recordAction({
+        actor,
+        orgId: DEFAULT_ORG,
+        verb: "zone.update",
+        targetType: "zone",
+        targetId: zoneId,
+        reason: body.reason ?? null,
+        detail: {
+          cameras: cameras.length,
+          placed: cameras.filter((camera) => camera.points !== undefined).length,
+          targets: targets.length,
+        },
+        // The whole zone either side. This is the only record of what changed
+        // now that shapes no longer get their own `zone.camera.update` row --
+        // a deliberate trade for the atomic save, noted here so the next
+        // person looking for "who moved this line" knows where it went.
+        before,
+        after,
+      });
+
+      publish({ type: "camera", data: { zoneChanged: zoneId } });
+      return json(after);
+    }),
 
     PATCH: handled(async (req: any) => {
       const actor = actorOf(req);
@@ -210,7 +369,9 @@ export const zoneRoutes = {
       updateZone(zoneId, {
         name: body.name,
         kind: body.kind,
-        sector: body.sector,
+        // Same trim rule as create, and `null` still clears the label.
+        area:
+          typeof body.area === "string" ? body.area.trim() || null : body.area,
         active: body.active,
       });
 

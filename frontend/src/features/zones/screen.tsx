@@ -20,8 +20,8 @@ import { PageShell } from "@/components/ibvap/page-shell";
 import { EvidenceOverlay } from "@/components/ibvap/evidence-overlay";
 import { Spinner } from "@/components/ibvap/spinner";
 import { useClient } from "@/client/context";
+import { useConsoleStore } from "@/client/console-store";
 import { HistoryLink } from "@/components/ibvap/history-link";
-import { sectorById } from "@/client/geography";
 import { api, isConflict, isForbidden } from "@/lib/api";
 import { useResource } from "@/lib/use-resource";
 import { humanise } from "@/lib/format";
@@ -47,6 +47,16 @@ export function ZonesScreen() {
   const wanted = params.get("zone");
   const zones = useResource(() => api.zones(), []);
 
+  // The header's zone filter. Honoured here rather than ignored: a filter that
+  // changes nothing is what the old hardcoded one did, and it taught people
+  // the control was decoration.
+  const zoneFilter = useConsoleStore((state) => state.zoneFilter);
+  const setZoneFilter = useConsoleStore((state) => state.setZoneFilter);
+  const shown = zones.data?.filter((zone) => !zoneFilter || zone.id === zoneFilter);
+  // A filter naming a zone this list does not contain would render an empty
+  // page with no explanation, so say which one and offer the way out.
+  const filteredAway = Boolean(zoneFilter) && (zones.data?.length ?? 0) > (shown?.length ?? 0);
+
   const canEdit = role !== "operator";
 
   const reload = () => {
@@ -67,17 +77,29 @@ export function ZonesScreen() {
         </p>
       )}
 
+      {filteredAway && (
+        <p className="flex items-center justify-between gap-3 rounded-md border bg-muted/40 px-4 py-2.5 text-sm">
+          <span className="text-muted-foreground">
+            Filtered to one zone by the header.
+          </span>
+          <Button size="sm" variant="ghost" onClick={() => setZoneFilter(null)}>
+            Show all zones
+          </Button>
+        </p>
+      )}
+
       {zones.data?.length === 0 && (
         <div className="rounded-md border border-dashed p-10 text-center">
           <p className="text-sm font-medium">No zones yet</p>
           <p className="mt-1 text-sm text-muted-foreground">
-            Start from an area — the cameras covering it are worked out for you.
+            Create one: name it, pick its cameras, and draw what each of them
+            watches.
           </p>
         </div>
       )}
 
       <div className="grid gap-4">
-        {zones.data?.map((zone) => (
+        {shown?.map((zone) => (
           <ZoneCard
             key={zone.id}
             zone={zone}
@@ -102,7 +124,6 @@ function ZoneCard({
   focused?: boolean;
   onChanged: () => void;
 }) {
-  const sector = zone.sector ? sectorById(zone.sector) : undefined;
   const live = zone.cameras.filter((camera) => camera.active);
   const unplaced = live.filter((camera) => !camera.placed).length;
 
@@ -114,9 +135,9 @@ function ZoneCard({
           <Badge variant="outline" className="font-normal">
             {humanise(zone.kind)}
           </Badge>
-          {sector && (
+          {zone.area && (
             <Badge variant="secondary" className="font-normal">
-              {sector.label}
+              {zone.area}
             </Badge>
           )}
           {!zone.active && <Badge variant="destructive">inactive</Badge>}
@@ -144,20 +165,17 @@ function ZoneCard({
           </TabsList>
 
           <TabsContent value="policy" className="pt-4">
-            <ZonePolicy zone={zone} canEdit={canEdit} onChanged={onChanged} />
+            <ZonePolicy zone={zone} />
           </TabsContent>
 
           <TabsContent value="cameras" className="space-y-4 pt-4">
             {live.map((camera) => (
-              <CameraRow
-                key={camera.bindingId}
-                zone={zone}
-                camera={camera}
-                canEdit={canEdit}
-                onChanged={onChanged}
-              />
+              <CameraRow key={camera.bindingId} zone={zone} camera={camera} />
             ))}
-            <AddCamera zone={zone} canEdit={canEdit} onChanged={onChanged} />
+            <p className="text-xs text-muted-foreground">
+              Cameras join and leave this zone in the edit wizard, so the whole
+              change is one decision rather than several half-applied ones.
+            </p>
           </TabsContent>
         </Tabs>
       </CardContent>
@@ -165,132 +183,39 @@ function ZoneCard({
   );
 }
 
-/** The zone's own policy: what everything in it watches for, unless told otherwise. */
-function ZonePolicy({
-  zone,
-  canEdit,
-  onChanged,
-}: {
-  zone: MonitoringZone;
-  canEdit: boolean;
-  onChanged: () => void;
-}) {
-  const [draft, setDraft] = useState<DraftTarget[]>(() => toDraft(zone.targets));
-  const [reason, setReason] = useState("");
-  const [saving, setSaving] = useState(false);
-
-  useEffect(() => setDraft(toDraft(zone.targets)), [zone.targets]);
-
-  const dirty = JSON.stringify(draft) !== JSON.stringify(toDraft(zone.targets));
-
-  async function save() {
-    setSaving(true);
-    try {
-      await api.setZoneTargets(zone.id, draft, reason.trim() || undefined);
-      toast.success(`${zone.name} updated`);
-      setReason("");
-      onChanged();
-    } catch (error) {
-      toast.error(
-        isForbidden(error) ? "Editing zones needs a supervisor." : (error as Error).message,
-      );
-    } finally {
-      setSaving(false);
-    }
-  }
-
+/**
+ * The zone's policy, read only.
+ *
+ * WHY NOTHING HERE IS EDITABLE ANY MORE. This card used to be four separate
+ * editors -- a name/kind dialog, this target list, a redraw button per camera,
+ * a per-camera exception editor, and add/remove camera buttons -- each writing
+ * through its own endpoint the moment you touched it. Creating a zone was one
+ * guided flow; changing one was a scavenger hunt across five controls that
+ * applied piecemeal, so a supervisor halfway through rearranging a zone had
+ * already half-applied it.
+ *
+ * Editing now happens in one place, the same wizard that creates a zone, and
+ * lands as one atomic `PUT /api/zones/:id`. The card's job is to show what the
+ * zone IS. Deactivating is still here because that is not an edit -- it is
+ * taking the whole zone out of service, and it has its own confirmation.
+ */
+function ZonePolicy({ zone }: { zone: MonitoringZone }) {
   return (
-    <div className="space-y-4">
+    <div className="space-y-3">
       <FieldDescription>
-        The order is the priority, highest first. Anything set to log only is written to the record
-        and never raised — which is what keeps a night from filling with cattle.
+        The order is the priority, highest first. Anything set to log only is
+        written to the record and never raised — which is what keeps a night
+        from filling with cattle.
       </FieldDescription>
-
-      <TargetEditor targets={draft} onChange={setDraft} disabled={!canEdit} />
-
-      {canEdit && dirty && (
-        <div className="flex flex-wrap items-end gap-3 rounded-md border bg-muted/40 p-3">
-          <Field className="min-w-56 flex-1">
-            <FieldLabel htmlFor={`reason-${zone.id}`}>Reason for this change</FieldLabel>
-            <Input
-              id={`reason-${zone.id}`}
-              value={reason}
-              onChange={(event) => setReason(event.target.value)}
-              placeholder="e.g. fog season, tighten the fence line"
-            />
-          </Field>
-          <Button onClick={save} disabled={saving}>
-            <SaveIcon className="size-4" />
-            {saving ? "Saving…" : "Save policy"}
-          </Button>
-        </div>
-      )}
+      <TargetList targets={zone.targets} />
     </div>
   );
 }
 
-const DIRECTIONS: (Direction | "both")[] = ["inbound", "outbound", "both"];
-
 /** One camera's membership: its shape, its patience, and any exceptions. */
-function CameraRow({
-  zone,
-  camera,
-  canEdit,
-  onChanged,
-}: {
-  zone: MonitoringZone;
-  camera: ZoneCamera;
-  canEdit: boolean;
-  onChanged: () => void;
-}) {
-  const [direction, setDirection] = useState(camera.direction);
-  const [confirmSeconds, setConfirmSeconds] = useState(camera.confirmSeconds);
-  const [overrides, setOverrides] = useState<DraftTarget[]>(() => toDraft(camera.overrides));
-  const [editingOverrides, setEditingOverrides] = useState(camera.overrides.length > 0);
-  const [drawing, setDrawing] = useState(false);
-  const [busy, setBusy] = useState(false);
-
-  useEffect(() => {
-    setDirection(camera.direction);
-    setConfirmSeconds(camera.confirmSeconds);
-    setOverrides(toDraft(camera.overrides));
-  }, [camera]);
-
-  const shapeDirty =
-    direction !== camera.direction || confirmSeconds !== camera.confirmSeconds;
-  const overridesDirty =
-    JSON.stringify(overrides) !== JSON.stringify(toDraft(camera.overrides));
-
-  async function run(work: () => Promise<unknown>, done: string) {
-    setBusy(true);
-    try {
-      await work();
-      toast.success(done);
-      onChanged();
-    } catch (error) {
-      toast.error(
-        isForbidden(error) ? "This needs a supervisor." : (error as Error).message,
-      );
-    } finally {
-      setBusy(false);
-    }
-  }
-
+function CameraRow({ zone, camera }: { zone: MonitoringZone; camera: ZoneCamera }) {
   return (
     <div className="rounded-md border">
-      <ShapeEditor
-        open={drawing}
-        onOpenChange={setDrawing}
-        zoneId={zone.id}
-        zoneName={zone.name}
-        cameraId={camera.cameraId}
-        cameraName={camera.cameraName}
-        geometry={camera.geometry}
-        points={camera.points}
-        direction={camera.direction}
-        confirmSeconds={camera.confirmSeconds}
-        onSaved={onChanged}
-      />
       <div className="grid gap-4 p-3 md:grid-cols-[220px_minmax(0,1fr)]">
         <div className="space-y-2">
           <EvidenceOverlay
@@ -307,263 +232,47 @@ function CameraRow({
           />
           {!camera.placed && (
             <p className="text-[11px] leading-snug text-amber-600 dark:text-amber-500">
-              Placeholder shape — nobody has positioned this against the camera's
-              view yet, so it judges nothing useful.
+              Nobody has drawn this against the camera's view. Crossings of it
+              are recorded and never alerted on.
             </p>
           )}
-          <Button
-            size="sm"
-            variant={camera.placed ? "outline" : "default"}
-            className="w-full"
-            disabled={!canEdit}
-            onClick={() => setDrawing(true)}
-          >
-            <PencilRulerIcon className="size-3.5" />
-            {camera.placed ? "Redraw on camera" : "Draw on camera"}
-          </Button>
         </div>
 
-        <div className="min-w-0 space-y-3">
+        <div className="space-y-3">
           <div className="flex flex-wrap items-center gap-2">
             <CctvIcon className="size-4 shrink-0 text-muted-foreground" />
             <span className="text-sm font-medium">{camera.cameraName}</span>
-            <Badge variant="outline" className="font-mono text-[10px] font-normal">
+            <Badge variant="outline" className="font-mono text-[10px]">
               {camera.geometry}
             </Badge>
-            {camera.cameraStatus !== "FULL" && (
-              <Badge variant="secondary" className="font-normal">
-                {humanise(camera.cameraStatus)}
-              </Badge>
-            )}
-            <Button
-              size="sm"
-              variant="ghost"
-              className="ml-auto text-muted-foreground hover:text-destructive"
-              disabled={!canEdit || busy}
-              onClick={() =>
-                run(
-                  () => api.removeZoneCamera(zone.id, camera.cameraId, "no longer covers this zone"),
-                  `${camera.cameraName} removed from ${zone.name}`,
-                )
-              }
-            >
-              <Trash2Icon className="size-3.5" />
-              Remove
-            </Button>
+            <Badge variant="secondary" className="font-normal">
+              {camera.points.length} point{camera.points.length === 1 ? "" : "s"}
+            </Badge>
           </div>
 
-          <div className="grid gap-3 sm:grid-cols-2">
-            <Field>
-              <FieldLabel htmlFor={`dir-${camera.bindingId}`}>Alert on</FieldLabel>
-              <Select
-                value={direction}
-                disabled={!canEdit}
-                onValueChange={(value) => setDirection(value as Direction | "both")}
-              >
-                <SelectTrigger id={`dir-${camera.bindingId}`} size="sm">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  {DIRECTIONS.map((option) => (
-                    <SelectItem key={option} value={option}>
-                      {option === "both" ? "both directions" : `${option} only`}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </Field>
+          <dl className="grid max-w-md grid-cols-2 gap-x-4 gap-y-1 text-xs">
+            <dt className="text-muted-foreground">Alert on</dt>
+            <dd className="text-right">
+              {camera.direction === "both" ? "both directions" : `${camera.direction} only`}
+            </dd>
+            <dt className="text-muted-foreground">Wait for</dt>
+            <dd className="text-right font-mono">{camera.confirmSeconds}s</dd>
+          </dl>
 
-            <Field>
-              <FieldLabel htmlFor={`hold-${camera.bindingId}`}>
-                Wait before shouting (seconds)
-              </FieldLabel>
-              <Input
-                id={`hold-${camera.bindingId}`}
-                type="number"
-                min={0}
-                max={60}
-                step={0.5}
-                value={confirmSeconds}
-                disabled={!canEdit}
-                onChange={(event) => setConfirmSeconds(Number(event.target.value))}
-              />
-            </Field>
-          </div>
-
-          {shapeDirty && canEdit && (
-            <Button
-              size="sm"
-              disabled={busy}
-              onClick={() =>
-                run(
-                  () =>
-                    api.updateZoneCamera(zone.id, camera.cameraId, {
-                      direction,
-                      confirmSeconds,
-                      reason: "retuned for this camera's view",
-                    }),
-                  `${camera.cameraName} retuned`,
-                )
-              }
-            >
-              <SaveIcon className="size-4" />
-              Save camera settings
-            </Button>
-          )}
-
-          <Separator />
-
-          <div className="space-y-2">
-            <p className="text-xs font-medium text-muted-foreground">
+          <div>
+            <p className="mb-1.5 text-xs text-muted-foreground">
               What this camera actually watches for
             </p>
             <TargetList targets={camera.effectiveTargets} />
-
-            {!editingOverrides ? (
-              <Button
-                size="sm"
-                variant="outline"
-                className="h-7 text-xs"
-                disabled={!canEdit}
-                onClick={() => setEditingOverrides(true)}
-              >
-                Add an exception for this camera
-              </Button>
-            ) : (
-              <div className="space-y-2 rounded-md border bg-muted/40 p-3">
-                <FieldDescription>
-                  Exceptions replace the zone policy for the classes listed here, on this camera
-                  only. Leave the list empty to go back to the zone policy.
-                </FieldDescription>
-                <TargetEditor
-                  targets={overrides}
-                  onChange={setOverrides}
-                  disabled={!canEdit}
-                  emptyHint="No exceptions — this camera follows the zone policy."
-                />
-                {overridesDirty && canEdit && (
-                  <Button
-                    size="sm"
-                    disabled={busy}
-                    onClick={() =>
-                      run(
-                        () =>
-                          api.setZoneCameraTargets(
-                            zone.id,
-                            camera.cameraId,
-                            overrides,
-                            overrides.length === 0
-                              ? "back to the zone policy"
-                              : "this camera sees something different",
-                          ),
-                        `${camera.cameraName} exceptions saved`,
-                      )
-                    }
-                  >
-                    <SaveIcon className="size-4" />
-                    Save exceptions
-                  </Button>
-                )}
-              </div>
+            {camera.overrides.length > 0 && (
+              <p className="mt-1.5 text-[11px] text-muted-foreground">
+                {camera.overrides.length} exception
+                {camera.overrides.length === 1 ? "" : "s"} to the zone policy.
+              </p>
             )}
           </div>
         </div>
       </div>
-    </div>
-  );
-}
-
-function AddCamera({
-  zone,
-  canEdit,
-  onChanged,
-}: {
-  zone: MonitoringZone;
-  canEdit: boolean;
-  onChanged: () => void;
-}) {
-  const { cameras } = useClient();
-  const [choice, setChoice] = useState("");
-  const [busy, setBusy] = useState(false);
-
-  const already = new Set(zone.cameras.filter((c) => c.active).map((c) => c.cameraId));
-
-  // A camera belongs to exactly one zone. Cameras held elsewhere are shown
-  // DISABLED with the holder named, not filtered out: a camera that simply
-  // vanishes from a picker somebody expects to find it in reads as a bug,
-  // while a greyed-out row with the reason attached reads as the system
-  // working. Same lesson as the unsurveyed-camera case in new-zone-dialog.
-  const options = useMemo(
-    () =>
-      cameras
-        .filter((camera) => !already.has(camera.id))
-        .map((camera) => ({ camera, heldBy: camera.zones.find((z) => z.active) })),
-    [cameras, zone.cameras],
-  );
-  const free = options.filter((option) => !option.heldBy);
-
-  if (!canEdit || options.length === 0) return null;
-
-  async function add() {
-    if (!choice) return;
-    setBusy(true);
-    try {
-      await api.addZoneCamera(zone.id, choice, "extending coverage of this zone");
-      toast.success("Camera added", {
-        description: "It starts with a placeholder shape — position it next.",
-      });
-      setChoice("");
-      onChanged();
-    } catch (error) {
-      // The list this control was built from can be stale -- another
-      // supervisor in another tab is the ordinary case, not a rare one -- so
-      // the server's refusal has to be readable, and the list has to correct
-      // itself afterwards.
-      if (isConflict(error)) {
-        toast.error("That camera is already in another zone", {
-          description: `${error.message} Remove it there first.`,
-        });
-        onChanged();
-      } else {
-        toast.error((error as Error).message);
-      }
-    } finally {
-      setBusy(false);
-    }
-  }
-
-  return (
-    <div className="flex flex-wrap items-end gap-2 rounded-md border border-dashed p-3">
-      <Field className="min-w-56 flex-1">
-        <FieldLabel htmlFor={`add-${zone.id}`}>Add another camera</FieldLabel>
-        <Select value={choice} onValueChange={setChoice}>
-          <SelectTrigger id={`add-${zone.id}`} size="sm">
-            <SelectValue
-              placeholder={free.length ? "Choose a camera" : "Every camera is already in a zone"}
-            />
-          </SelectTrigger>
-          <SelectContent>
-            {options.map(({ camera, heldBy }) => (
-              <SelectItem key={camera.id} value={camera.id} disabled={Boolean(heldBy)}>
-                {camera.name}
-                {heldBy && (
-                  <span className="text-muted-foreground"> · in {heldBy.name}</span>
-                )}
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
-        {free.length === 0 && (
-          <FieldDescription>
-            Every other camera already belongs to a zone. A camera watches one
-            zone at a time — remove it from its current one to move it.
-          </FieldDescription>
-        )}
-      </Field>
-      <Button size="sm" variant="outline" disabled={!choice || busy} onClick={add}>
-        <PlusIcon className="size-4" />
-        Add
-      </Button>
     </div>
   );
 }

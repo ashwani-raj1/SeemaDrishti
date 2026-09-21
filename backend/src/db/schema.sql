@@ -65,9 +65,17 @@ CREATE TABLE IF NOT EXISTS zone (
   site_id    TEXT NOT NULL REFERENCES site(id),
   name       TEXT NOT NULL,
   kind       TEXT NOT NULL,          -- fence_line|gate|waterline|perimeter|pass|restricted_area
-  -- The named area this zone was cut from, kept so the console can show where
-  -- it came from. Advisory only; nothing in judgement reads it.
-  sector     TEXT,
+  -- A free-text label grouping zones that belong to the same stretch of ground
+  -- ("Fence line north"). Advisory only; nothing in judgement reads it.
+  --
+  -- Called `area` and not `sector` on purpose: `camera.sector` already means
+  -- the POST a camera belongs to ("bop_attari"), and one word meaning two
+  -- things was a standing source of confusion in the console.
+  --
+  -- There is no `area` table. The set of areas is whatever DISTINCT values the
+  -- live zones carry, so an area cannot outlive the last zone that used it and
+  -- there is no second list to keep in step.
+  area       TEXT,
   active     INTEGER NOT NULL DEFAULT 1,
   created_at TEXT NOT NULL,
   updated_at TEXT NOT NULL

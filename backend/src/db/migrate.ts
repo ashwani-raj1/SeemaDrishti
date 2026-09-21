@@ -102,6 +102,40 @@ export interface Detachment {
 export const detachments: Detachment[] = [];
 
 /**
+ * `zone.sector` became `zone.area`.
+ *
+ * Two unrelated things were called "sector": the post a camera belongs to
+ * (`camera.sector` = "bop_attari") and the stretch of ground a zone was cut
+ * from. Same word, same console, different meaning -- and the zone one also
+ * used to be an id into a hardcoded polygon list that no longer exists, so its
+ * old values are labels now whether they were meant to be or not.
+ *
+ * `CREATE TABLE IF NOT EXISTS` never touches a database that already has
+ * `zone`, so a running post would otherwise come back with `area` missing and
+ * every zone's label stranded in a column nothing reads. Copy, then drop.
+ *
+ * The drop is guarded: on a SQLite too old for `DROP COLUMN` the spare column
+ * is dead weight, which is a much better outcome than a node that will not
+ * boot. Nothing reads `sector` after this.
+ */
+function renameZoneSectorToArea(db: Database): void {
+  if (!tableExists(db, "zone")) return;
+  if (!hasColumn(db, "zone", "sector")) return;
+
+  addColumn(db, "zone", "area", "TEXT");
+  // `area IS NULL` so re-running cannot overwrite a label somebody has since
+  // edited with the stale value the old column still holds.
+  const moved = db.run("UPDATE zone SET area = sector WHERE area IS NULL AND sector IS NOT NULL");
+  console.log(`zone.sector -> zone.area (${moved.changes} carried across)`);
+
+  try {
+    db.exec("ALTER TABLE zone DROP COLUMN sector");
+  } catch (cause) {
+    console.warn(`zone.sector left in place, unused: ${(cause as Error).message}`);
+  }
+}
+
+/**
  * Before the schema runs: if `zone` is still the old single-camera shape, move
  * it aside so the new definition can be created under the same name.
  */
@@ -152,6 +186,7 @@ export function migrateAfter(db: Database): void {
   // Columns first: these apply whether or not there is a legacy zone table.
   addColumn(db, "camera", "enabled", "INTEGER NOT NULL DEFAULT 1");
   addColumn(db, "camera", "updated_at", "TEXT");
+  renameZoneSectorToArea(db);
 
   if (!tableExists(db, LEGACY)) return;
 
@@ -168,7 +203,7 @@ export function migrateAfter(db: Database): void {
       if (!site) continue;
 
       db.query(
-        `INSERT INTO zone (id, org_id, site_id, name, kind, sector, active, created_at, updated_at)
+        `INSERT INTO zone (id, org_id, site_id, name, kind, area, active, created_at, updated_at)
          VALUES ($id, $org, $site, $name, $kind, NULL, $active, $created, $updated)`,
       ).run({
         $id: old.id,
