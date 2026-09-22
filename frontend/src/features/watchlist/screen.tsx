@@ -1,5 +1,7 @@
-import { useState, useEffect } from "react";
+import { useCallback, useState, useEffect } from "react";
 import {
+  BarChart3Icon,
+  CalendarDaysIcon,
   CarFrontIcon,
   CheckCircle2Icon,
   ClockIcon,
@@ -12,14 +14,12 @@ import {
   ShieldAlertIcon,
   Trash2Icon,
   TruckIcon,
-  ZapIcon,
 } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
@@ -31,7 +31,7 @@ import { api } from "@/lib/api";
 import { onStream } from "@/lib/stream";
 import { useResource } from "@/lib/use-resource";
 import { dateTime, formatPlate, relative } from "@/lib/format";
-import type { PlateDetection, WatchlistEntry, WatchlistStats } from "@/lib/types";
+import type { PlateDetection, VehicleTrafficSummary, WatchlistEntry, WatchlistStats } from "@/lib/types";
 import { PlateScannerCanvas } from "./plate-scanner-canvas";
 import { AddWatchlistDialog } from "./add-watchlist-dialog";
 
@@ -40,6 +40,7 @@ export function WatchlistScreen() {
   const [search, setSearch] = useState("");
   const [severityFilter, setSeverityFilter] = useState<string>("ALL");
   const [statusFilter, setStatusFilter] = useState<string>("ALL");
+  const [trafficDays, setTrafficDays] = useState(14);
 
   const [dialogOpen, setDialogOpen] = useState(false);
   const [editingEntry, setEditingEntry] = useState<WatchlistEntry | null>(null);
@@ -70,6 +71,26 @@ export function WatchlistScreen() {
     loading: logsLoading,
     reload: reloadLogs,
   } = useResource(() => api.plateDetections({ limit: 60 }), []);
+
+  const {
+    data: traffic,
+    loading: trafficLoading,
+    reload: reloadTraffic,
+  } = useResource(() => api.vehicleTraffic({ days: trafficDays }), [trafficDays]);
+
+  const handleVehicleCounted = useCallback(async (vehicle: {
+    sourceKey: string;
+    cameraId: string;
+    vehicleType: string;
+    occurredAt: string;
+  }) => {
+    try {
+      await api.recordVehicleTraffic(vehicle);
+      reloadTraffic();
+    } catch (cause) {
+      console.warn("Unable to save vehicle traffic count", cause);
+    }
+  }, [reloadTraffic]);
 
   // Real-time stream updates
   useEffect(() => {
@@ -115,10 +136,6 @@ export function WatchlistScreen() {
         toast.error(`ALERT: Flagged Vehicle Detected (${result.plate_number})`, {
           description: `Watchlist match flagged on ${result.camera_name ?? result.camera_id}`,
         });
-      } else {
-        toast.success(`Plate Read: ${result.plate_number}`, {
-          description: "Vehicle scanned — registry clear.",
-        });
       }
     } catch (cause) {
       toast.error((cause as Error).message);
@@ -140,15 +157,9 @@ export function WatchlistScreen() {
       setLatestDetection(result);
       reloadLogs();
       reloadStats();
-      if (result.match_status === "MATCHED") {
-        toast.error(`ALERT: Flagged Vehicle Detected (${result.plate_number})`, {
-          description: `Watchlist match confirmed for ${result.plate_number}`,
-        });
-      } else {
-        toast.success(`Verified: ${result.plate_number}`, {
-          description: "License plate not found in active watchlist.",
-        });
-      }
+      // Alerts are emitted once from the real-time `plate_detection` stream.
+      // Clear vehicles stay silent; duplicating the request result here caused
+      // both repeated "not in active watchlist" notices and double hit alerts.
     } catch (cause) {
       toast.error((cause as Error).message);
     } finally {
@@ -205,17 +216,6 @@ export function WatchlistScreen() {
         </div>
       }
     >
-      {/* Mock Registry Ethics Alert (#36 Compliance) */}
-      <Alert className="border-amber-500/40 bg-amber-500/5">
-        <ZapIcon className="text-amber-500" />
-        <AlertTitle className="font-semibold text-amber-700 dark:text-amber-400">
-          Mock Vehicle Registry Active (#36)
-        </AlertTitle>
-        <AlertDescription className="text-xs text-muted-foreground">
-          No external national motor registry is connected at this post. Vehicle detections and license plate checks run against a local edge-maintained watchlist.
-        </AlertDescription>
-      </Alert>
-
       {/* Overview Stat Metric Cards */}
       <div className="grid grid-cols-2 gap-3 sm:grid-cols-5">
         <Card className="p-3">
@@ -285,6 +285,13 @@ export function WatchlistScreen() {
             scanning={scanning}
             onRunScan={handleRunScan}
             onManualScan={handleManualScan}
+            onVehicleCounted={handleVehicleCounted}
+          />
+          <VehicleTrafficChart
+            summary={traffic}
+            loading={trafficLoading}
+            days={trafficDays}
+            onDaysChange={setTrafficDays}
           />
         </TabsContent>
 
@@ -556,5 +563,129 @@ export function WatchlistScreen() {
         onConfirm={handleDeleteConfirm}
       />
     </PageShell>
+  );
+}
+
+function VehicleTrafficChart({
+  summary,
+  loading,
+  days,
+  onDaysChange,
+}: {
+  summary: VehicleTrafficSummary | null;
+  loading: boolean;
+  days: number;
+  onDaysChange: (days: number) => void;
+}) {
+  const points = summary?.points ?? [];
+  const dailyPoints = points.map((point) => ({
+    key: point.date,
+    label: new Date(`${point.date}T00:00:00Z`).toLocaleDateString("en-IN", {
+      day: "2-digit",
+      month: "short",
+      timeZone: "UTC",
+    }),
+    total: point.total,
+  }));
+  const chartPoints = days >= 180
+    ? [...points.reduce((months, point) => {
+        const key = point.date.slice(0, 7);
+        months.set(key, (months.get(key) ?? 0) + point.total);
+        return months;
+      }, new Map<string, number>())].map(([key, total]) => ({
+        key,
+        label: new Date(`${key}-01T00:00:00Z`).toLocaleDateString("en-IN", {
+          month: "short",
+          year: "2-digit",
+          timeZone: "UTC",
+        }),
+        total,
+      }))
+    : dailyPoints;
+  const max = Math.max(1, ...chartPoints.map((point) => point.total));
+  const today = points.at(-1)?.total ?? 0;
+  const average = summary && summary.days > 0 ? summary.total / summary.days : 0;
+
+  return (
+    <Card className="border">
+      <CardHeader className="px-4 py-3">
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+          <div>
+            <CardTitle className="flex items-center gap-2 text-sm">
+              <BarChart3Icon className="h-4 w-4 text-cyan-600" />
+              Vehicle Traffic by Date
+            </CardTitle>
+            <p className="mt-1 text-[11px] text-muted-foreground">
+              Unique tracked vehicles, including vehicles whose number plate could not be read.
+            </p>
+          </div>
+          <Select value={String(days)} onValueChange={(value) => onDaysChange(Number(value))}>
+            <SelectTrigger className="h-8 w-32 text-xs">
+              <CalendarDaysIcon className="mr-1 h-3.5 w-3.5" />
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="7">Last 7 days</SelectItem>
+              <SelectItem value="14">Last 14 days</SelectItem>
+              <SelectItem value="30">Last 1 month</SelectItem>
+              <SelectItem value="180">Last 6 months</SelectItem>
+              <SelectItem value="365">Last 1 year</SelectItem>
+              <SelectItem value="730">Last 2 years</SelectItem>
+            </SelectContent>
+          </Select>
+        </div>
+      </CardHeader>
+      <CardContent className="space-y-4 px-4 pb-4">
+        <div className="grid grid-cols-3 gap-2">
+          <div className="rounded-md border bg-muted/20 p-2.5">
+            <div className="text-[10px] text-muted-foreground">Today</div>
+            <div className="font-mono text-xl font-bold">{today}</div>
+          </div>
+          <div className="rounded-md border bg-muted/20 p-2.5">
+            <div className="text-[10px] text-muted-foreground">Period total</div>
+            <div className="font-mono text-xl font-bold">{summary?.total ?? 0}</div>
+          </div>
+          <div className="rounded-md border bg-muted/20 p-2.5">
+            <div className="text-[10px] text-muted-foreground">Daily average</div>
+            <div className="font-mono text-xl font-bold">{average.toFixed(1)}</div>
+          </div>
+        </div>
+
+        <div className="relative h-56 rounded-md border bg-muted/10 px-3 pb-8 pt-5">
+          {loading ? (
+            <div className="flex h-full items-center justify-center text-xs text-muted-foreground">
+              Loading traffic history…
+            </div>
+          ) : (
+            <div className="flex h-full items-end gap-1 sm:gap-2" role="img" aria-label={`Vehicle totals for the last ${days} days`}>
+              {chartPoints.map((point, index) => {
+                const height = point.total === 0 ? 2 : Math.max(8, (point.total / max) * 100);
+                const showLabel = chartPoints.length <= 14 || index % Math.ceil(chartPoints.length / 10) === 0 || index === chartPoints.length - 1;
+                const shortDate = point.label;
+                return (
+                  <div key={point.key} className="group relative flex h-full min-w-0 flex-1 items-end justify-center">
+                    <div
+                      className="w-full max-w-10 rounded-t bg-cyan-500/80 transition-colors hover:bg-cyan-500"
+                      style={{ height: `${height}%` }}
+                      title={`${shortDate}: ${point.total} vehicle${point.total === 1 ? "" : "s"}`}
+                    />
+                    {point.total > 0 && (
+                      <span className="absolute -top-4 hidden font-mono text-[9px] font-semibold text-foreground group-hover:block">
+                        {point.total}
+                      </span>
+                    )}
+                    {showLabel && (
+                      <span className="absolute -bottom-6 whitespace-nowrap text-[9px] text-muted-foreground">
+                        {shortDate}
+                      </span>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </div>
+      </CardContent>
+    </Card>
   );
 }

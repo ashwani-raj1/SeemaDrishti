@@ -7,9 +7,11 @@ import {
   deleteWatchlistEntry,
   getWatchlistEntry,
   getWatchlistStats,
+  getVehicleTraffic,
   listWatchlist,
   processVehicleAndPlateDetection,
   queryPlateDetections,
+  recordVehicleTraffic,
   simulatePresetPlateDetection,
   updateWatchlistEntry,
 } from "../l3/watchlist";
@@ -60,6 +62,29 @@ export const watchlistRoutes = {
   },
 
   "/api/watchlist/stats": handled(async () => json(getWatchlistStats(DEFAULT_ORG))),
+
+  "/api/watchlist/traffic": {
+    GET: handled(async (req) => {
+      const params = query(req);
+      return json(getVehicleTraffic(DEFAULT_ORG, {
+        days: params.has("days") ? Number(params.get("days")) : 14,
+        cameraId: params.get("camera_id") ?? undefined,
+      }));
+    }),
+    POST: handled(async (req) => {
+      const body = await readJson(req);
+      if (!body.sourceKey || typeof body.sourceKey !== "string") {
+        throw new BadRequest("sourceKey is required");
+      }
+      return json(recordVehicleTraffic({
+        orgId: DEFAULT_ORG,
+        cameraId: body.cameraId ?? "cam_fence_north",
+        sourceKey: body.sourceKey,
+        vehicleType: body.vehicleType ?? "vehicle",
+        occurredAt: body.occurredAt,
+      }), 201);
+    }),
+  },
 
   "/api/watchlist/detections": handled(async (req) => {
     const params = query(req);
