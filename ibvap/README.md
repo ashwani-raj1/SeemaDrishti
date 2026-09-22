@@ -235,11 +235,15 @@ the node's own `l2/fence.ts` — the simulator posts there. Do not collapse them
 
 Stated plainly rather than discovered in a demo:
 
-- **No re-identification.** `modules/reid.py` ships the interface and a no-op
-  provider that answers "I don't know" for every crop. ByteTrack carries no
-  appearance model, so a long occlusion produces a *new* track id and a subject
-  moving between cameras has no relationship to themselves. Never claim
-  persistent re-ID, and never call a tracker id an identity.
+- **Re-identification is real but weak, and only within one camera.**
+  `modules/reid.py`'s default provider (`histogram`) is an HSV colour
+  signature, not a learned embedding — `multi_human` uses it to fold a
+  reappearing track back into the same `person_id` ("P1", "P2", ...) instead
+  of starting a new one, on top of a longer ByteTrack `track_buffer`
+  (`bytetrack.yaml`) that already recovers most short occlusions for free.
+  Two people in similar clothing can be folded together, and it has never
+  been tried across cameras. Never call it recognition, and never call a bare
+  `track_ref` an identity — only `person_id` carries that (qualified) claim.
 - **Face detection is detection only.** `modules/face.py` runs YuNet inside
   the upper fraction of a tracked person's box and outputs a bounding box and
   a score — never a match against anybody. It works at choke points (a gate
