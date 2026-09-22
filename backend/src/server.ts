@@ -11,6 +11,7 @@ import { debugMode, mediaConfig } from "./core/env";
 import { cameraRoutes } from "./routes/cameras";
 import { watchlistRoutes } from "./routes/watchlist";
 import { mediaRoutes } from "./routes/media";
+import { clipRoutes } from "./routes/clips";
 import { settingsRoutes } from "./routes/settings";
 import {
   crossReference,
@@ -175,6 +176,7 @@ const routes = {
   }),
 
   ...zoneRoutes,
+  ...clipRoutes,
   ...cameraRoutes,
   ...watchlistRoutes,
   ...mediaRoutes,

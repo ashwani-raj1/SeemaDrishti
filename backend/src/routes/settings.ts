@@ -1,6 +1,7 @@
 import { DEFAULT_ORG } from "../db/seed";
 import {
-  getSettings, MAX_GROUPING_WINDOW_SECONDS, MIN_GROUPING_WINDOW_SECONDS, updateSettings,
+  getSettings, MAX_CLIP_RETENTION_DAYS, MAX_GROUPING_WINDOW_SECONDS,
+  MIN_CLIP_RETENTION_DAYS, MIN_GROUPING_WINDOW_SECONDS, updateSettings,
 } from "../l3/settings";
 import { BadRequest } from "../l4/hooks";
 import { actorOf, handled, json, readJson, requireRole } from "../http";
@@ -14,19 +15,28 @@ import { actorOf, handled, json, readJson, requireRole } from "../http";
  * audited, because the window decides what counts as one intrusion.
  */
 
-/** Whole seconds, inside the bounds `l3/settings.ts` states the reasons for. */
-function validateWindow(value: unknown): number {
+/**
+ * A whole number inside its stated bounds.
+ *
+ * One validator for every setting rather than one per field: they are all
+ * bounded integers, and a second copy of this is how one of them ends up
+ * accepting a float or a negative while the other does not.
+ */
+function wholeNumber(
+  value: unknown,
+  field: string,
+  min: number,
+  max: number,
+  unit: string,
+): number {
   if (typeof value !== "number" || !Number.isFinite(value)) {
-    throw new BadRequest("groupingWindowSeconds must be a number of seconds");
+    throw new BadRequest(`${field} must be a number of ${unit}`);
   }
   if (!Number.isInteger(value)) {
-    throw new BadRequest("groupingWindowSeconds must be a whole number of seconds");
+    throw new BadRequest(`${field} must be a whole number of ${unit}`);
   }
-  if (value < MIN_GROUPING_WINDOW_SECONDS || value > MAX_GROUPING_WINDOW_SECONDS) {
-    throw new BadRequest(
-      `groupingWindowSeconds must be between ${MIN_GROUPING_WINDOW_SECONDS} and ` +
-        `${MAX_GROUPING_WINDOW_SECONDS} seconds`,
-    );
+  if (value < min || value > max) {
+    throw new BadRequest(`${field} must be between ${min} and ${max} ${unit}`);
   }
   return value;
 }
@@ -40,15 +50,43 @@ export const settingsRoutes = {
       requireRole(actor, "supervisor", "admin");
 
       const body = await readJson(req);
-      if (body.groupingWindowSeconds === undefined) {
-        throw new BadRequest("nothing to change");
+
+      // Each setting is optional and only what was SENT is touched. The
+      // console saves one panel at a time, so requiring every field would mean
+      // saving the retention window silently rewrote the grouping window to
+      // whatever that form happened to be holding.
+      const patch: {
+        groupingWindowSeconds?: number;
+        clipRetentionDays?: number;
+      } = {};
+
+      if (body.groupingWindowSeconds !== undefined) {
+        patch.groupingWindowSeconds = wholeNumber(
+          body.groupingWindowSeconds,
+          "groupingWindowSeconds",
+          MIN_GROUPING_WINDOW_SECONDS,
+          MAX_GROUPING_WINDOW_SECONDS,
+          "seconds",
+        );
       }
+
+      if (body.clipRetentionDays !== undefined) {
+        patch.clipRetentionDays = wholeNumber(
+          body.clipRetentionDays,
+          "clipRetentionDays",
+          MIN_CLIP_RETENTION_DAYS,
+          MAX_CLIP_RETENTION_DAYS,
+          "days",
+        );
+      }
+
+      if (Object.keys(patch).length === 0) throw new BadRequest("nothing to change");
 
       return json(
         updateSettings({
           actor,
           orgId: DEFAULT_ORG,
-          groupingWindowSeconds: validateWindow(body.groupingWindowSeconds),
+          ...patch,
           reason: typeof body.reason === "string" ? body.reason : null,
         }),
       );

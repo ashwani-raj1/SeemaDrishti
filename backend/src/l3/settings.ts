@@ -51,8 +51,40 @@ export const DEFAULT_GROUPING_WINDOW_SECONDS = 300;
 export const MIN_GROUPING_WINDOW_SECONDS = 0;
 export const MAX_GROUPING_WINDOW_SECONDS = 3600;
 
+/**
+ * How long an evidence clip is kept before the sweep takes it.
+ *
+ * 7 days, not the 30 that `organisation.retention_days` carries for the record.
+ * They are different things kept for different reasons: an event is a few
+ * hundred bytes and is the record, a clip is about a megabyte and is the
+ * picture attached to it. At fifty crossings a day, 30 days of clips is around
+ * a gigabyte and a half on a post that may have no spare disk and nobody to
+ * clear it.
+ *
+ * A week is long enough that an incident is still illustrated when somebody
+ * comes back to it after a weekend, which is the case this exists for.
+ */
+export const DEFAULT_CLIP_RETENTION_DAYS = 7;
+
+/**
+ * The bounds, and what each end actually means.
+ *
+ * At 0 a clip is swept the moment the sweep next runs -- which is immediately
+ * after the next clip is stored -- so clips effectively stop working. That is
+ * a legitimate thing to want (a post that decides it cannot afford them at
+ * all), so it is allowed rather than forbidden, and the console says what it
+ * means rather than letting somebody discover it.
+ *
+ * At the top, 90 days of clips is tens of gigabytes. Past that the honest
+ * answer is not a bigger number here, it is a bigger disk and a conversation
+ * about what this node is for.
+ */
+export const MIN_CLIP_RETENTION_DAYS = 0;
+export const MAX_CLIP_RETENTION_DAYS = 90;
+
 export interface NodeSettings {
   groupingWindowSeconds: number;
+  clipRetentionDays: number;
 }
 
 /**
@@ -84,15 +116,41 @@ export function groupingWindowSeconds(orgId: string): number {
   return Math.min(MAX_GROUPING_WINDOW_SECONDS, Math.max(MIN_GROUPING_WINDOW_SECONDS, value));
 }
 
+/**
+ * How many days of evidence clips to keep. Same read-side clamping and same
+ * fallback reasoning as the grouping window above.
+ */
+export function clipRetentionDays(orgId: string): number {
+  const row = one<{ clip_retention_days: number | null }>(
+    "SELECT clip_retention_days FROM organisation WHERE id = $id",
+    { $id: orgId },
+  );
+  const value = row?.clip_retention_days;
+  if (typeof value !== "number" || !Number.isFinite(value)) {
+    return DEFAULT_CLIP_RETENTION_DAYS;
+  }
+  return Math.min(MAX_CLIP_RETENTION_DAYS, Math.max(MIN_CLIP_RETENTION_DAYS, value));
+}
+
 export function getSettings(orgId: string): NodeSettings {
-  return { groupingWindowSeconds: groupingWindowSeconds(orgId) };
+  return {
+    groupingWindowSeconds: groupingWindowSeconds(orgId),
+    clipRetentionDays: clipRetentionDays(orgId),
+  };
 }
 
 export interface UpdateSettingsInput {
   actor: Actor;
   orgId: string;
-  /** Already validated and in range by the time it gets here. */
-  groupingWindowSeconds: number;
+  /**
+   * Already validated and in range by the time it gets here.
+   *
+   * Every setting is OPTIONAL: the console sends one panel at a time, and a
+   * required field would mean saving the retention window silently rewrote the
+   * grouping window to whatever the form happened to be holding.
+   */
+  groupingWindowSeconds?: number;
+  clipRetentionDays?: number;
   reason?: string | null;
 }
 
@@ -106,16 +164,40 @@ export interface UpdateSettingsInput {
  */
 export function updateSettings(input: UpdateSettingsInput): NodeSettings {
   const before = getSettings(input.orgId);
-  const next = Math.min(
-    MAX_GROUPING_WINDOW_SECONDS,
-    Math.max(MIN_GROUPING_WINDOW_SECONDS, Math.round(input.groupingWindowSeconds)),
-  );
-  if (next === before.groupingWindowSeconds) return before;
+  const changed: string[] = [];
 
-  run("UPDATE organisation SET grouping_window_seconds = $value WHERE id = $id", {
-    $value: next,
-    $id: input.orgId,
-  });
+  if (input.groupingWindowSeconds !== undefined) {
+    const next = Math.min(
+      MAX_GROUPING_WINDOW_SECONDS,
+      Math.max(MIN_GROUPING_WINDOW_SECONDS, Math.round(input.groupingWindowSeconds)),
+    );
+    if (next !== before.groupingWindowSeconds) {
+      run("UPDATE organisation SET grouping_window_seconds = $value WHERE id = $id", {
+        $value: next,
+        $id: input.orgId,
+      });
+      changed.push("groupingWindowSeconds");
+    }
+  }
+
+  if (input.clipRetentionDays !== undefined) {
+    const next = Math.min(
+      MAX_CLIP_RETENTION_DAYS,
+      Math.max(MIN_CLIP_RETENTION_DAYS, Math.round(input.clipRetentionDays)),
+    );
+    if (next !== before.clipRetentionDays) {
+      run("UPDATE organisation SET clip_retention_days = $value WHERE id = $id", {
+        $value: next,
+        $id: input.orgId,
+      });
+      changed.push("clipRetentionDays");
+    }
+  }
+
+  // No audit row when nothing moved. An operator who opens the page, thinks
+  // about it and saves without changing anything has not made a decision, and
+  // a log full of no-op changes is a log nobody reads.
+  if (changed.length === 0) return before;
 
   const after = getSettings(input.orgId);
   recordAction({
@@ -125,7 +207,9 @@ export function updateSettings(input: UpdateSettingsInput): NodeSettings {
     targetType: "settings",
     targetId: input.orgId,
     reason: input.reason ?? null,
-    detail: { setting: "groupingWindowSeconds" },
+    // Which settings moved, so the audit row answers "what did they change"
+    // without the reader having to diff before against after.
+    detail: { settings: changed },
     before,
     after,
   });

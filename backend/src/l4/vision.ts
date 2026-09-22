@@ -298,6 +298,19 @@ function ingestIntrusion(event: VisionEvent, context: CameraContext) {
       heldFrames: typeof data.held_frames === "number" ? data.held_frames : null,
       camera: context.cameraName,
       detector: event.module,
+      // The evidence clip this crossing belongs to, when the worker was
+      // recording. Carried so the console can ask for the frames directly
+      // rather than searching for a clip by camera and time -- the id is
+      // minted by the worker BEFORE the event is sent (`ibvap/core/clip.py`),
+      // so it is here even when the clip itself never arrives. An incident
+      // whose clip was shed still says which clip it was waiting for.
+      clipId: typeof data.clip_id === "string" ? data.clip_id : null,
+      // Whether the shape this was judged against had ever been drawn. The
+      // console has rendered a ProvisionalBadge from this key since the
+      // evidence table was written, and nothing has ever set it -- so the
+      // "nobody positioned this zone" warning has been dead on the evidence
+      // path. The flag itself arrives from the worker on every crossing.
+      provisional: data.provisional === true,
     },
     // Same zone, same camera: related crossings become one piece of work.
     groupKey: `${event.cameraId}:${zone?.id ?? zoneId ?? "unbound"}`,

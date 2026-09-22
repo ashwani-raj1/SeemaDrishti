@@ -128,8 +128,15 @@ describe("changing it is a decision, and is recorded", () => {
     const rows = audit.queryActions(ORG, { verb: "settings.update", limit: 1 });
     expect(rows.length).toBe(1);
     // `shape()` has already parsed the JSON columns, so these are objects.
-    expect(rows[0]!.before).toEqual({ groupingWindowSeconds: 300 });
-    expect(rows[0]!.after).toEqual({ groupingWindowSeconds: 420 });
+    //
+    // The whole settings object is recorded either side, not just the field
+    // that moved -- so asserting on the one field keeps this test honest as
+    // more settings arrive. `detail.settings` is what names what changed.
+    const before = rows[0]!.before as Record<string, unknown>;
+    const after = rows[0]!.after as Record<string, unknown>;
+    expect(before.groupingWindowSeconds).toBe(300);
+    expect(after.groupingWindowSeconds).toBe(420);
+    expect((rows[0]!.detail as any).settings).toEqual(["groupingWindowSeconds"]);
     expect(rows[0]!.reason).toBe("vehicles queue at the gate for longer than five minutes");
   });
 

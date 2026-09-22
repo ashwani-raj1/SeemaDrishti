@@ -270,20 +270,38 @@ export function shapeEvent(row: EventRow) {
   };
 }
 
+/**
+ * One incident, shaped exactly as `listIncidents` shapes them.
+ *
+ * ONE SHAPE, TWO DOORS, and they must not drift. This is what the SSE push
+ * carries (`publish({ type: "incident" })`), and the console merges a pushed
+ * incident straight into the list it got from `listIncidents`. A field present
+ * on one and missing on the other means a live-arriving incident silently
+ * behaves differently from an identical one that came from a fetch -- it would
+ * drop out of a filter, or out of a count, for no reason anybody could see.
+ */
+const shapeIncident = (row: any) => ({
+  id: row.id,
+  title: row.title,
+  severity: row.severity,
+  status: row.status,
+  cameraId: row.camera_id,
+  zoneId: row.zone_id,
+  openedAt: row.opened_at,
+  lastEventAt: row.last_event_at,
+  eventCount: row.event_count,
+  kind: row.kind ?? null,
+  // Split here rather than leaving the console to parse a comma string --
+  // GROUP_CONCAT is a storage detail and should not reach a screen. Empty for
+  // an incident whose events carry no class, e.g. a camera going quiet.
+  classes: row.classes ? String(row.classes).split(",").filter(Boolean) : [],
+  // MAX over a 0/1 column: true when ANY event in here raised an alert.
+  alertable: row.alertable === 1,
+});
+
 export function getIncident(incidentId: string) {
   const row = one<any>("SELECT * FROM incident_state WHERE id = $id", { $id: incidentId });
-  if (!row) return null;
-  return {
-    id: row.id,
-    title: row.title,
-    severity: row.severity,
-    status: row.status,
-    cameraId: row.camera_id,
-    zoneId: row.zone_id,
-    openedAt: row.opened_at,
-    lastEventAt: row.last_event_at,
-    eventCount: row.event_count,
-  };
+  return row ? shapeIncident(row) : null;
 }
 
 export interface EventQuery {
@@ -391,25 +409,7 @@ export function listIncidents(
                last_event_at DESC
       LIMIT $limit`,
     params,
-  ).map((row) => ({
-    id: row.id,
-    title: row.title,
-    severity: row.severity,
-    status: row.status,
-    cameraId: row.camera_id,
-    zoneId: row.zone_id,
-    openedAt: row.opened_at,
-    lastEventAt: row.last_event_at,
-    eventCount: row.event_count,
-    kind: row.kind ?? null,
-    // Split back into a list here rather than leaving the console to parse a
-    // comma string -- GROUP_CONCAT is a storage detail and should not reach a
-    // screen. Empty for an incident whose events carry no class, e.g. a camera
-    // that stopped sending frames.
-    classes: row.classes ? String(row.classes).split(",").filter(Boolean) : [],
-    // MAX over a 0/1 column: true when ANY event in here raised an alert.
-    alertable: row.alertable === 1,
-  }));
+  ).map(shapeIncident);
 }
 
 

@@ -340,6 +340,51 @@ SELECT
   (SELECT MAX(e.alertable) FROM event e WHERE e.incident_id = i.id) AS alertable
 FROM incident i;
 
+-- ---------------------------------------------------------------- evidence clips
+--
+-- The seconds either side of a confirmed crossing, as the frames the detector
+-- actually judged. Not video: `ibvap/core/clip.py` explains why, and why this
+-- does not contradict the "never video" line in section 8 (that is about what
+-- syncs UPSTREAM over a BOP uplink; these stay on the node and serve the
+-- console over the LAN).
+--
+-- A clip is EVIDENCE, NOT THE RECORD. The event is the record and is
+-- append-only; a clip is the picture attached to it. So there is no
+-- append-only trigger here and there IS a retention sweep: losing a clip to
+-- retention costs a picture, and the event it belonged to is still there
+-- saying what happened.
+CREATE TABLE IF NOT EXISTS clip (
+  id          TEXT PRIMARY KEY,          -- minted by the worker, see core/clip.py
+  org_id      TEXT NOT NULL,
+  camera_id   TEXT,
+  -- The crossing this was cut around, as the worker's wall clock saw it.
+  at          TEXT NOT NULL,
+  -- The rate these frames were ACTUALLY captured at, not the configured target.
+  -- The console shows this to the operator, so a wrong one is a lie about the
+  -- evidence rather than a cosmetic slip.
+  fps         REAL NOT NULL DEFAULT 0,
+  frame_count INTEGER NOT NULL DEFAULT 0,
+  bytes       INTEGER NOT NULL DEFAULT 0,
+  simulated   INTEGER NOT NULL DEFAULT 0,
+  created_at  TEXT NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS clip_by_age ON clip(created_at);
+
+-- One row per frame, which is what makes a scrubber a lookup rather than a
+-- parse: the console asks for frame N and gets exactly that, and the filmstrip
+-- is the manifest without the pixels.
+CREATE TABLE IF NOT EXISTS clip_frame (
+  clip_id     TEXT NOT NULL REFERENCES clip(id),
+  seq         INTEGER NOT NULL,
+  -- Seconds relative to the crossing: negative before, positive after. Lets
+  -- the console place the playhead without knowing the wall clock.
+  offset_s    REAL NOT NULL,
+  jpeg        TEXT NOT NULL,             -- base64, same as event.thumbnail
+  boxes       TEXT NOT NULL DEFAULT '[]',
+  PRIMARY KEY (clip_id, seq)
+);
+
 -- ---------------------------------------------------------------- vehicle & plate watchlist (#36)
 
 CREATE TABLE IF NOT EXISTS watchlist_entry (

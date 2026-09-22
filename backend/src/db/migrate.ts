@@ -204,6 +204,10 @@ export function migrateAfter(db: Database): void {
   // The default is the value that constant held, so a node that upgrades keeps
   // grouping exactly as it did until somebody deliberately changes it.
   addColumn(db, "organisation", "grouping_window_seconds", "INTEGER NOT NULL DEFAULT 300");
+  // Clips are the first thing this node stores that is large enough for
+  // retention to matter. 7 days, not the 30 of  above -- see
+  // DEFAULT_CLIP_RETENTION_DAYS in l3/settings.ts for why they differ.
+  addColumn(db, "organisation", "clip_retention_days", "INTEGER NOT NULL DEFAULT 7");
   renameZoneSectorToArea(db);
 
   if (!tableExists(db, LEGACY)) return;

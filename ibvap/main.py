@@ -52,7 +52,8 @@ from config import (  # noqa: E402
 )
 from core.capture import RTSPStream  # noqa: E402
 from core.detection import SharedDetector  # noqa: E402
-from core.dispatcher import Dispatcher, DurableSink, LiveChannel  # noqa: E402
+from core.clip import ClipRecorder  # noqa: E402
+from core.dispatcher import ClipSink, Dispatcher, DurableSink, LiveChannel  # noqa: E402
 from modules.base import FrameContext, build  # noqa: E402
 
 # Importing a module registers it. A new capability is a new file here plus a
@@ -60,6 +61,29 @@ from modules.base import FrameContext, build  # noqa: E402
 import modules.anpr  # noqa: E402,F401
 import modules.fence  # noqa: E402,F401
 import modules.multi_human  # noqa: E402,F401
+
+
+def _clip_boxes(detections: list[dict]) -> list[dict]:
+    """
+    The boxes worth storing beside a clip frame.
+
+    Trimmed to four fields rather than kept whole: a detection carries the
+    tracker's internals and the raw COCO ids, and a clip is evidence an
+    operator looks at, not a debug dump. Normalised `[x1,y1,x2,y2]` because
+    that is what the console's overlay already draws (see `lib/live.ts`).
+    """
+    out = []
+    for detection in detections:
+        box = detection.get("bbox")
+        if not box:
+            continue
+        out.append({
+            "class": detection.get("class"),
+            "confidence": round(float(detection.get("confidence") or 0.0), 3),
+            "bbox": [round(float(v), 4) for v in box],
+            "track_ref": detection.get("track_ref"),
+        })
+    return out
 
 
 class CameraWorker:
@@ -80,6 +104,21 @@ class CameraWorker:
         self.frames = 0
         self.started_at = 0.0
         self._status = "UNKNOWN"
+
+        # Evidence frames, opt-in per camera (`fence: { clips: true }` in
+        # media/cameras.yml). Off unless asked for: the ring costs real RAM and
+        # a post with ten cameras on one laptop should not pay for it on all
+        # ten to get it on the gate. See core/clip.py for the memory arithmetic.
+        fence_params = camera.module_params("fence")
+        self.clips: ClipRecorder | None = (
+            ClipRecorder(
+                pre_seconds=float(fence_params.get("clip_pre_seconds", 4.0)),
+                post_seconds=float(fence_params.get("clip_post_seconds", 2.0)),
+                fps_hint=settings.target_fps,
+            )
+            if fence_params.get("clips")
+            else None
+        )
 
     def reconfigure(self, zones: list[dict]) -> None:
         """Re-apply operator-edited zones to the fence module, in place.
@@ -161,9 +200,30 @@ class CameraWorker:
                     self.dispatcher.dispatch(
                         camera.id, module_name, ts,
                         live_items, durable_items, camera.simulated)
+
+                # Clips whose post-roll has elapsed. Cheap when none are ready,
+                # which is almost always -- it walks a list that is usually
+                # empty. Encoding happens inside `collect`, off the event loop
+                # only in the sense that this whole block runs between frames;
+                # at one clip per crossing that is the right trade against the
+                # complexity of another thread.
+                self._drain_clips()
         finally:
             if self.reader:
                 self.reader.stop()
+            # A clip half-collected when the process stops is still evidence of
+            # something that happened. Drained rather than discarded, for the
+            # same reason DurableSink drains its queue on shutdown.
+            self._drain_clips(force=True)
+
+    def _drain_clips(self, force: bool = False) -> None:
+        if self.clips is None:
+            return
+        sink = getattr(self.dispatcher, "clips", None)
+        for clip in self.clips.collect(force=force):
+            if sink is None:
+                continue
+            sink.submit_clip(self.camera.id, clip, self.camera.simulated)
 
     def _infer(self, frame, ctx: FrameContext):
         """
@@ -174,6 +234,15 @@ class CameraWorker:
         would buy nothing and cost a context switch per module per frame.
         """
         detections = self.detector.detect(frame)
+
+        # Into the ring BEFORE the modules run. They receive the same array and
+        # nothing forbids one of them drawing on it, so buffering afterwards
+        # would record whatever the last module left behind rather than what the
+        # detector judged. (`ClipRecorder.add` copies, so this is belt and
+        # braces -- but the ordering is the part that would be silently wrong.)
+        if self.clips is not None:
+            self.clips.add(ctx.ts, frame, _clip_boxes(detections))
+
         results = []
         for module in self.modules:
             try:
@@ -184,7 +253,42 @@ class CameraWorker:
                 print(f"[{ctx.camera_id}/{module.name}] {type(error).__name__}: {error}")
                 continue
             results.append((module.name, live_items, durable_items))
+
+        if self.clips is not None:
+            self._open_clips(results, ctx)
         return results
+
+    def _open_clips(self, results, ctx: FrameContext) -> None:
+        """
+        Start a clip for every crossing that just confirmed.
+
+        WHY THE POLICY LIVES HERE AND NOT IN `modules/fence.py`. Section 9: a
+        module returns `(live, durable)` and names no transport. Deciding that
+        an event is worth keeping frames for, and owning the frames to keep, is
+        this file's job -- the module would otherwise need a reference to a
+        recorder, which is a transport by another name.
+
+        The id is minted now and written into the event that is about to be
+        sent, so the link between an incident and its frames exists at the
+        moment of emission. It does not depend on the node answering, on
+        reading an HTTP response, or on the clip ever arriving -- an incident
+        whose clip was shed still says which clip it was waiting for.
+
+        CONFIRMED CROSSINGS ONLY. A track lost before confirmation already
+        carries a thumbnail from the moment it crossed, and cutting a clip for
+        every flicker would empty the ring onto the disk.
+        """
+        for _, _, durable_items in results:
+            for event in durable_items:
+                if event.get("event_type") != "intrusion":
+                    continue
+                data = event.get("data") or {}
+                if data.get("rule") != "zone.crossing.confirmed":
+                    continue
+                clip_id = self.clips.next_id(self.run_id, ctx.camera_id)
+                data["clip_id"] = clip_id
+                event["data"] = data
+                self.clips.start(clip_id, ctx.ts)
 
     def _health(self, now: float) -> None:
         """
@@ -334,6 +438,7 @@ async def broadcast_status(live: LiveChannel, durable: "DurableSink | None",
             "uptime_s": round(time.monotonic() - started, 1),
             "cameras": [worker.snapshot() for worker in workers],
             "durable": durable.stats() if durable else None,
+            "clips": clips.stats() if clips else None,
         })
         try:
             await asyncio.wait_for(stop.wait(), timeout=every)
@@ -428,7 +533,7 @@ async def amain(args) -> None:
     started = time.monotonic()
     camera_tasks = [asyncio.create_task(w.run(stop), name=w.camera.id) for w in workers]
     tasks.append(asyncio.create_task(
-        broadcast_status(live, durable, workers, run_id, started, stop), name="status"))
+        broadcast_status(live, durable, workers, run_id, started, stop, clips), name="status"))
 
     if args.seconds:
         print(f"[vision] running for {args.seconds}s. ctrl-c to stop early.\n")
