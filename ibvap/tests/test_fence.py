@@ -188,6 +188,68 @@ class TestLostTracks:
         assert [e["data"]["rule"] for e in durable] == ["zone.crossing.unconfirmed_track_lost"]
         assert module.stats()["lost_mid_crossing"] == 1
 
+    def test_it_carries_the_last_real_observation_not_zeros(self):
+        # This shipped wrong: the lost path built a synthetic detection with
+        # confidence 0.0 and no box, so the console showed "vehicle 0%" for
+        # every subject that walked out of frame mid-crossing -- reading as a
+        # detection nobody believed rather than one that was lost.
+        module = build(confirm_frames=5)
+        walk(module, [(0.5, 0.20), (0.5, 0.40), (0.5, 0.55)])
+
+        _, durable = module.process(None, [], FrameContext("cam_test", 999.0, 640, 480, 99))
+        data = durable[0]["data"]
+        assert data["confidence"] == 0.9          # what the detector last said
+        assert data["bbox"] is not None           # where it last was
+
+    def test_it_carries_the_picture_from_when_the_subject_was_there(self, monkeypatch):
+        # A lost crossing has NO current frame by definition, so the thumbnail
+        # has to be cut when the crossing starts and carried. Cutting it at
+        # confirm time meant the crossings most worth looking at -- somebody
+        # stepping out of view on the line -- were the only ones with nothing
+        # to look at.
+        #
+        # Stubbed rather than encoded so this file keeps its no-OpenCV,
+        # no-image property; what is under test is the carrying, not the JPEG.
+        import modules.fence as fence
+
+        monkeypatch.setattr(fence, "thumbnail_of", lambda frame, bbox: "PICTURE")
+
+        module = build(confirm_frames=5)
+        walk(module, [(0.5, 0.20), (0.5, 0.40), (0.5, 0.55)])
+
+        _, durable = module.process(None, [], FrameContext("cam_test", 999.0, 640, 480, 99))
+        assert durable[0]["data"]["thumbnail"] == "PICTURE"
+
+    def test_a_confirmed_crossing_uses_the_crossing_frame_not_a_later_one(self, monkeypatch):
+        # The frame that matters is the one the subject crossed on. By the time
+        # a crossing confirms, a vehicle has usually left the shot -- so cutting
+        # at confirm produced a photograph of empty ground as the evidence for
+        # "something crossed here".
+        import modules.fence as fence
+
+        frames: list[int] = []
+
+        def stub(frame, bbox):
+            frames.append(frame)
+            return f"PICTURE-{frame}"
+
+        monkeypatch.setattr(fence, "thumbnail_of", stub)
+
+        module = build(confirm_frames=3)
+        events = []
+        for index, (x, y) in enumerate(THROUGH):
+            ctx = FrameContext("cam_test", index / FPS, 640, 480, index)
+            # The "frame" is just an integer here, so the assertion can name
+            # exactly which one was kept.
+            _, durable = module.process(index, [detection(x, y)], ctx)
+            events.extend(durable)
+
+        assert len(events) == 1
+        # Exactly one encode for the whole crossing, and it is the first frame
+        # on the far side -- not the frame that happened to confirm it.
+        assert len(frames) == 1
+        assert events[0]["data"]["thumbnail"] == f"PICTURE-{frames[0]}"
+
 
 class TestReconfigure:
     def test_a_removed_zone_drops_its_per_track_judgement(self):

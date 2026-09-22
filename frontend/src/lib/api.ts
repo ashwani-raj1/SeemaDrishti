@@ -8,8 +8,8 @@
 import type {
   Action, CameraDetail, CameraIncidents, ChainVerdict, CreateWatchlistInput,
   Decision, DetectVehicleInput, FrameAnalysisResult, Health, HubCameraList, IbvapEvent, Incident,
-  IncidentDetail, MonitoringZone, PlateDetection, Point, ServerConfig, SimStatus,
-  UpdateWatchlistInput, WatchlistEntry, WatchlistStats,
+  IncidentDetail, MonitoringZone, NodeSettings, PlateDetection, Point, ResetCounts, ServerConfig,
+  SimStatus, UpdateWatchlistInput, WatchlistEntry, WatchlistStats,
 } from "./types";
 
 /**
@@ -37,6 +37,15 @@ export const isForbidden = (error: unknown): error is ApiError =>
  *  that already belongs to another zone. Not the caller's mistake. */
 export const isConflict = (error: unknown): error is ApiError =>
   error instanceof ApiError && error.status === 409;
+
+/**
+ * Absent rather than broken.
+ *
+ * Some routes exist only on a developer node (`/api/admin/reset`), so a 404 is
+ * the normal answer on a real one and must not be shown as an error.
+ */
+export const isNotFound = (error: unknown): error is ApiError =>
+  error instanceof ApiError && error.status === 404;
 
 let apiBase = "";
 let actorId = "usr_operator";
@@ -283,6 +292,31 @@ export const api = {
     request<MonitoringZone>(`/api/zones/${id}/cameras/${cameraId}/targets`, {
       method: "PUT",
       body: JSON.stringify({ targets, reason }),
+    }),
+
+  // ---- developer box only ---------------------------------------------
+  // Absent (404) unless IBVAP_DEBUG is on, which is what a deployed post
+  // gets by saying nothing. The settings page treats the 404 as "this is a
+  // real node" rather than as an error.
+  // ---- node settings ---------------------------------------------------
+  // Reading is open; writing is supervisor-only and leaves an audit row, the
+  // same as a zone edit. The reason is optional but recorded when given.
+
+  settings: () => request<NodeSettings>("/api/settings"),
+
+  updateSettings: (patch: { groupingWindowSeconds?: number; reason?: string }) =>
+    request<NodeSettings>("/api/settings", {
+      method: "PATCH",
+      body: JSON.stringify(patch),
+    }),
+
+  resetPreview: () =>
+    request<{ debug: boolean; counts: ResetCounts }>("/api/admin/reset"),
+
+  reset: (reason: string) =>
+    post<{ ok: true; removed: ResetCounts }>("/api/admin/reset", {
+      confirm: "RESET",
+      reason,
     }),
 
   sim: () => request<SimStatus>("/api/sim"),

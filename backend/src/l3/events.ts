@@ -2,6 +2,7 @@ import { all, db, one, run } from "../db";
 import { id, nowIso } from "../core/ids";
 import { SEVERITY_RANK, type Severity, type SourceType } from "../core/types";
 import { publish } from "../l4/bus";
+import { groupingWindowSeconds } from "./settings";
 
 /**
  * L3 -- where a raw finding becomes a record that lasts.
@@ -14,8 +15,14 @@ import { publish } from "../l4/bus";
  * work is "someone crossed the fence", not "here are forty detections".
  */
 
-/** How long an incident stays open to new related events. */
-const GROUPING_WINDOW_SECONDS = 300;
+/**
+ * How long an incident stays open to new related events.
+ *
+ * Read per event from the org's settings rather than held as a constant here:
+ * the right window is a property of the ground being watched, so a post has to
+ * be able to change it without a deploy. `l3/settings.ts` owns the value, its
+ * bounds and the audit row every change leaves behind.
+ */
 
 export interface EventInput {
   orgId: string;
@@ -121,7 +128,8 @@ export function eventThumbnail(eventId: string): string | null {
  * so an operator's decision cannot be silently undone by later activity.
  */
 function attachIncident(input: EventInput): { incidentId: string; opened: boolean } {
-  const cutoff = new Date(Date.parse(input.occurredAt) - GROUPING_WINDOW_SECONDS * 1000).toISOString();
+  const window = groupingWindowSeconds(input.orgId);
+  const cutoff = new Date(Date.parse(input.occurredAt) - window * 1000).toISOString();
 
   const existing = one<{ id: string; severity: Severity }>(
     `SELECT id, severity FROM incident_state

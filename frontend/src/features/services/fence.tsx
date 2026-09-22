@@ -143,22 +143,55 @@ export function FenceScreen() {
 
   const stats = useMemo(() => summarise(events), [events]);
 
+  /**
+   * Which incidents actually raised an alert.
+   *
+   * An incident exists for EVERY event, alertable or not (`l3/events.ts`:
+   * "non-alertable events still get an incident"). So an incident whose events
+   * were all `log_only` or all lost before confirming is a record, not an
+   * alarm -- and it carries the severity its targets say, which is why a
+   * crossing nobody was told about can arrive here reading CRITICAL.
+   *
+   * Putting one of those under a red "Active Alert" banner is the exact
+   * confusion this console exists to prevent: it says a human is needed where
+   * the system deliberately decided no human was. So alerting incidents win,
+   * and a non-alerting one is shown as what it is.
+   */
+  const alerting = useMemo(() => {
+    const raised = new Set(
+      events.filter((event) => event.alertable && event.incidentId).map((event) => event.incidentId!),
+    );
+    return raised;
+  }, [events]);
+
   const active = useMemo(
     () =>
       incidents
         .filter((incident) => incident.status === "OPEN" || incident.status === "ACKNOWLEDGED")
         .sort(
           (a, b) =>
+            // An incident that woke somebody outranks one that never did,
+            // whatever their severities say.
+            Number(alerting.has(b.id)) - Number(alerting.has(a.id)) ||
             SEVERITY_RANK[b.severity] - SEVERITY_RANK[a.severity] ||
             Date.parse(b.lastEventAt) - Date.parse(a.lastEventAt),
         )[0] ?? null,
-    [incidents],
+    [incidents, alerting],
   );
 
-  const activeEvent = useMemo(
-    () => (active ? events.find((event) => event.incidentId === active.id) ?? null : null),
-    [active, events],
-  );
+  /**
+   * The picture for the alert panel.
+   *
+   * The newest event in an incident is often the one that was LOST -- and a
+   * lost track is exactly the case with the weakest evidence. Preferring one
+   * that has a picture means the panel shows the best look at the subject the
+   * system ever got, rather than whichever moment happened to be last.
+   */
+  const activeEvent = useMemo(() => {
+    if (!active) return null;
+    const mine = events.filter((event) => event.incidentId === active.id);
+    return mine.find((event) => event.hasThumbnail) ?? mine[0] ?? null;
+  }, [active, events]);
 
   const decide = async (incident: Incident, decision: "acknowledge" | "escalate") => {
     setDeciding(true);
@@ -301,6 +334,7 @@ export function FenceScreen() {
           <div className="space-y-4">
             <ActiveAlert
               incident={active}
+              raised={active ? alerting.has(active.id) : false}
               event={activeEvent}
               zoneName={active?.zoneId ? zoneNames.get(active.zoneId) : undefined}
               cameraName={hubCamera.name}

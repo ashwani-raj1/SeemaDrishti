@@ -19,6 +19,14 @@ CREATE TABLE IF NOT EXISTS organisation (
   name           TEXT NOT NULL,
   code           TEXT NOT NULL UNIQUE,
   retention_days INTEGER NOT NULL DEFAULT 30,
+  -- How long an incident stays open to new events sharing its group key.
+  -- Post-tunable because the right answer is a property of the ground, not of
+  -- the software: a gate where vehicles queue wants a longer window than a
+  -- fence line in open country, and getting it wrong shows up either as one
+  -- incident swallowing a second genuine intrusion or as forty incidents for
+  -- one person walking a fence. Changed only through `/api/settings`, which
+  -- writes an audit row -- see `l3/settings.ts`.
+  grouping_window_seconds INTEGER NOT NULL DEFAULT 300,
   created_at     TEXT NOT NULL
 );
 

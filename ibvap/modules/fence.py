@@ -266,12 +266,14 @@ class FenceModule(VisionModule):
                 memory.cooled_until[pending["direction"]] = ctx.ts + self.cooldown_seconds
                 self.confirmed += 1
                 return self._intrusion(
-                    zone, track, detection, ctx, frame,
+                    zone, track, detection, ctx,
                     direction=pending["direction"],
                     crossed_at=pending["at"],
                     held=held,
                     frames=pending["frames"],
                     rule="zone.crossing.confirmed",
+                    # The frame the crossing happened on, not this one.
+                    thumbnail=pending.get("thumb"),
                 )
             return None
 
@@ -295,17 +297,40 @@ class FenceModule(VisionModule):
             memory.cooled_until[direction] = ctx.ts + self.cooldown_seconds
             self.confirmed += 1
             return self._intrusion(
-                zone, track, detection, ctx, frame,
+                zone, track, detection, ctx,
                 direction=direction, crossed_at=to, held=0.0, frames=1,
                 rule="zone.crossing.confirmed",
+                # No pending state to carry one, because the supervisor asked
+                # for no delay at all -- so this frame IS the crossing frame.
+                thumbnail=thumbnail_of(frame, detection.get("bbox_xywh")),
             )
 
+        # THE PICTURE IS CUT HERE, at the moment of crossing, and carried until
+        # the crossing resolves one way or the other.
+        #
+        # Cutting it at CONFIRM instead was wrong twice. A crossing that was
+        # never confirmed -- the subject stepped out of view on the line, which
+        # is exactly what avoiding a camera looks like -- reached the node with
+        # no picture at all, because `_evict` has no frame to cut from by
+        # definition. And a confirmed one got a frame N frames LATE, by which
+        # time a vehicle has usually left the shot, so the evidence for
+        # "something crossed here" was a photograph of empty ground.
+        #
+        # One encode per crossing attempt, not per frame. Attempts are seconds
+        # apart at worst, so this stays inside the budget in section 3.
         memory.pending = {
             "direction": direction,
             "side_after": side_now,
             "since": ctx.ts,
             "frames": 1,
             "at": to,
+            "thumb": thumbnail_of(frame, detection.get("bbox_xywh")),
+            # The last thing actually observed about the subject. `_evict` has
+            # no detection of its own, and reporting 0.0 confidence with no box
+            # made a lost crossing look like a detection the model had no faith
+            # in, rather than one it lost sight of.
+            "confidence": detection.get("confidence"),
+            "bbox": detection.get("bbox_xywh"),
         }
         return None
 
@@ -330,15 +355,32 @@ class FenceModule(VisionModule):
                 if zone is None:
                     continue
                 self.lost += 1
+                pending = memory.pending
                 out.append(self._intrusion(
-                    zone, track, {"class": track.klass, "confidence": 0.0,
-                                  "bbox_xywh": None, "track_id": None},
+                    zone, track,
+                    # The last thing actually observed, carried from the moment
+                    # the crossing started. This used to be a hardcoded
+                    # confidence of 0.0 and no box, which the console rendered
+                    # as "vehicle 0%" -- reading as a detection nobody believed
+                    # rather than one that walked out of frame mid-crossing.
+                    {
+                        "class": track.klass,
+                        "confidence": pending.get("confidence") or 0.0,
+                        "bbox_xywh": pending.get("bbox"),
+                        "track_id": None,
+                    },
                     ctx,
-                    direction=memory.pending["direction"],
-                    crossed_at=memory.pending["at"],
-                    held=track.last_seen - memory.pending["since"],
-                    frames=memory.pending["frames"],
+                    direction=pending["direction"],
+                    crossed_at=pending["at"],
+                    held=track.last_seen - pending["since"],
+                    frames=pending["frames"],
                     rule="zone.crossing.unconfirmed_track_lost",
+                    # The picture from when it was still there. There is no
+                    # current frame to cut -- that is the whole meaning of this
+                    # event -- so without carrying one, the crossings most
+                    # worth looking at were the only ones with nothing to look
+                    # at.
+                    thumbnail=pending.get("thumb"),
                 ))
             del self._tracks[ref]
         return out
@@ -353,19 +395,19 @@ class FenceModule(VisionModule):
             "zones": zone_states,
         }
 
-    def _intrusion(self, zone, track, detection, ctx: FrameContext, frame=None, *,
-                   direction, crossed_at, held, frames, rule) -> dict:
+    def _intrusion(self, zone, track, detection, ctx: FrameContext, *,
+                   direction, crossed_at, held, frames, rule,
+                   thumbnail: str | None = None) -> dict:
         """
         The durable payload. Every field here answers a question an operator
         will ask at 3 a.m.: which zone, which way, how long was it held, what
         path did it walk, and how sure was the detector.
 
-        `frame` is optional and is the only reason this signature is not pure
-        numbers. The lost-track sweep below has no current frame -- the subject
-        is gone, which is precisely what it is reporting -- so those events
-        carry no picture and the console falls back to drawing the geometry.
+        `thumbnail` is handed in rather than cut here, because the frame worth
+        keeping is the one the crossing STARTED on and this is called anywhere
+        from three frames to thirty seconds later. Every caller carries it from
+        the pending state; see `_evaluate`.
         """
-        thumbnail = thumbnail_of(frame, detection.get("bbox_xywh"))
         return {
             "event_type": "intrusion",
             "track_id": detection.get("track_id"),

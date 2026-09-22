@@ -103,6 +103,7 @@ const SEVERITY_RING: Record<Severity, string> = {
  */
 export function ActiveAlert({
   incident,
+  raised,
   event,
   zoneName,
   cameraName,
@@ -110,6 +111,15 @@ export function ActiveAlert({
   onDecide,
 }: {
   incident: Incident | null;
+  /**
+   * Whether any event in this incident was actually alertable.
+   *
+   * False means the system recorded it and deliberately told nobody -- an
+   * animal on the fence line, a shape nobody drew, a track lost before it
+   * confirmed. It is still worth showing, and it still keeps its severity,
+   * but calling it an alert would claim a decision the node never made.
+   */
+  raised: boolean;
   /** The event that opened it, for the picture. */
   event: IbvapEvent | null;
   zoneName?: string;
@@ -133,17 +143,41 @@ export function ActiveAlert({
   }
 
   return (
-    <Card className={cn("gap-0 border p-4", SEVERITY_RING[incident.severity])}>
+    <Card
+      className={cn(
+        "gap-0 border p-4",
+        raised ? SEVERITY_RING[incident.severity] : "bg-muted/30",
+      )}
+    >
       <div className="flex items-center justify-between gap-2">
-        <span className="flex items-center gap-2 text-sm font-semibold text-destructive">
+        <span
+          className={cn(
+            "flex items-center gap-2 text-sm font-semibold",
+            raised ? "text-destructive" : "text-muted-foreground",
+          )}
+        >
           <BellRingIcon className="size-4" />
-          Active Alert
+          {raised ? "Active Alert" : "Recorded, not alerted"}
         </span>
-        <Badge variant="destructive" className="gap-1 text-[10px] font-bold uppercase">
-          <span className="size-1.5 animate-pulse rounded-full bg-white" />
+        <Badge
+          variant={raised ? "destructive" : "secondary"}
+          className="gap-1 text-[10px] font-bold uppercase"
+        >
+          {raised && <span className="size-1.5 animate-pulse rounded-full bg-white" />}
           {incident.severity}
         </Badge>
       </div>
+
+      {!raised && (
+        // The single most useful sentence on this panel when it is quiet: it
+        // says the system saw something, judged it, and chose not to shout --
+        // which is a very different state from "nothing happened".
+        <p className="mt-2 rounded bg-background/60 px-2 py-1.5 text-[11px] leading-snug text-muted-foreground">
+          Every event in this incident was written to the record without raising
+          an alert. Nothing here is waiting on you; the buttons below still work
+          if you want it marked.
+        </p>
+      )}
 
       <Link to={`/incidents/${incident.id}`} className="mt-3 block hover:underline">
         <p className="text-base font-semibold leading-snug">{incident.title}</p>
@@ -166,7 +200,8 @@ export function ActiveAlert({
         <Button
           disabled={pending || incident.status === "ACKNOWLEDGED"}
           onClick={() => onDecide(incident, "acknowledge")}
-          className="bg-destructive text-white hover:bg-destructive/90"
+          className={cn(raised && "bg-destructive text-white hover:bg-destructive/90")}
+          variant={raised ? "default" : "outline"}
         >
           <CheckIcon className="size-4" />
           {incident.status === "ACKNOWLEDGED" ? "Acknowledged" : "Acknowledge"}

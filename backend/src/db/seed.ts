@@ -153,8 +153,9 @@ export function seed(): void {
   const at = nowIso();
 
   run(
-    `INSERT INTO organisation (id, name, code, retention_days, created_at)
-     VALUES ($id, 'Border Security Force', 'BSF', 30, $at)`,
+    `INSERT INTO organisation
+       (id, name, code, retention_days, grouping_window_seconds, created_at)
+     VALUES ($id, 'Border Security Force', 'BSF', 30, 300, $at)`,
     { $id: ORG, $at: at },
   );
 

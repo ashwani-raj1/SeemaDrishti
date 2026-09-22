@@ -191,6 +191,10 @@ export function migrateAfter(db: Database): void {
   // which is exactly what was true before the vision service started sending
   // one.
   addColumn(db, "event", "thumbnail", "TEXT");
+  // The incident grouping window, which used to be a constant in l3/events.ts.
+  // The default is the value that constant held, so a node that upgrades keeps
+  // grouping exactly as it did until somebody deliberately changes it.
+  addColumn(db, "organisation", "grouping_window_seconds", "INTEGER NOT NULL DEFAULT 300");
   renameZoneSectorToArea(db);
 
   if (!tableExists(db, LEGACY)) return;

@@ -1,5 +1,5 @@
 import { NavLink, useLocation } from "react-router-dom";
-import { LockIcon, SettingsIcon } from "lucide-react";
+import { LockIcon } from "lucide-react";
 import {
   Sidebar,
   SidebarContent,
@@ -24,10 +24,14 @@ export function AppSidebar() {
   const { pathname } = useLocation();
 
   const sections = enabledSections(config.sections);
+  // Footer sections are pinned at the bottom rather than listed in their
+  // group, so they must come OUT of the grouped list -- otherwise the sidebar
+  // shows the same page twice, which is what it did.
   const byGroup = GROUP_ORDER.map((group) => ({
     group,
-    items: sections.filter((section) => section.group === group),
+    items: sections.filter((section) => section.group === group && !section.footer),
   })).filter(({ items }) => items.length > 0);
+  const pinned = sections.filter((section) => section.footer);
 
   return (
     <Sidebar collapsible="icon" className="border-r border-slate-200/80 dark:border-slate-800">
@@ -112,17 +116,22 @@ export function AppSidebar() {
           </div>
         </div>
 
-        {/* Settings Button matching Image 1 */}
-        <SidebarMenu>
-          <SidebarMenuItem>
-            <SidebarMenuButton asChild tooltip="Settings & Profile">
-              <NavLink to="/profile" className="flex items-center gap-2 text-xs font-semibold text-slate-700 dark:text-slate-300">
-                <SettingsIcon className="size-4" />
-                <span className="group-data-[collapsible=icon]:hidden">Settings</span>
-              </NavLink>
-            </SidebarMenuButton>
-          </SidebarMenuItem>
-        </SidebarMenu>
+        {/* Pinned at the bottom, from the registry rather than hand-written.
+            This used to be a hardcoded link to `/profile` -- a path with no
+            route in the app, so it had always gone nowhere. Driving it from
+            the same list as every other page is what stops that recurring. */}
+        {pinned.length > 0 && (
+          <SidebarMenu>
+            {pinned.map((section) => (
+              <SidebarItem
+                key={section.id}
+                section={section}
+                active={pathname === section.path}
+                locked={!canUse(section, role)}
+              />
+            ))}
+          </SidebarMenu>
+        )}
 
         <div className="truncate px-2 py-0.5 text-[10px] font-mono text-slate-400 group-data-[collapsible=icon]:hidden">
           {org ? `${org.name} · ${org.code}` : "No organisation"}

@@ -179,12 +179,28 @@ export interface MediaConfig {
   boxesUrl: string;
 }
 
+/**
+ * Node behaviour an operator can change, and the console has to be able to
+ * explain. Kept apart from `Organisation` because these are settings somebody
+ * tunes during a shift, not facts about who is running the post.
+ */
+export interface NodeSettings {
+  /**
+   * How long an incident stays open to new events sharing its group key.
+   *
+   * This is the answer to "why are these two crossings one incident". The
+   * console shows it next to the incident list for that reason.
+   */
+  groupingWindowSeconds: number;
+}
+
 export interface ServerConfig {
   org: Organisation;
   site: Site;
   users: AppUser[];
   cameras: Camera[];
   media?: MediaConfig;
+  settings: NodeSettings;
 }
 
 /** What the explain overlay (#21) draws from. All coordinates normalised 0..1. */
@@ -256,6 +272,15 @@ export interface Incident {
   openedAt: string;
   lastEventAt: string;
   eventCount: number;
+}
+
+/** What a developer-box reset would remove, or did. */
+export interface ResetCounts {
+  events: number;
+  incidents: number;
+  alerts: number;
+  trackedThings: number;
+  plateDetections: number;
 }
 
 export interface Action {

@@ -69,10 +69,18 @@ CORS is `*` on every route; headers `content-type, x-ibvap-actor`.
 | GET | `/api/health` | Liveness, live track count, SSE subscriber count, simulator state |
 | GET | `/api/config` | **The console's boot call.** Org, site, users, media addresses, every camera with its resolved zones |
 | GET | `/api/stream` | SSE. See [Live push](#live-push--apistream) |
+| GET | `/api/settings` | Node behaviour in force: `{ groupingWindowSeconds }` |
+| PATCH | `/api/settings` | `{ groupingWindowSeconds?, reason? }` — supervisor+, audited |
 
 `/api/config` is also what the **vision service** polls for zones, every
 `IBVAP_ZONE_REFRESH_SECONDS`. It returns addresses only — a real camera's RTSP
-URL carries credentials and never leaves the hub.
+URL carries credentials and never leaves the hub. It carries the same
+`settings` object as `/api/settings`, so the console gets it on the boot call.
+
+`groupingWindowSeconds` is how long an incident stays open to new events
+sharing its group key — see [Incidents](#incidents). `0`–`3600`, default
+`300`; anything outside that range is a `400`. A `PATCH` that submits the value
+already in force changes nothing and writes no audit row.
 
 ## Incidents
 
@@ -87,6 +95,22 @@ need `reason` (`422` without).
 
 **Recording the decision IS the state change** — there is no status column, so
 an incident cannot change state without an audit row.
+
+### How events become one incident
+
+An event joins an existing incident when **all three** hold: same `groupKey`,
+the incident's `last_event_at` is within `groupingWindowSeconds` of the new
+event's `occurredAt`, and the incident is not `DISMISSED`. Otherwise a new
+incident opens.
+
+- Group keys are built by the producer: `camera:zone` for fence crossings and
+  sensor contacts, `camera:health`, `camera:reid`, and
+  `camera:zone:plate:PLATE` for plate reads.
+- The window **slides** — it is measured off the last event, not off
+  `opened_at`, so continuous activity keeps one incident alive.
+- Severity and title are **worst-wins**: a later, more serious event rewrites
+  both.
+- A dismissed incident is **never** reopened.
 
 ## Investigate
 
