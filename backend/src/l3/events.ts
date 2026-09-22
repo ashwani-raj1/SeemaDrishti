@@ -345,7 +345,20 @@ export function queryEvents(orgId: string, q: EventQuery) {
 /** The operator's screen: incidents ranked by severity, then recency. */
 export function listIncidents(
   orgId: string,
-  opts: { status?: string; cameraId?: string; zoneId?: string; limit?: number } = {},
+  opts: {
+    status?: string;
+    cameraId?: string;
+    zoneId?: string;
+    /** Event kind: zone_crossing, camera_health, plate_read, reidentification. */
+    kind?: string;
+    severity?: string;
+    /** One class the incident saw, e.g. "person". Matches if ANY event did. */
+    class?: string;
+    /** Bounds on `last_event_at`, not `opened_at`. */
+    since?: string;
+    until?: string;
+    limit?: number;
+  } = {},
 ) {
   const where = ["org_id = $org"];
   const params: Record<string, unknown> = { $org: orgId };
@@ -355,6 +368,20 @@ export function listIncidents(
   // clicking a camera, which the unfiltered queue is not shaped to answer.
   if (opts.cameraId) (where.push("camera_id = $camera"), (params.$camera = opts.cameraId));
   if (opts.zoneId) (where.push("zone_id = $zone"), (params.$zone = opts.zoneId));
+  if (opts.kind) (where.push("kind = $kind"), (params.$kind = opts.kind));
+  if (opts.severity) (where.push("severity = $severity"), (params.$severity = opts.severity));
+  // `classes` is a comma-separated list from GROUP_CONCAT, so matching needs
+  // the commas on both ends -- otherwise "cattle" would match "wild_cattle"
+  // and "person" would match nothing when it is second in the list.
+  if (opts.class) {
+    where.push("(',' || COALESCE(classes, '') || ',') LIKE $class");
+    params.$class = `%,${opts.class},%`;
+  }
+  // FILTERED ON `last_event_at`, deliberately. An incident opened yesterday
+  // that is still collecting events today is today's problem, and a date
+  // filter that hid it behind its opening time would be the one that loses it.
+  if (opts.since) (where.push("last_event_at >= $since"), (params.$since = opts.since));
+  if (opts.until) (where.push("last_event_at <= $until"), (params.$until = opts.until));
   params.$limit = Math.min(opts.limit ?? 100, 500);
 
   return all<any>(
@@ -374,6 +401,14 @@ export function listIncidents(
     openedAt: row.opened_at,
     lastEventAt: row.last_event_at,
     eventCount: row.event_count,
+    kind: row.kind ?? null,
+    // Split back into a list here rather than leaving the console to parse a
+    // comma string -- GROUP_CONCAT is a storage detail and should not reach a
+    // screen. Empty for an incident whose events carry no class, e.g. a camera
+    // that stopped sending frames.
+    classes: row.classes ? String(row.classes).split(",").filter(Boolean) : [],
+    // MAX over a 0/1 column: true when ANY event in here raised an alert.
+    alertable: row.alertable === 1,
   }));
 }
 

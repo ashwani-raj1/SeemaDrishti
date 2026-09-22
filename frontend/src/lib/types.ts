@@ -272,6 +272,24 @@ export interface Incident {
   openedAt: string;
   lastEventAt: string;
   eventCount: number;
+  /**
+   * What kind of thing this is, from its own events rather than its title.
+   *
+   * `zone_crossing`, `camera_health`, `plate_read`, `reidentification`. Null
+   * only for an incident whose events have somehow gone, which the append-only
+   * log makes close to impossible.
+   */
+  kind?: string | null;
+  /** Every class seen in this incident. Empty for e.g. a camera going quiet. */
+  classes?: string[];
+  /**
+   * True when ANY event in here raised an alert.
+   *
+   * An incident exists for every event, alertable or not, so this is the
+   * difference between "the system recorded it" and "the system asked for a
+   * human" -- and the queue has to be able to show only the second.
+   */
+  alertable?: boolean;
 }
 
 /** What a developer-box reset would remove, or did. */

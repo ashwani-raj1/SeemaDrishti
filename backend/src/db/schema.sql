@@ -320,7 +320,24 @@ SELECT
     ORDER BY a.seq DESC
     LIMIT 1
   ), 'OPEN') AS status,
-  (SELECT COUNT(*) FROM event e WHERE e.incident_id = i.id) AS event_count
+  (SELECT COUNT(*) FROM event e WHERE e.incident_id = i.id) AS event_count,
+  -- What KIND of thing this is: zone_crossing, camera_health, plate_read.
+  -- Taken from the incident's own events rather than parsed out of the title,
+  -- which is prose and changes. Grouping is by `group_key`, which pins the
+  -- camera, zone and rule, so an incident's events share a kind in practice --
+  -- the newest is taken so a shape that changed underneath cannot leave the
+  -- filter pointing at what this used to be.
+  (SELECT e.kind FROM event e WHERE e.incident_id = i.id
+    ORDER BY e.seq DESC LIMIT 1) AS kind,
+  -- Every class seen in this incident, comma-separated. An operator filtering
+  -- the queue thinks "show me the people, not the cattle" long before they
+  -- think about event kinds, and one incident can hold both.
+  (SELECT GROUP_CONCAT(DISTINCT e.class) FROM event e
+    WHERE e.incident_id = i.id AND e.class IS NOT NULL) AS classes,
+  -- Did anything in here actually raise an alert? An incident exists for every
+  -- event, alertable or not, so "recorded" and "shouted about" are different
+  -- questions and the queue has to be able to ask the second one.
+  (SELECT MAX(e.alertable) FROM event e WHERE e.incident_id = i.id) AS alertable
 FROM incident i;
 
 -- ---------------------------------------------------------------- vehicle & plate watchlist (#36)

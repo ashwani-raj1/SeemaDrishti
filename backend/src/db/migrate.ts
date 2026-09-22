@@ -144,6 +144,15 @@ export function migrateBefore(db: Database): boolean {
   // already on the new shape, which is every database that needs this.
   enforceOneZonePerCamera(db);
 
+  // Views are definitions, not data, so the cheapest correct thing is to throw
+  // them away and let schema.sql rebuild them from the current source on every
+  // boot. `CREATE VIEW IF NOT EXISTS` does the opposite: it silently keeps
+  // whatever an older build created, so a column added to `incident_state`
+  // would appear on a fresh checkout and be missing on the machine that has
+  // been running all week -- with the only symptom a filter that returns
+  // nothing.
+  db.exec("DROP VIEW IF EXISTS incident_state");
+
   if (!tableExists(db, "zone")) return false;
   if (!hasColumn(db, "zone", "camera_id")) return false; // already migrated
 

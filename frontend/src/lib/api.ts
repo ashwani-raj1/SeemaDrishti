@@ -123,7 +123,20 @@ export const api = {
   config: () => request<ServerConfig>("/api/config"),
 
   incidents: (
-    params: { status?: string; camera_id?: string; zone_id?: string; limit?: number } = {},
+    params: {
+      status?: string;
+      camera_id?: string;
+      zone_id?: string;
+      /** Event kind: zone_crossing, camera_health, plate_read, reidentification. */
+      kind?: string;
+      severity?: string;
+      /** One class the incident saw. Matches if any of its events did. */
+      class?: string;
+      /** Bounds on last activity, not on when the incident opened. */
+      since?: string;
+      until?: string;
+      limit?: number;
+    } = {},
   ) =>
     request<Incident[]>(`/api/incidents${qs(params)}`),
   incident: (id: string) => request<IncidentDetail>(`/api/incidents/${id}`),

@@ -189,6 +189,14 @@ const routes = {
         status: params.get("status") ?? undefined,
         cameraId: params.get("camera_id") ?? undefined,
         zoneId: params.get("zone_id") ?? undefined,
+        // The queue's own filters. Named to match `/api/events` where they
+        // mean the same thing, so an operator moving between the two screens
+        // does not have to learn two vocabularies for one question.
+        kind: params.get("kind") ?? undefined,
+        severity: params.get("severity") ?? undefined,
+        class: params.get("class") ?? undefined,
+        since: params.get("since") ?? undefined,
+        until: params.get("until") ?? undefined,
         limit: Number(params.get("limit") ?? 100),
       }),
     );
