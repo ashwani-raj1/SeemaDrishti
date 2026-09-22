@@ -136,6 +136,43 @@ function renameZoneSectorToArea(db: Database): void {
 }
 
 /**
+ * Give incidents that predate the column a number.
+ *
+ * Oldest first, so the numbering matches the order they actually happened in.
+ * An operator reading a handover note expects #12 to have opened before #40,
+ * and numbering by insertion order of a backfill query would make that false
+ * for every incident recorded before this shipped.
+ *
+ * Only rows with no number, so this is a no-op on every boot after the first
+ * and cannot renumber an incident somebody has already written down.
+ */
+function backfillIncidentNumbers(db: Database): void {
+  if (!tableExists(db, "incident")) return;
+  if (!hasColumn(db, "incident", "number")) return;
+
+  const rows = db
+    .query("SELECT id, org_id FROM incident WHERE number IS NULL ORDER BY opened_at ASC, rowid ASC")
+    .all() as Array<{ id: string; org_id: string }>;
+  if (rows.length === 0) return;
+
+  const next = new Map<string, number>();
+  const update = db.query("UPDATE incident SET number = $number WHERE id = $id");
+
+  for (const row of rows) {
+    if (!next.has(row.org_id)) {
+      const top = db
+        .query("SELECT COALESCE(MAX(number), 0) AS n FROM incident WHERE org_id = $org")
+        .get({ $org: row.org_id }) as { n: number } | null;
+      next.set(row.org_id, (top?.n ?? 0) + 1);
+    }
+    const number = next.get(row.org_id)!;
+    update.run({ $number: number, $id: row.id });
+    next.set(row.org_id, number + 1);
+  }
+  console.log(`numbered ${rows.length} existing incident(s)`);
+}
+
+/**
  * Before the schema runs: if `zone` is still the old single-camera shape, move
  * it aside so the new definition can be created under the same name.
  */
@@ -208,6 +245,8 @@ export function migrateAfter(db: Database): void {
   // retention to matter. 7 days, not the 30 of  above -- see
   // DEFAULT_CLIP_RETENTION_DAYS in l3/settings.ts for why they differ.
   addColumn(db, "organisation", "clip_retention_days", "INTEGER NOT NULL DEFAULT 7");
+  addColumn(db, "incident", "number", "INTEGER");
+  backfillIncidentNumbers(db);
   renameZoneSectorToArea(db);
 
   if (!tableExists(db, LEGACY)) return;

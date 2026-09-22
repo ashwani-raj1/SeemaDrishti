@@ -160,13 +160,30 @@ function attachIncident(input: EventInput): { incidentId: string; opened: boolea
   }
 
   const incidentId = id("inc");
+  // A number a human can say out loud. `inc_mucx1vzbdaq05b` is unambiguous and
+  // unusable over a radio, so an incident also gets a per-org counter -- what a
+  // case file has, and what an operator means by "check 3667".
+  //
+  // MAX + 1 rather than AUTOINCREMENT because `incident.id` is the TEXT primary
+  // key and SQLite only auto-increments an INTEGER one. Safe here: this runs
+  // inside `recordEvent`'s transaction on a single-process node, so no two
+  // incidents can read the same maximum. It is per ORG, so two posts each have
+  // their own #1 -- which is right, because an incident number is only ever
+  // said inside one post.
+  const number =
+    (one<{ n: number }>(
+      "SELECT COALESCE(MAX(number), 0) AS n FROM incident WHERE org_id = $org",
+      { $org: input.orgId },
+    )?.n ?? 0) + 1;
+
   run(
     `INSERT INTO incident
-       (id, org_id, site_id, camera_id, zone_id, title, severity, group_key, opened_at, last_event_at)
+       (id, number, org_id, site_id, camera_id, zone_id, title, severity, group_key, opened_at, last_event_at)
      VALUES
-       ($id, $org, $site, $camera, $zone, $title, $severity, $key, $at, $at)`,
+       ($id, $number, $org, $site, $camera, $zone, $title, $severity, $key, $at, $at)`,
     {
       $id: incidentId,
+      $number: number,
       $org: input.orgId,
       $site: input.siteId,
       $camera: input.cameraId ?? null,
@@ -282,6 +299,9 @@ export function shapeEvent(row: EventRow) {
  */
 const shapeIncident = (row: any) => ({
   id: row.id,
+  // The number an operator says out loud. Null only for a row written before
+  // the column existed and not yet backfilled.
+  number: row.number ?? null,
   title: row.title,
   severity: row.severity,
   status: row.status,
@@ -425,6 +445,57 @@ const CROSS_REFERENCE_WINDOW_SECONDS = 1800;
  * listed whether or not they caught anything, because "the other camera saw
  * nothing" is itself worth knowing.
  */
+/**
+ * The camera an incident came from, as a first-class field.
+ *
+ * WHY THIS EXISTS SEPARATELY FROM `crossReference`. That function bails the
+ * moment an incident has no `zone_id`, and `ingestCameraHealth` writes its
+ * events with `zoneId: null` -- so the incidents about a camera going dark were
+ * the only ones carrying NO camera information at all. The page could not name
+ * the camera that had stopped.
+ *
+ * Returns null rather than throwing for an incident with no camera: a sensor
+ * contact or an operator-raised incident legitimately has none, and the page
+ * simply omits the panel.
+ */
+export function incidentCamera(incidentId: string) {
+  const incident = one<{ camera_id: string | null }>(
+    "SELECT camera_id FROM incident WHERE id = $id",
+    { $id: incidentId },
+  );
+  if (!incident?.camera_id) return null;
+
+  const camera = one<{
+    id: string;
+    name: string;
+    status: string;
+    enabled: number;
+    created_at: string;
+  }>("SELECT id, name, status, enabled, created_at FROM camera WHERE id = $id", {
+    $id: incident.camera_id,
+  });
+  if (!camera) {
+    // The camera was removed after the incident was recorded. Say so rather
+    // than returning null, which the page would render as "no camera" -- a
+    // different and much less useful statement than "this camera is gone".
+    return {
+      cameraId: incident.camera_id,
+      cameraName: null,
+      status: null,
+      enabled: false,
+      removed: true,
+    };
+  }
+
+  return {
+    cameraId: camera.id,
+    cameraName: camera.name,
+    status: camera.status,
+    enabled: camera.enabled === 1,
+    removed: false,
+  };
+}
+
 export function crossReference(incidentId: string) {
   const incident = one<any>("SELECT * FROM incident_state WHERE id = $id", { $id: incidentId });
   if (!incident || !incident.zone_id) {
@@ -468,16 +539,12 @@ export function crossReference(incidentId: string) {
       ORDER BY last_event_at DESC
       LIMIT 20`,
     { $zone: incident.zone_id, $id: incidentId, $from: from, $until: until },
-  ).map((row) => ({
-    id: row.id,
-    title: row.title,
-    severity: row.severity,
-    status: row.status,
-    cameraId: row.camera_id,
-    openedAt: row.opened_at,
-    lastEventAt: row.last_event_at,
-    eventCount: row.event_count,
-  }));
+    // One shape for an incident, wherever it came from. This used to build a
+    // thinner object by hand -- no zoneId, kind, classes or alertable -- while
+    // the console typed it as a full `Incident`, so four fields were declared
+    // and always undefined. A related incident rendered differently from an
+    // identical one in the queue, for no reason anybody could see.
+  ).map(shapeIncident);
 
   return { zone, cameras, incidents: related, windowSeconds: CROSS_REFERENCE_WINDOW_SECONDS };
 }

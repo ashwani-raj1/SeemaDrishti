@@ -2,26 +2,29 @@ import { useState } from "react";
 import { PencilIcon, PowerIcon, PowerOffIcon } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
-import {
-  Dialog, DialogClose, DialogContent, DialogDescription,
-  DialogFooter, DialogHeader, DialogTitle,
-} from "@/components/ui/dialog";
-import { Input } from "@/components/ui/input";
-import { Field, FieldDescription, FieldLabel } from "@/components/ui/field";
-import {
-  Select, SelectContent, SelectGroup, SelectItem, SelectTrigger, SelectValue,
-} from "@/components/ui/select";
 import { ReasonDialog } from "@/components/ibvap/reason-dialog";
-import { Spinner } from "@/components/ibvap/spinner";
 import { api, isForbidden } from "@/lib/api";
-import type { MonitoringZone, ZoneKind } from "@/lib/types";
+import type { MonitoringZone } from "@/lib/types";
+import { NewZoneDialog } from "./new-zone-dialog";
 
 /**
- * The two zone-level writes the console never offered.
+ * The zone-level actions on a zone's card: edit, and take out of service.
  *
- * Both endpoints existed and were audited from the start; nothing called them,
- * so the only way to fix a typo in a zone's name was to delete it and rebuild
- * -- losing its id, and with it every event that points at it.
+ * EDIT OPENS THE WIZARD THAT CREATED THE ZONE, rather than a dialog of its own.
+ * This file used to hold a small name-and-kind editor, and the card held four
+ * more editors beside it -- a target list, a redraw button per camera, a
+ * per-camera exception editor, add and remove camera -- each writing through
+ * its own endpoint the moment it was touched. Creating a zone was one guided
+ * flow; changing one was a scavenger hunt across five controls that applied
+ * piecemeal, so a supervisor halfway through rearranging a zone had already
+ * half-applied it. Editing now goes through the same three stages as creation
+ * and lands as one atomic `PUT /api/zones/:id`.
+ *
+ * THE EDIT TRIGGER LIVES HERE, beside Deactivate, and that is deliberate after
+ * getting it wrong once: it was briefly removed from this file on the
+ * assumption the card header carried it, and the card header did not -- which
+ * left a zone with no way to edit it at all. One file owns the zone-level
+ * actions, so there is one place to look and nothing to keep in step.
  *
  * DEACTIVATE, NOT DELETE. `DELETE /api/zones/:id` is a soft delete by design:
  * past events still name the zone, and `event.zone_id` carries no foreign key
@@ -30,13 +33,6 @@ import type { MonitoringZone, ZoneKind } from "@/lib/types";
  * database will not perform. A deactivated zone stops being judged within one
  * zone-refresh interval and its cameras are released to join another.
  */
-
-const KINDS: ZoneKind[] = [
-  "fence_line", "gate", "waterline", "perimeter", "pass", "restricted_area",
-];
-
-const label = (kind: string) => kind.replace(/_/g, " ");
-
 export function ZoneActions({
   zone,
   canEdit,
@@ -46,20 +42,10 @@ export function ZoneActions({
   canEdit: boolean;
   onChanged: () => void;
 }) {
-  const [editing, setEditing] = useState(false);
   const [confirming, setConfirming] = useState(false);
   const [busy, setBusy] = useState(false);
 
-  const [name, setName] = useState(zone.name);
-  const [kind, setKind] = useState<ZoneKind>(zone.kind);
-  const [reason, setReason] = useState("");
-
   if (!canEdit) return null;
-
-  const problem =
-    !name.trim() ? "Give the zone a name."
-    : reason.trim().length < 3 ? "Say why, in a few words."
-    : null;
 
   async function run(work: () => Promise<unknown>, done: string, description?: string) {
     setBusy(true);
@@ -81,11 +67,20 @@ export function ZoneActions({
   return (
     <>
       <div className="ml-auto flex shrink-0 items-center gap-1">
-        {/* No Edit button here any more. Changing a zone -- its name, kind,
-            area, cameras, shapes or targets -- happens in the wizard that
-            created it, in one atomic call. What is left here is the pair that
-            are NOT edits: taking the whole zone out of service and putting it
-            back, each with its own confirmation and its own reason. */}
+        {/* The wizard, opened on this zone. `onCreated` fires for a save the
+            same as for a create, so the card reloads either way. */}
+        <NewZoneDialog
+          zone={zone}
+          canEdit={canEdit}
+          onCreated={onChanged}
+          trigger={
+            <Button size="sm" variant="outline">
+              <PencilIcon className="size-4" />
+              Edit
+            </Button>
+          }
+        />
+
         {zone.active ? (
           <Button size="sm" variant="ghost" onClick={() => setConfirming(true)}>
             <PowerOffIcon className="size-4" />

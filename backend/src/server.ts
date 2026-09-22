@@ -17,6 +17,7 @@ import {
   crossReference,
   eventThumbnail,
   getIncident,
+  incidentCamera,
   listIncidents,
   queryEvents,
   shapeEvent,
@@ -211,6 +212,11 @@ const routes = {
     return json({
       incident,
       events: queryEvents(DEFAULT_ORG, { incidentId, limit: 500 }),
+      // The camera this came from, as its own field. `crossReference` below
+      // knows the camera only through the zone, and bails entirely when an
+      // incident has no zone -- which is exactly the case for a camera that
+      // went dark. Those incidents used to carry no camera information at all.
+      camera: incidentCamera(incidentId),
       // The full chain of accountability for this piece of work.
       actions: actionsFor("incident", incidentId),
       // What else watches this zone, and what it saw around the same time.

@@ -498,7 +498,19 @@ async def amain(args) -> None:
     live = LiveChannel(settings.live_bind, settings.live_port)
     durable = None if args.no_backend else DurableSink(
         settings.backend_url, source_id=f"vision.{run_id}")
+
+    # Only built when at least one camera asked for clips, so a deployment that
+    # never enables them never opens the queue or the socket.
+    wants_clips = any(camera.module_params("fence").get("clips") for camera in cameras)
+    clips = None if (args.no_backend or not wants_clips) else ClipSink(
+        settings.backend_url, source_id=f"vision.{run_id}")
+
     dispatcher = Dispatcher(live, durable)
+    # Attached rather than passed through the constructor: Dispatcher's job is
+    # the two contracts in section 14, and a clip is neither of them -- it is an
+    # attachment to an event that has already gone. Keeping it off the
+    # constructor keeps that separation legible.
+    dispatcher.clips = clips
 
     workers = [CameraWorker(camera, settings, dispatcher, run_id) for camera in cameras]
 
@@ -522,6 +534,10 @@ async def amain(args) -> None:
     tasks = [asyncio.create_task(live.serve_forever(stop), name="live")]
     if durable:
         tasks.append(asyncio.create_task(durable.run_forever(stop), name="durable"))
+    if clips:
+        # Named "durable" so the shutdown path drains it alongside the events: a
+        # clip collected during the final frames is worth the extra moment.
+        tasks.append(asyncio.create_task(clips.run_forever(stop), name="durable"))
 
     # Zones before the first frame: a fence that starts blind and learns its
     # geometry a few seconds later would silently miss the opening of a demo.

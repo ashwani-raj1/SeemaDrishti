@@ -8,7 +8,8 @@
 import type {
   Action, CameraDetail, CameraIncidents, ChainVerdict, CreateWatchlistInput,
   Decision, DetectVehicleInput, FrameAnalysisResult, Health, HubCameraList, IbvapEvent, Incident,
-  IncidentDetail, MonitoringZone, NodeSettings, PlateDetection, Point, ResetCounts, ServerConfig,
+  ClipManifest, ClipUsage, IncidentDetail, MonitoringZone, NodeSettings, PlateDetection, Point,
+  ResetCounts, ServerConfig,
   SimStatus, UpdateWatchlistInput, WatchlistEntry, WatchlistStats,
 } from "./types";
 
@@ -331,6 +332,14 @@ export const api = {
       confirm: "RESET",
       reason,
     }),
+
+  // ---- evidence clips --------------------------------------------------
+  // The manifest is timings and boxes with NO pixels, so a filmstrip costs one
+  // small request; frames are fetched one at a time as images the browser
+  // caches like any other.
+  clip: (id: string) => request<ClipManifest>(`/api/clips/${id}`),
+  clipFrameUrl: (id: string, seq: number) => apiUrl(`/api/clips/${id}/frames/${seq}`),
+  clipUsage: () => request<ClipUsage>("/api/clips"),
 
   sim: () => request<SimStatus>("/api/sim"),
   simStart: (ambient = true) => post<SimStatus>("/api/sim/start", { ambient }),

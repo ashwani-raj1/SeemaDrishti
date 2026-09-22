@@ -234,6 +234,9 @@ BEGIN SELECT RAISE(ABORT, 'event log is append-only'); END;
 -- is no `status` column: see `incident_state` below.
 CREATE TABLE IF NOT EXISTS incident (
   id            TEXT PRIMARY KEY,
+  -- A number a human can say over a radio. Per org, assigned on insert; see
+  -- attachIncident in l3/events.ts for why it is not AUTOINCREMENT.
+  number        INTEGER,
   org_id        TEXT NOT NULL,
   site_id       TEXT NOT NULL,
   camera_id     TEXT,

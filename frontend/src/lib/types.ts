@@ -192,6 +192,56 @@ export interface NodeSettings {
    * console shows it next to the incident list for that reason.
    */
   groupingWindowSeconds: number;
+  /**
+   * How many days of evidence clips to keep before the sweep takes them.
+   *
+   * Shorter than the record's own retention on purpose: an event is a few
+   * hundred bytes, a clip about a megabyte. See `l3/settings.ts`.
+   */
+  clipRetentionDays: number;
+}
+
+/** The camera an incident came from, as its own field on the detail response. */
+export interface IncidentCamera {
+  cameraId: string;
+  cameraName: string | null;
+  status: CameraStatus | null;
+  enabled: boolean;
+  /** The camera was deleted after this incident was recorded. */
+  removed: boolean;
+}
+
+/** A clip's filmstrip: every frame's timing and boxes, and no pixels. */
+export interface ClipManifest {
+  id: string;
+  cameraId: string | null;
+  at: string;
+  /** The rate these frames were ACTUALLY captured at, not the configured target. */
+  fps: number;
+  frameCount: number;
+  bytes: number;
+  simulated: boolean;
+  createdAt: string;
+  frames: Array<{
+    seq: number;
+    /** Seconds relative to the crossing: negative before, positive after. */
+    offset: number;
+    boxes: Array<{
+      class?: string;
+      confidence?: number;
+      /** Normalised [x1, y1, x2, y2], as the live overlay draws them. */
+      bbox?: [number, number, number, number];
+      track_ref?: string;
+    }>;
+  }>;
+}
+
+/** What clips are costing this node, for the settings page. */
+export interface ClipUsage {
+  clips: number;
+  frames: number;
+  bytes: number;
+  oldest: string | null;
 }
 
 export interface ServerConfig {
@@ -223,6 +273,17 @@ export interface Evidence {
   heldSeconds?: number;
   /** The crossing was judged against a shape nobody drew (see Zone). */
   provisional?: boolean;
+  /** The evidence clip cut around this crossing, when one was recorded. */
+  clipId?: string | null;
+  /**
+   * The frame half of the two-clock confirm rule; `confirmSeconds` is the
+   * other. A crossing must satisfy both, so quoting one without the other
+   * hides which of the two actually held it back.
+   */
+  confirmFrames?: number;
+  heldFrames?: number;
+  /** Which module judged it. */
+  detector?: string;
   [key: string]: unknown;
 }
 
@@ -264,6 +325,8 @@ export interface IbvapEvent {
 
 export interface Incident {
   id: string;
+  /** The number an operator says out loud. Null only on an un-backfilled row. */
+  number?: number | null;
   title: string;
   severity: Severity;
   status: IncidentStatus;
@@ -348,6 +411,8 @@ export interface CrossReference {
 export interface IncidentDetail {
   incident: Incident;
   events: IbvapEvent[];
+  /** The source camera. Null for an incident with no camera at all. */
+  camera: IncidentCamera | null;
   actions: Action[];
   crossReference: CrossReference;
 }
