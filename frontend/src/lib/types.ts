@@ -379,6 +379,9 @@ export interface PlateDetection {
   vehicle_type: string;
   confidence: number;
   plate_confidence: number;
+  /** `llm` is an unverified visual estimate, never an automatic match. */
+  plate_source?: "ocr" | "llm";
+  plate_verified?: boolean;
   matched_watchlist_id: string | null;
   matched_entry?: WatchlistEntry | null;
   match_status: "MATCHED" | "CLEAR" | "UNVERIFIED";
@@ -399,6 +402,17 @@ export interface WatchlistStats {
   scans24h: number;
   matches24h: number;
   readRate: number;
+}
+
+export interface VehicleTrafficPoint {
+  date: string;
+  total: number;
+}
+
+export interface VehicleTrafficSummary {
+  days: number;
+  total: number;
+  points: VehicleTrafficPoint[];
 }
 
 export interface CreateWatchlistInput {

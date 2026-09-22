@@ -324,3 +324,22 @@ CREATE INDEX IF NOT EXISTS plate_detection_by_time  ON plate_detection(occurred_
 CREATE INDEX IF NOT EXISTS plate_detection_by_plate ON plate_detection(plate_number);
 CREATE INDEX IF NOT EXISTS plate_detection_by_match ON plate_detection(match_status, occurred_at DESC);
 
+-- One row per uniquely tracked vehicle visit. Unlike `plate_detection`, this
+-- also records vehicles whose registration plate was unreadable, so traffic
+-- totals do not silently become OCR-success totals.
+CREATE TABLE IF NOT EXISTS vehicle_traffic_event (
+  id           TEXT PRIMARY KEY,
+  org_id       TEXT NOT NULL,
+  camera_id    TEXT NOT NULL REFERENCES camera(id),
+  source_key   TEXT NOT NULL,
+  vehicle_type TEXT NOT NULL DEFAULT 'vehicle',
+  occurred_at  TEXT NOT NULL,
+  created_at   TEXT NOT NULL,
+  UNIQUE(org_id, source_key)
+);
+
+CREATE INDEX IF NOT EXISTS vehicle_traffic_by_time
+  ON vehicle_traffic_event(org_id, occurred_at DESC);
+CREATE INDEX IF NOT EXISTS vehicle_traffic_by_camera
+  ON vehicle_traffic_event(camera_id, occurred_at DESC);
+
