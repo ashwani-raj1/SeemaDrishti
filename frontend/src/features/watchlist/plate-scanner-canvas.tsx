@@ -7,16 +7,13 @@ import {
   EyeIcon,
   FileVideoIcon,
   ImageIcon,
-  LayersIcon,
   ListOrderedIcon,
-  Maximize2Icon,
   PauseIcon,
   PlayIcon,
   RadioIcon,
   RefreshCwIcon,
   RotateCcwIcon,
   ScanIcon,
-  SearchIcon,
   ShieldAlertIcon,
   SparklesIcon,
   SwitchCameraIcon,
@@ -28,54 +25,60 @@ import {
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Switch } from "@/components/ui/switch";
 import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog";
-import { Spinner } from "@/components/ibvap/spinner";
 import { SeverityBadge } from "@/components/ibvap/badges";
+import { CameraFeed } from "@/components/ibvap/camera-feed";
+import { useClient } from "@/client/context";
 import { formatPlate } from "@/lib/format";
 import { api } from "@/lib/api";
+import { onLive, type AnprExtra } from "@/lib/live";
+import { useResource } from "@/lib/use-resource";
 import type { PlateDetection, WatchlistEntry } from "@/lib/types";
+
+function isDisplayableSnapshot(value: string | null | undefined): value is string {
+  return Boolean(
+    value && (
+      value.startsWith("data:image/") ||
+      value.startsWith("blob:") ||
+      value.startsWith("http://") ||
+      value.startsWith("https://") ||
+      value.startsWith("/")
+    ),
+  );
+}
 
 interface PlateScannerCanvasProps {
   detection: PlateDetection | null;
   scanning: boolean;
   onRunScan: (presetKey: string) => void;
   onManualScan: (plate: string, vehicleType: string, cameraId: string) => void;
+  onVehicleCounted?: (vehicle: {
+    sourceKey: string;
+    cameraId: string;
+    vehicleType: string;
+    occurredAt: string;
+  }) => void;
   /** Number-plates workbench starts an uploaded clip immediately. */
   autoStartUpload?: boolean;
   /** Count a stable track when first seen instead of waiting for it to exit. */
   countOnFirstDetection?: boolean;
 }
 
-const PRESET_FEEDS = [
-  { key: "flagged_scorpio", label: "BOP-01 Fence North — Black Scorpio (FLAGGED CRITICAL)", type: "suv", cam: "cam_fence_north", plate: "PB 02 AK 4821", make: "Mahindra Scorpio-N", color: "Black" },
-  { key: "flagged_tractor", label: "BOP-02 Farm Gate — Swaraj Tractor (FLAGGED WARNING)", type: "tractor", cam: "cam_farm_gate", plate: "PB 02 T 9182", make: "Swaraj 855 FE", color: "Blue" },
-  { key: "stolen_fortuner", label: "BOP-01 Fence North — White Fortuner (STOLEN BOLO)", type: "suv", cam: "cam_fence_north", plate: "DL 1C AA 1111", make: "Toyota Fortuner", color: "White" },
-  { key: "commercial_truck", label: "BOP-03 Patrol Road — Tata 407 Truck (FLAGGED WARNING)", type: "truck", cam: "cam_patrol_road", plate: "HR 26 DQ 5512", make: "Tata 407 LPT", color: "Silver" },
-  { key: "farm_sonalika", label: "BOP-02 Farm Gate — Red Sonalika (CLEAR)", type: "tractor", cam: "cam_farm_gate", plate: "PB 02 AB 1042", make: "Sonalika DI-745", color: "Red" },
-  { key: "patrol_bolero", label: "BOP-03 Patrol Road — Patrol Bolero (CLEAR)", type: "car", cam: "cam_patrol_road", plate: "PB 02 E 3391", make: "Mahindra Bolero Neo", color: "White" },
-  { key: "highway_creta", label: "BOP-01 Fence North — Red Creta (CLEAR)", type: "car", cam: "cam_fence_north", plate: "MH 12 BB 8892", make: "Hyundai Creta SX", color: "Red" },
-  { key: "surveillance_brezza", label: "BOP-03 Patrol Road — Blue Brezza (FLAGGED INFO)", type: "car", cam: "cam_patrol_road", plate: "PB 08 BX 7744", make: "Maruti Brezza ZXi", color: "Dark Blue" },
-  { key: "night_eicher", label: "BOP-01 Fence North — White Eicher Truck (CLEAR)", type: "truck", cam: "cam_fence_north", plate: "RJ 14 XY 3319", make: "Eicher Pro 2049", color: "White" },
-  { key: "gate_nexon", label: "BOP-02 Farm Gate — Silver Nexon (CLEAR)", type: "car", cam: "cam_farm_gate", plate: "UP 16 CZ 9021", make: "Tata Nexon EV", color: "Silver" },
-];
-
 export function PlateScannerCanvas({
-  detection: initialDetection,
-  scanning,
-  onRunScan,
+  detection: _initialDetection,
   onManualScan,
+  onVehicleCounted,
   autoStartUpload = false,
   countOnFirstDetection = false,
 }: PlateScannerCanvasProps) {
-  const [sourceMode, setSourceMode] = useState<"preset" | "live" | "upload" | "manual">("preset");
-  const [selectedPreset, setSelectedPreset] = useState("flagged_scorpio");
-  const [manualPlate, setManualPlate] = useState("");
-  const [manualType, setManualType] = useState("car");
-  const [manualCam, setManualCam] = useState("cam_fence_north");
+  const { media } = useClient();
+  const cameraHub = useResource(() => api.mediaCameras(), []);
+  const cameras = cameraHub.data?.cameras ?? [];
+  const [sourceMode, setSourceMode] = useState<"camera" | "live" | "upload">("camera");
+  const [selectedCameraId, setSelectedCameraId] = useState("");
 
   // Multi-vehicle detections in current frame
   const [activeDetections, setActiveDetections] = useState<PlateDetection[]>([]);
@@ -112,12 +115,36 @@ export function PlateScannerCanvas({
   const scanIntervalRef = useRef<any>(null);
   const analysisInFlightRef = useRef(false);
   const submittedPlatesRef = useRef(new Map<string, number>());
-  const visibleVehiclesRef = useRef(new Map<string, { vehicle: PlateDetection; lastSeen: number }>());
+  const alarmedVehiclesRef = useRef(new Set<string>());
+  const visibleVehiclesRef = useRef(new Map<string, {
+    vehicle: PlateDetection;
+    firstSeen: number;
+    lastSeen: number;
+    hits: number;
+  }>());
   const countedVehiclesRef = useRef(new Set<string>());
+  const trafficSessionRef = useRef(`anpr-${Date.now()}-${Math.random().toString(36).slice(2)}`);
   const lastSirenAtRef = useRef(0);
+
+  const recordCountedVehicle = useCallback((vehicle: PlateDetection, cameraId: string) => {
+    onVehicleCounted?.({
+      sourceKey: `${trafficSessionRef.current}:${vehicle.id}`,
+      cameraId,
+      vehicleType: vehicle.vehicle_type || "vehicle",
+      occurredAt: vehicle.occurred_at || new Date().toISOString(),
+    });
+  }, [onVehicleCounted]);
 
   // Watchlist cache for instant matching
   const watchlistCacheRef = useRef<WatchlistEntry[]>([]);
+
+  useEffect(() => {
+    if (selectedCameraId || cameras.length === 0) return;
+    const first = cameras.find((camera) => camera.ready && camera.seeded) ?? cameras[0];
+    if (first) setSelectedCameraId(first.id);
+  }, [cameras, selectedCameraId]);
+
+  const selectedCamera = cameras.find((camera) => camera.id === selectedCameraId) ?? null;
 
   useEffect(() => {
     void api.watchlist({ limit: 100 }).then((entries) => {
@@ -153,6 +180,69 @@ export function PlateScannerCanvas({
     }
   }, []);
 
+  useEffect(() => {
+    if (sourceMode !== "camera" || !selectedCameraId) return;
+    return onLive(selectedCameraId, "anpr", (observation) => {
+      const at = new Date().toISOString();
+      const next = observation.tracks.map((track, index): PlateDetection => {
+        const extra = track.extra as AnprExtra;
+        const plate = extra.plate?.text ? formatPlate(extra.plate.text) : "";
+        const matched = plate
+          ? watchlistCacheRef.current.find((entry) => entry.active && formatPlate(entry.plate_number) === plate) ?? null
+          : null;
+        return {
+          id: extra.track_ref ?? `${selectedCameraId}:${track.track_id ?? index}`,
+          org_id: "org_bsf",
+          camera_id: selectedCameraId,
+          camera_name: selectedCamera?.name ?? selectedCameraId,
+          zone_id: null,
+          plate_number: plate,
+          vehicle_type: extra.vehicle_type ?? track.class ?? "vehicle",
+          confidence: track.confidence,
+          plate_confidence: extra.plate?.confidence ?? 0,
+          matched_watchlist_id: matched?.id ?? null,
+          matched_entry: matched,
+          match_status: matched ? "MATCHED" : plate ? "CLEAR" : "UNVERIFIED",
+          severity: matched?.severity ?? "INFO",
+          bbox: track.bbox,
+          plate_bbox: extra.plate?.bbox ?? [0, 0, 0, 0],
+          image_snapshot: null,
+          simulated: false,
+          occurred_at: at,
+          created_at: at,
+        };
+      });
+
+      setActiveDetections(next);
+      setSelectedVehicleIndex(0);
+      setSessionVehicles((previous) => {
+        const known = new Set(previous.map((vehicle) => vehicle.id));
+        const additions = next.filter((vehicle) => !known.has(vehicle.id));
+        if (additions.length === 0) return previous;
+        for (const vehicle of additions) {
+          countedVehiclesRef.current.add(vehicle.id);
+          recordCountedVehicle(vehicle, selectedCameraId);
+        }
+        setTotalVehiclesCaptured((count) => count + additions.length);
+        return [...additions, ...previous].slice(0, 50);
+      });
+
+      const newMatches = next.filter((vehicle) =>
+        vehicle.match_status === "MATCHED" && !alarmedVehiclesRef.current.has(vehicle.id));
+      if (newMatches.length > 0) {
+        newMatches.forEach((vehicle) => alarmedVehiclesRef.current.add(vehicle.id));
+        playWatchlistSiren();
+      }
+      for (const vehicle of next.filter((item) => item.plate_number)) {
+        const submissionKey = `${vehicle.id}:${vehicle.plate_number}`;
+        if (!submittedPlatesRef.current.has(submissionKey)) {
+          submittedPlatesRef.current.set(submissionKey, Date.now());
+          onManualScan(vehicle.plate_number, vehicle.vehicle_type, selectedCameraId);
+        }
+      }
+    });
+  }, [onManualScan, playWatchlistSiren, recordCountedVehicle, selectedCamera?.name, selectedCameraId, sourceMode]);
+
   // The browser scanner uses a local Python service. Never call it "online"
   // just because the page loaded: check the real model endpoint and show a
   // useful recovery message when it is not running.
@@ -162,9 +252,12 @@ export function PlateScannerCanvas({
       try {
         const response = await fetch("http://127.0.0.1:8001/health");
         if (!response.ok) throw new Error("health check failed");
+        const health = await response.json() as { llm_fallback?: boolean; llm_model?: string | null };
         if (mounted) {
           setModelOnline(true);
-          setModelMessage("Local YOLO + OCR model online");
+          setModelMessage(health.llm_fallback
+            ? `Local YOLO + OCR online · AI fallback ready (${health.llm_model ?? "vision model"})`
+            : "Local YOLO + OCR online · AI fallback not configured");
         }
       } catch {
         if (mounted) {
@@ -243,20 +336,10 @@ export function PlateScannerCanvas({
     return canvas.toDataURL("image/jpeg", 0.90);
   }, []);
 
-  // Synchronize initial detection
-  useEffect(() => {
-    if (initialDetection) {
-      setActiveDetections([initialDetection]);
-      setSelectedVehicleIndex(0);
-      setSessionVehicles((prev) => {
-        if (!prev.some((v) => v.plate_number === initialDetection.plate_number)) {
-          setTotalVehiclesCaptured((c) => c + 1);
-          return [initialDetection, ...prev].slice(0, 50);
-        }
-        return prev;
-      });
-    }
-  }, [initialDetection]);
+  // Backend acknowledgement rows are intentionally not copied back into the
+  // scanner session. The tracked vehicle is already present here; hydrating
+  // the acknowledgement used to count it twice and could replace a real crop
+  // with the backend's legacy `snapshot_car` placeholder.
 
   // ------------------------------------------------------------- Live Camera Stream Logic
   const startLiveStream = useCallback(async () => {
@@ -341,8 +424,11 @@ export function PlateScannerCanvas({
     setActiveDetections([]);
     setSessionVehicles([]);
     setTotalVehiclesCaptured(0);
+    trafficSessionRef.current = `anpr-${Date.now()}-${Math.random().toString(36).slice(2)}`;
     visibleVehiclesRef.current.clear();
     countedVehiclesRef.current.clear();
+    submittedPlatesRef.current.clear();
+    alarmedVehiclesRef.current.clear();
 
     if (uploadVideoRef.current) {
       uploadVideoRef.current.src = url;
@@ -375,6 +461,26 @@ export function PlateScannerCanvas({
       uploadVideoRef.current.playbackRate = speed;
     }
   };
+
+  const finalizeVisibleVehicles = useCallback(() => {
+    const remaining = [...visibleVehiclesRef.current.entries()]
+      .filter(([key]) => !countedVehiclesRef.current.has(key));
+    if (remaining.length === 0) return;
+
+    remaining.forEach(([key, vehicleState]) => {
+      countedVehiclesRef.current.add(key);
+      recordCountedVehicle(vehicleState.vehicle, selectedCameraId || "cam_fence_north");
+    });
+    setTotalVehiclesCaptured((count) => count + remaining.length);
+    setSessionVehicles((previous) => {
+      const known = new Set(previous.map((vehicle) => vehicle.id));
+      const additions = remaining
+        .map(([, state]) => state.vehicle)
+        .filter((vehicle) => !known.has(vehicle.id));
+      return [...additions, ...previous].slice(0, 100);
+    });
+    visibleVehiclesRef.current.clear();
+  }, [recordCountedVehicle, selectedCameraId]);
 
   // ------------------------------------------------------------- REAL-TIME DYNAMIC CAR SNAPSHOT & ALPR OCR ENGINE
   // Retained temporarily for preset artwork only. It is never used for live
@@ -609,16 +715,19 @@ export function PlateScannerCanvas({
 
     analysisInFlightRef.current = true;
     try {
-      const scale = Math.min(1, 960 / videoElement.videoWidth);
+      // Keep registration characters readable in saved evidence and in the
+      // enlarged preview. YOLO resizes internally, so this only preserves the
+      // source pixels supplied to OCR/Gemini and the snapshot crop.
+      const scale = Math.min(1, 1280 / videoElement.videoWidth);
       canvas.width = Math.round(videoElement.videoWidth * scale);
       canvas.height = Math.round(videoElement.videoHeight * scale);
       canvas.getContext("2d")?.drawImage(videoElement, 0, 0, canvas.width, canvas.height);
       const response = await fetch("http://localhost:8001/detect", {
         method: "POST", headers: { "content-type": "application/json" },
-        body: JSON.stringify({ image: canvas.toDataURL("image/jpeg", 0.82) }),
+        body: JSON.stringify({ image: canvas.toDataURL("image/jpeg", 0.94) }),
       });
       if (!response.ok) throw new Error("ANPR service unavailable");
-      const result = await response.json() as { detections: Array<{ track_id?: number | null; track_key?: string; vehicle_type: string; confidence: number; bbox: [number, number, number, number]; plate?: { text: string; confidence: number; bbox: [number, number, number, number] } }> };
+      const result = await response.json() as { detections: Array<{ track_id?: number | null; track_key?: string; vehicle_type: string; confidence: number; bbox: [number, number, number, number]; plate?: { text: string; confidence: number; bbox: [number, number, number, number]; source?: "ocr" | "llm"; verified?: boolean; model?: string | null } }> };
       const at = new Date().toISOString();
       const snapshotFor = (bbox: [number, number, number, number]) => {
         const x1 = Math.max(0, Math.floor(bbox[0] * canvas.width));
@@ -626,18 +735,24 @@ export function PlateScannerCanvas({
         const x2 = Math.min(canvas.width, Math.ceil(bbox[2] * canvas.width));
         const y2 = Math.min(canvas.height, Math.ceil(bbox[3] * canvas.height));
         if (x2 <= x1 || y2 <= y1) return null;
+        const sourceWidth = x2 - x1;
+        const sourceHeight = y2 - y1;
         const crop = document.createElement("canvas");
-        crop.width = x2 - x1;
-        crop.height = y2 - y1;
+        const enlargement = sourceWidth < 320 ? Math.min(3, 960 / sourceWidth) : 1;
+        crop.width = Math.max(1, Math.round(sourceWidth * enlargement));
+        crop.height = Math.max(1, Math.round(sourceHeight * enlargement));
         const context = crop.getContext("2d");
         if (!context) return null;
-        context.drawImage(canvas, x1, y1, crop.width, crop.height, 0, 0, crop.width, crop.height);
-        return crop.toDataURL("image/jpeg", 0.85);
+        context.imageSmoothingEnabled = true;
+        context.imageSmoothingQuality = "high";
+        context.drawImage(canvas, x1, y1, sourceWidth, sourceHeight, 0, 0, crop.width, crop.height);
+        return crop.toDataURL("image/jpeg", 0.95);
       };
       const detections: PlateDetection[] = result.detections.map((item, index) => {
         const plate = item.plate?.text ?? "";
         const normalized = plate.replace(/[^A-Z0-9]/gi, "").toUpperCase();
-        const matchedEntry = normalized
+        const verified = item.plate?.verified !== false;
+        const matchedEntry = normalized && verified
           ? watchlistCacheRef.current.find((entry) => entry.active && entry.plate_number.replace(/[^A-Z0-9]/gi, "").toUpperCase() === normalized) ?? null
           : null;
         return {
@@ -645,6 +760,8 @@ export function PlateScannerCanvas({
           org_id: "org_bsf", camera_id: "cam_fence_north", camera_name: sourceName,
           zone_id: null, plate_number: plate, vehicle_type: item.vehicle_type,
           confidence: item.confidence, plate_confidence: item.plate?.confidence ?? 0,
+          plate_source: item.plate?.source ?? "ocr",
+          plate_verified: verified,
           matched_watchlist_id: matchedEntry?.id ?? null,
           matched_entry: matchedEntry,
           match_status: matchedEntry ? "MATCHED" : "UNVERIFIED",
@@ -655,35 +772,53 @@ export function PlateScannerCanvas({
         image_snapshot: snapshotFor(item.plate?.bbox ?? item.bbox), simulated: false, occurred_at: at, created_at: at,
         };
       });
-      if (detections.some((item) => item.match_status === "MATCHED")) playWatchlistSiren();
+      const newMatches = detections.filter((vehicle) =>
+        vehicle.match_status === "MATCHED" && !alarmedVehiclesRef.current.has(vehicle.id));
+      if (newMatches.length > 0) {
+        newMatches.forEach((vehicle) => alarmedVehiclesRef.current.add(vehicle.id));
+        playWatchlistSiren();
+      }
       setActiveDetections(detections);
       setSelectedVehicleIndex(0);
       const now = Date.now();
       const current = new Map(detections.map((vehicle) => [vehicle.id, vehicle]));
       for (const vehicle of detections) {
-        visibleVehiclesRef.current.set(vehicle.id, { vehicle, lastSeen: now });
+        const previous = visibleVehiclesRef.current.get(vehicle.id);
+        visibleVehiclesRef.current.set(vehicle.id, {
+          vehicle,
+          firstSeen: previous?.firstSeen ?? now,
+          lastSeen: now,
+          hits: (previous?.hits ?? 0) + 1,
+        });
       }
-      const candidates = countOnFirstDetection
-        ? detections.map((vehicle) => ({ key: vehicle.id, vehicle }))
-        : [...visibleVehiclesRef.current.entries()]
-          // A detector can miss several scans on motion blur. Wait five seconds
-          // before treating that gap as an exit in the Watchlist traffic view.
-          .filter(([key, state]) => !current.has(key) && now - state.lastSeen >= 5_000)
-          .map(([key, state]) => ({ key, vehicle: state.vehicle }));
+      setSessionVehicles((previous) => previous.map((saved) => current.get(saved.id) ?? saved));
+      const candidates = [...visibleVehiclesRef.current.entries()]
+        .filter(([key, state]) =>
+          countOnFirstDetection ||
+          // Two consecutive observations confirm a real tracked vehicle and
+          // update the total while it is still visible. An exit remains a
+          // fallback for a vehicle caught in only one sharp frame.
+          state.hits >= 2 ||
+          (!current.has(key) && now - state.lastSeen >= 5_000))
+        .map(([key, state]) => ({ key, vehicle: state.vehicle }));
       const newlyCounted = candidates.filter(({ key }) => !countedVehiclesRef.current.has(key));
       if (newlyCounted.length) {
-        newlyCounted.forEach(({ key }) => countedVehiclesRef.current.add(key));
+        newlyCounted.forEach(({ key, vehicle }) => {
+          countedVehiclesRef.current.add(key);
+          recordCountedVehicle(vehicle, selectedCameraId || "cam_fence_north");
+        });
         setTotalVehiclesCaptured((count) => count + newlyCounted.length);
         setSessionVehicles((previous) => [
           ...newlyCounted.map(({ vehicle }) => vehicle),
           ...previous,
         ].slice(0, 100));
       }
-      if (!countOnFirstDetection) newlyCounted.forEach(({ key }) => visibleVehiclesRef.current.delete(key));
-      for (const item of detections.filter((candidate) => candidate.plate_number)) {
-        const last = submittedPlatesRef.current.get(item.plate_number) ?? 0;
-        if (Date.now() - last > 8_000) {
-          submittedPlatesRef.current.set(item.plate_number, Date.now());
+      // Keep visible state after counting so the same stable track cannot be
+      // inserted again while it approaches the camera.
+      for (const item of detections.filter((candidate) => candidate.plate_number && candidate.plate_verified !== false)) {
+        const submissionKey = `${item.id}:${item.plate_number}`;
+        if (!submittedPlatesRef.current.has(submissionKey)) {
+          submittedPlatesRef.current.set(submissionKey, Date.now());
           onManualScan(item.plate_number, item.vehicle_type, "cam_fence_north");
         }
       }
@@ -696,7 +831,7 @@ export function PlateScannerCanvas({
     } finally {
       analysisInFlightRef.current = false;
     }
-  }, [countOnFirstDetection, onManualScan, playWatchlistSiren]);
+  }, [countOnFirstDetection, onManualScan, playWatchlistSiren, recordCountedVehicle, selectedCameraId]);
 
   // Continuous Video Scan Interval Loop
   useEffect(() => {
@@ -721,26 +856,16 @@ export function PlateScannerCanvas({
     };
   }, [sourceMode, isLiveStreaming, isPlaying, continuousScan, uploadedFileName, modelOnline, captureAndDetectCar]);
 
-  // Execute Preset Scan Trigger
-  const handlePresetTrigger = (presetKey: string) => {
-    setSelectedPreset(presetKey);
-    onRunScan(presetKey);
-  };
-
-  // Handle Manual Submit
-  const handleManualSubmit = (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!manualPlate.trim()) return;
-    const formatted = formatPlate(manualPlate.trim());
-    onManualScan(formatted, manualType, manualCam);
-    setManualPlate("");
-  };
-
   // Currently focused vehicle
   const primaryDetection =
     activeDetections[selectedVehicleIndex] ?? activeDetections[0] ?? sessionVehicles[0] ?? null;
   const isMatched = primaryDetection?.match_status === "MATCHED";
   const plateNumber = primaryDetection?.plate_number || "No plate read";
+  const inspectionDetection =
+    (primaryDetection?.plate_number ? primaryDetection : null) ??
+    sessionVehicles.find((vehicle) => Boolean(vehicle.plate_number)) ??
+    primaryDetection;
+  const inspectionPlateNumber = inspectionDetection?.plate_number || "No plate read";
 
   // Vehicle Counts
   const totalVehiclesCount = totalVehiclesCaptured || sessionVehicles.length;
@@ -768,6 +893,16 @@ export function PlateScannerCanvas({
         <Card className="overflow-hidden border-2 bg-slate-950 text-slate-100 shadow-2xl relative">
           {/* Viewport Frame */}
           <div className="relative aspect-video w-full bg-slate-950 overflow-hidden select-none flex items-center justify-center">
+            {/* Shared Media Server camera */}
+            {sourceMode === "camera" && selectedCameraId && (
+              <CameraFeed
+                cameraId={selectedCameraId}
+                whepBase={media?.whepBase}
+                module="anpr"
+                className="absolute inset-0 h-full w-full border-0"
+              />
+            )}
+
             {/* 1. Live Webcam Feed Mode */}
             {sourceMode === "live" && (
               <video
@@ -786,7 +921,6 @@ export function PlateScannerCanvas({
                 src={uploadedVideoUrl}
                 playsInline
                 muted
-                loop
                 onTimeUpdate={() => {
                   if (uploadVideoRef.current) {
                     setVideoProgress(
@@ -803,7 +937,11 @@ export function PlateScannerCanvas({
                     }
                   }
                 }}
-                onEnded={() => setIsPlaying(false)}
+                onEnded={() => {
+                  setIsPlaying(false);
+                  finalizeVisibleVehicles();
+                  setActiveDetections([]);
+                }}
                 className="absolute inset-0 w-full h-full object-contain bg-black"
               />
             )}
@@ -850,25 +988,14 @@ export function PlateScannerCanvas({
               </div>
             )}
 
-            {/* 3. Preset Feeds Backdrop Simulation */}
-            {sourceMode === "preset" && (
-              <>
-                <div className="absolute inset-0 bg-[radial-gradient(#1e293b_1px,transparent_1px)] [background-size:16px_16px] opacity-40" />
-                <div className="absolute inset-0 flex flex-col justify-between p-6 opacity-30 pointer-events-none">
-                  <div className="h-1/3 border-b border-dashed border-slate-700/80" />
-                  <div className="h-1/2 flex items-end">
-                    <div className="w-full h-1 bg-amber-500/30" />
-                  </div>
-                </div>
-              </>
-            )}
-
             {/* Top Left Feed HUD Status */}
             <div className="absolute top-3 left-3 flex flex-col gap-1 font-mono text-[11px] text-slate-300 pointer-events-none z-20">
               <div className="flex items-center gap-2">
                 <span
                   className={`inline-block h-2.5 w-2.5 rounded-full ${
-                    sourceMode === "live" && isLiveStreaming
+                    sourceMode === "camera" && selectedCamera?.ready
+                      ? "bg-emerald-400 animate-pulse"
+                      : sourceMode === "live" && isLiveStreaming
                       ? "bg-emerald-400 animate-ping"
                       : sourceMode === "upload" && isPlaying
                         ? "bg-cyan-400 animate-pulse"
@@ -876,7 +1003,9 @@ export function PlateScannerCanvas({
                   }`}
                 />
                 <span className="font-bold tracking-wider text-slate-200 uppercase">
-                  {sourceMode === "live"
+                  {sourceMode === "camera"
+                    ? `SHARED CAMERA: ${selectedCamera?.name ?? selectedCameraId}`
+                    : sourceMode === "live"
                     ? "LIVE CAMERA FEED"
                     : sourceMode === "upload"
                       ? `VIDEO FEED: ${uploadedFileName || "LOADED FILE"}`
@@ -885,8 +1014,8 @@ export function PlateScannerCanvas({
               </div>
               <div className="text-slate-400 text-[10px]">
                 IN VIEW: <strong className="text-cyan-300 font-bold">{inViewCount} VEHICLE{inViewCount !== 1 ? "S" : ""}</strong> | ANPR:{" "}
-                <span className={modelOnline ? "text-emerald-400 font-semibold" : "text-amber-300 font-semibold"}>
-                  {modelOnline ? "MODEL ONLINE" : "MODEL OFFLINE"}
+                <span className={(sourceMode === "camera" ? selectedCamera?.ready : modelOnline) ? "text-emerald-400 font-semibold" : "text-amber-300 font-semibold"}>
+                  {sourceMode === "camera" ? (selectedCamera?.ready ? "SHARED VISION ONLINE" : "CAMERA OFFLINE") : (modelOnline ? "MODEL ONLINE" : "MODEL OFFLINE")}
                 </span>
               </div>
             </div>
@@ -917,18 +1046,19 @@ export function PlateScannerCanvas({
                 </span>
                 <span>
                   PLATE: <strong className="text-amber-400 font-bold">{plateNumber}</strong>
+                  {primaryDetection?.plate_verified === false && <span className="ml-2 rounded bg-amber-500/20 px-1.5 py-0.5 text-[9px] font-bold text-amber-300">AI ESTIMATE · UNVERIFIED</span>}
                 </span>
                 <span>
                   CONFIDENCE:{" "}
                   <strong className="text-emerald-400">
-                    {Math.round((primaryDetection?.plate_confidence ?? 0.96) * 100)}%
+                    {primaryDetection?.plate_verified === false ? "UNVERIFIED" : `${Math.round((primaryDetection?.plate_confidence ?? 0.96) * 100)}%`}
                   </strong>
                 </span>
               </div>
 
               <div className="flex items-center gap-2">
                 {/* Manual Snapshot Trigger Button */}
-                <Button
+                {sourceMode !== "camera" && <Button
                   size="sm"
                   variant="secondary"
                   className="h-7 text-[11px] gap-1 font-semibold bg-cyan-600 hover:bg-cyan-700 text-white shadow"
@@ -943,7 +1073,7 @@ export function PlateScannerCanvas({
                 >
                   <CameraIcon className="h-3.5 w-3.5" />
                   Take Snapshot & Read Plate
-                </Button>
+                </Button>}
 
                 {sourceMode === "live" && isLiveStreaming && (
                   <Button
@@ -1077,18 +1207,18 @@ export function PlateScannerCanvas({
                 <div className="text-[10px] font-mono text-muted-foreground mb-1 flex items-center justify-between w-full px-1">
                   <span>PLATE SNAPSHOT</span>
                   <span className="text-cyan-400">
-                    {primaryDetection?.vehicle_type?.toUpperCase() ?? "CAR"}
+                    {inspectionDetection?.vehicle_type?.toUpperCase() ?? "CAR"}
                   </span>
                 </div>
-                {primaryDetection?.image_snapshot ? (
+                {isDisplayableSnapshot(inspectionDetection?.image_snapshot) ? (
                   <button
                     type="button"
-                    onClick={() => setEnlargedSnapshot(primaryDetection.image_snapshot)}
+                    onClick={() => setEnlargedSnapshot(inspectionDetection?.image_snapshot ?? null)}
                     className="w-full cursor-zoom-in"
                     title="Click to enlarge vehicle photo"
                   >
                     <img
-                      src={primaryDetection.image_snapshot}
+                      src={inspectionDetection?.image_snapshot ?? ""}
                       alt="Captured number plate — click to enlarge"
                       className="w-full h-24 object-contain rounded border border-slate-700 hover:border-cyan-400 transition-colors bg-black"
                     />
@@ -1122,27 +1252,27 @@ export function PlateScannerCanvas({
                   <span className="h-2 w-2 rounded-full bg-blue-600" />
                 </div>
                 <div className="text-2xl font-mono font-black tracking-widest text-slate-950 px-2 py-1">
-                  {plateNumber}
+                  {inspectionPlateNumber}
                 </div>
               </div>
 
               {/* Character by character OCR Confidence pills */}
               <div className="sm:col-span-4 space-y-2">
                 <div className="text-xs font-medium text-muted-foreground flex items-center justify-between">
-                  <span>OCR Confidence:</span>
-                  <span className="font-mono text-emerald-600 font-semibold">
-                    {Math.round((primaryDetection?.plate_confidence ?? 0.96) * 100)}%
+                  <span>{inspectionDetection?.plate_verified === false ? "AI estimate:" : "OCR Confidence:"}</span>
+                  <span className={`font-mono font-semibold ${inspectionDetection?.plate_verified === false ? "text-amber-600" : "text-emerald-600"}`}>
+                    {inspectionDetection?.plate_verified === false ? "UNVERIFIED" : `${Math.round((inspectionDetection?.plate_confidence ?? 0.96) * 100)}%`}
                   </span>
                 </div>
                 <div className="flex flex-wrap gap-1">
-                  {plateNumber.replace(/\s+/g, "").split("").map((char, index) => (
+                  {inspectionPlateNumber.replace(/\s+/g, "").split("").map((char, index) => (
                     <div
                       key={index}
                       className="flex flex-col items-center rounded border bg-muted/40 px-1.5 py-0.5 text-center"
                     >
                       <span className="font-mono font-bold text-xs text-foreground">{char}</span>
                       <span className="text-[9px] font-mono text-muted-foreground">
-                        {95 + ((index * 7) % 5)}%
+                        {inspectionDetection?.plate_verified === false ? "AI" : `${95 + ((index * 7) % 5)}%`}
                       </span>
                     </div>
                   ))}
@@ -1192,25 +1322,25 @@ export function PlateScannerCanvas({
               Feed Source & ANPR Controls
             </CardTitle>
             <CardDescription className="text-xs">
-              Live Camera, Upload Video, Checkpoint Presets, or Direct Plate OCR.
+              Select a shared camera, use a local live camera, or upload a video.
             </CardDescription>
           </CardHeader>
           <CardContent className="space-y-4">
-            <div className={`rounded-md border px-3 py-2 text-xs ${modelOnline ? "border-emerald-500/30 bg-emerald-500/5 text-emerald-700 dark:text-emerald-300" : "border-amber-500/40 bg-amber-500/10 text-amber-800 dark:text-amber-200"}`}>
+            {sourceMode !== "camera" && <div className={`rounded-md border px-3 py-2 text-xs ${modelOnline ? "border-emerald-500/30 bg-emerald-500/5 text-emerald-700 dark:text-emerald-300" : "border-amber-500/40 bg-amber-500/10 text-amber-800 dark:text-amber-200"}`}>
               {modelMessage}
-            </div>
-            {/* 4 Mode Selectors */}
-            <div className="grid grid-cols-2 gap-1 rounded-md bg-muted p-1 text-xs">
+            </div>}
+            {/* Feed mode selectors */}
+            <div className="grid grid-cols-3 gap-1 rounded-md bg-muted p-1 text-xs">
               <button
                 type="button"
                 className={`rounded py-1.5 font-medium transition-colors flex items-center justify-center gap-1 ${
-                  sourceMode === "preset"
+                  sourceMode === "camera"
                     ? "bg-background text-foreground shadow-sm font-semibold"
                     : "text-muted-foreground hover:text-foreground"
                 }`}
-                onClick={() => setSourceMode("preset")}
+                onClick={() => setSourceMode("camera")}
               >
-                <LayersIcon className="h-3.5 w-3.5" /> Preset Feeds
+                <VideoIcon className="h-3.5 w-3.5 text-cyan-500" /> Cameras
               </button>
               <button
                 type="button"
@@ -1234,67 +1364,34 @@ export function PlateScannerCanvas({
               >
                 <FileVideoIcon className="h-3.5 w-3.5 text-cyan-400" /> Upload Video
               </button>
-              <button
-                type="button"
-                className={`rounded py-1.5 font-medium transition-colors flex items-center justify-center gap-1 ${
-                  sourceMode === "manual"
-                    ? "bg-background text-foreground shadow-sm font-semibold"
-                    : "text-muted-foreground hover:text-foreground"
-                }`}
-                onClick={() => setSourceMode("manual")}
-              >
-                <SearchIcon className="h-3.5 w-3.5" /> Direct Plate
-              </button>
             </div>
 
-            {/* Mode 1: Preset Feeds */}
-            {sourceMode === "preset" && (
-              <div className="space-y-3">
-                <div className="space-y-1.5">
-                  <Label className="text-xs font-semibold">Select Border Checkpoint Feed</Label>
-                  <Select value={selectedPreset} onValueChange={(val) => handlePresetTrigger(val)}>
-                    <SelectTrigger className="text-xs h-9">
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {PRESET_FEEDS.map((feed) => (
-                        <SelectItem key={feed.key} value={feed.key} className="text-xs">
-                          {feed.label}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
+            {sourceMode === "camera" && (
+              <div className="space-y-2">
+                <Label className="text-xs font-semibold">Select shared camera</Label>
+                <Select value={selectedCameraId} onValueChange={(value) => {
+                  setSelectedCameraId(value);
+                  setActiveDetections([]);
+                  setSelectedVehicleIndex(0);
+                }}>
+                  <SelectTrigger className="h-9 text-xs"><SelectValue placeholder="Select camera" /></SelectTrigger>
+                  <SelectContent>
+                    {cameras.map((camera) => (
+                      <SelectItem key={camera.id} value={camera.id} className="text-xs">
+                        {camera.name} {camera.ready ? "— Live" : "— Offline"}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                <div className={`rounded-md border px-3 py-2 text-xs ${selectedCamera?.ready ? "border-emerald-500/30 bg-emerald-500/5 text-emerald-700 dark:text-emerald-300" : "border-amber-500/40 bg-amber-500/10 text-amber-800 dark:text-amber-200"}`}>
+                  {selectedCamera ? `${selectedCamera.name} · ${selectedCamera.ready ? "Shared feed live" : "Feed unavailable"}` : "No shared camera available"}
                 </div>
-
-                <Button
-                  className="w-full font-semibold gap-2"
-                  onClick={() => handlePresetTrigger(selectedPreset)}
-                  disabled={scanning}
-                >
-                  {scanning ? <Spinner /> : <PlayIcon className="h-4 w-4" />}
-                  {scanning ? "Processing Frame..." : "Execute ANPR Scan"}
-                </Button>
               </div>
             )}
 
             {/* Mode 2: Live Video / Camera */}
             {sourceMode === "live" && (
               <div className="space-y-3">
-                <div className="rounded-md border p-3 bg-muted/30 space-y-2">
-                  <div className="flex items-center justify-between text-xs font-semibold">
-                    <span className="flex items-center gap-1.5">
-                      <RadioIcon className="h-4 w-4 text-red-500 animate-pulse" />
-                      Live Camera ANPR
-                    </span>
-                    <Badge variant={isLiveStreaming ? "default" : "secondary"} className="text-[10px]">
-                      {isLiveStreaming ? "STREAMING" : "OFFLINE"}
-                    </Badge>
-                  </div>
-                  <p className="text-[11px] text-muted-foreground">
-                    Connects directly to your camera device to snapshot and scan moving vehicles in real time.
-                  </p>
-                </div>
-
                 <div className="flex items-center justify-between p-2 rounded border text-xs">
                   <span className="font-medium">Continuous Auto-Scan</span>
                   <Switch checked={continuousScan} onCheckedChange={setContinuousScan} />
@@ -1315,17 +1412,22 @@ export function PlateScannerCanvas({
             {/* Mode 3: Upload Video File */}
             {sourceMode === "upload" && (
               <div className="space-y-3">
-                <div
-                  onClick={() => fileInputRef.current?.click()}
-                  className="rounded-md border-2 border-dashed p-3 bg-muted/20 hover:bg-muted/40 cursor-pointer text-center space-y-1.5 transition-colors"
-                >
-                  <UploadCloudIcon className="h-6 w-6 text-cyan-500 mx-auto" />
-                  <div className="text-xs font-semibold text-foreground">
-                    {uploadedFileName || "Choose or Drag Video File"}
-                  </div>
-                  <p className="text-[10px] text-muted-foreground">
-                    MP4, WebM, MOV. Automatically snapshots cars and reads plates as video plays.
-                  </p>
+                <div className="flex items-center gap-2">
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    className="gap-1.5 text-xs"
+                    onClick={() => fileInputRef.current?.click()}
+                  >
+                    <UploadCloudIcon className="h-4 w-4 text-cyan-500" />
+                    {uploadedVideoUrl ? "Change video" : "Choose video"}
+                  </Button>
+                  {uploadedFileName && (
+                    <span className="min-w-0 truncate text-xs text-muted-foreground" title={uploadedFileName}>
+                      {uploadedFileName}
+                    </span>
+                  )}
                 </div>
 
                 {uploadedVideoUrl && (
@@ -1359,58 +1461,6 @@ export function PlateScannerCanvas({
               </div>
             )}
 
-            {/* Mode 4: Manual / Direct Real Plate Input */}
-            {sourceMode === "manual" && (
-              <form onSubmit={handleManualSubmit} className="space-y-3">
-                <div className="space-y-1.5">
-                  <Label className="text-xs font-semibold">Vehicle License Plate</Label>
-                  <Input
-                    placeholder="e.g. DL 08 CA 5432 or UP 16 CZ 9021"
-                    value={manualPlate}
-                    onChange={(e) => setManualPlate(e.target.value.toUpperCase())}
-                    className="font-mono text-sm h-9"
-                    required
-                  />
-                </div>
-
-                <div className="grid grid-cols-2 gap-2">
-                  <div className="space-y-1.5">
-                    <Label className="text-xs font-semibold">Vehicle Type</Label>
-                    <Select value={manualType} onValueChange={setManualType}>
-                      <SelectTrigger className="text-xs h-9">
-                        <SelectValue />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="car">Car</SelectItem>
-                        <SelectItem value="suv">SUV</SelectItem>
-                        <SelectItem value="truck">Truck</SelectItem>
-                        <SelectItem value="tractor">Tractor</SelectItem>
-                        <SelectItem value="motorcycle">Motorcycle</SelectItem>
-                      </SelectContent>
-                    </Select>
-                  </div>
-                  <div className="space-y-1.5">
-                    <Label className="text-xs font-semibold">Camera Feed</Label>
-                    <Select value={manualCam} onValueChange={setManualCam}>
-                      <SelectTrigger className="text-xs h-9">
-                        <SelectValue />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="cam_fence_north">BOP-01 North</SelectItem>
-                        <SelectItem value="cam_farm_gate">BOP-02 Gate</SelectItem>
-                        <SelectItem value="cam_patrol_road">BOP-03 Patrol</SelectItem>
-                        <SelectItem value="cam_waterline">BOP-04 Water</SelectItem>
-                      </SelectContent>
-                    </Select>
-                  </div>
-                </div>
-
-                <Button type="submit" className="w-full font-semibold gap-2" disabled={scanning}>
-                  {scanning ? <Spinner /> : <SearchIcon className="h-4 w-4" />}
-                  Read Plate & Match Watchlist
-                </Button>
-              </form>
-            )}
           </CardContent>
         </Card>
 
@@ -1430,8 +1480,11 @@ export function PlateScannerCanvas({
                   onClick={() => {
                     setSessionVehicles([]);
                     setTotalVehiclesCaptured(0);
+                    trafficSessionRef.current = `anpr-${Date.now()}-${Math.random().toString(36).slice(2)}`;
                     visibleVehiclesRef.current.clear();
                     countedVehiclesRef.current.clear();
+                    submittedPlatesRef.current.clear();
+                    alarmedVehiclesRef.current.clear();
                   }}
                 >
                   Reset Count
@@ -1447,6 +1500,7 @@ export function PlateScannerCanvas({
             ) : (
               sessionVehicles.map((veh, idx) => {
                 const hit = veh.match_status === "MATCHED";
+                const estimated = veh.plate_verified === false;
                 return (
                   <div
                     key={veh.id || idx}
@@ -1461,12 +1515,23 @@ export function PlateScannerCanvas({
                     }`}
                   >
                     <div className="flex items-center gap-2.5">
-                      {veh.image_snapshot ? (
-                        <img
-                          src={veh.image_snapshot}
-                          alt="Car Thumbnail"
-                          className="h-9 w-12 object-cover rounded border border-slate-700 shrink-0"
-                        />
+                      {isDisplayableSnapshot(veh.image_snapshot) ? (
+                        <button
+                          type="button"
+                          className="shrink-0 rounded focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-500"
+                          title="Click to enlarge captured image"
+                          aria-label="Enlarge captured vehicle image"
+                          onClick={(event) => {
+                            event.stopPropagation();
+                            setEnlargedSnapshot(veh.image_snapshot);
+                          }}
+                        >
+                          <img
+                            src={veh.image_snapshot}
+                            alt="Captured vehicle"
+                            className="h-9 w-12 object-cover rounded border border-slate-700 hover:border-cyan-400 transition-colors"
+                          />
+                        </button>
                       ) : (
                         <div className="h-9 w-12 rounded border border-slate-800 bg-slate-900 flex items-center justify-center shrink-0">
                           <CarIcon className="h-4 w-4 text-slate-500" />
@@ -1485,6 +1550,13 @@ export function PlateScannerCanvas({
                       {hit ? (
                         <Badge variant="destructive" className="text-[9px] px-1.5 py-0">
                           WATCHLIST HIT
+                        </Badge>
+                      ) : estimated ? (
+                        <Badge
+                          variant="outline"
+                          className="text-[9px] text-amber-700 px-1.5 py-0 border-amber-500/40 bg-amber-500/10"
+                        >
+                          AI ESTIMATE · UNVERIFIED
                         </Badge>
                       ) : (
                         <Badge
