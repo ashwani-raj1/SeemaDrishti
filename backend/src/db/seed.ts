@@ -20,6 +20,11 @@ const CAMERAS = [
   { id: "cam_farm_gate", name: "BOP-02 Farm Gate" },
   { id: "cam_patrol_road", name: "BOP-03 Patrol Road" },
   { id: "cam_waterline", name: "BOP-04 Waterline" },
+  // Added in media/cameras.yml (the ANPR update) but missed here -- every
+  // detection from it was rejected with "unknown camera cam_garden" until
+  // now. claude.md's own warning about exactly this: a camera present in
+  // the manifest but not seeded runs fine and produces zero events.
+  { id: "cam_garden", name: "BOP-05 Garden" },
 ];
 
 interface TargetSeed {

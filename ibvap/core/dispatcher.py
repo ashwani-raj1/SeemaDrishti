@@ -305,8 +305,20 @@ class DurableSink:
             headers={"content-type": "application/json"},
             method="POST",
         )
-        with urllib.request.urlopen(request, timeout=self.timeout) as response:
-            response.read()
+        try:
+            with urllib.request.urlopen(request, timeout=self.timeout) as response:
+                response.read()
+        except urllib.error.HTTPError as error:
+            # Bare `str(error)` is just "HTTP Error 400: Bad Request" -- the
+            # reason PHRASE, not the reason. The node's BadRequest handler
+            # puts the actual validation message in the response body, and
+            # without it "the node rejected something" is where diagnosis
+            # stops. Re-raised with the body attached so _deliver's log line
+            # says what was actually wrong with the payload.
+            detail = error.read().decode("utf-8", errors="replace")
+            raise urllib.error.HTTPError(
+                error.url, error.code, f"{error.reason} -- {detail}",
+                error.headers, error.fp) from None
 
     def stats(self) -> dict:
         return {"sent": self.sent, "failed": self.failed,

@@ -22,12 +22,24 @@ was fixed, and `drop=None` auto-selecting per source is the fix. Do not
 STATUS: prototype-quality, but this pattern is what production uses too.
 """
 
+import os
 import threading
 import time
 
 import cv2
 
 LIVE_SCHEMES = ("rtsp://", "http://", "https://", "rtmp://")
+
+# OpenCV's FFmpeg backend defaults to UDP for RTSP, which drops packets under
+# contention -- and five workers each pulling their own camera from the same
+# loopback hub is exactly that contention. A dropped UDP packet mid-frame
+# does not fail cleanly: ffmpeg decodes around the hole and prints exactly
+# the "corrupted macroblock" / "invalid level prefix" spam this caused,
+# frame after frame, on every camera at once. TCP is lossless -- slightly
+# higher latency, irrelevant at this service's 5-10 fps cadence -- and it is
+# what actually fixed it. This is a process-wide FFmpeg option, not a
+# per-capture one, so it is set once, not inside the loop that reconnects.
+os.environ.setdefault("OPENCV_FFMPEG_CAPTURE_OPTIONS", "rtsp_transport;tcp")
 
 
 class RTSPStream:
