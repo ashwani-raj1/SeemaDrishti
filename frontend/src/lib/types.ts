@@ -230,6 +230,15 @@ export interface IbvapEvent {
   receivedAt: string;
   evidence: Evidence;
   /**
+   * True when the vision service sent a frame with this event.
+   *
+   * A flag rather than the image: the picture is fetched one at a time from
+   * `/api/events/:id/thumbnail`, so a list of fifty events stays a list of
+   * fifty rows rather than a megabyte of JPEG. False is normal and common --
+   * the simulator sends none and a lost-track event has no frame to cut.
+   */
+  hasThumbnail?: boolean;
+  /**
    * The incident this event was grouped into. The node has always sent it --
    * this mirror simply omitted it, which is the drift this file's docstring
    * warns about. It is what makes a row in a search clickable.

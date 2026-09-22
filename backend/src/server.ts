@@ -13,6 +13,7 @@ import { watchlistRoutes } from "./routes/watchlist";
 import { mediaRoutes } from "./routes/media";
 import {
   crossReference,
+  eventThumbnail,
   getIncident,
   listIncidents,
   queryEvents,
@@ -238,6 +239,35 @@ const routes = {
       afterSeq: params.has("after_seq") ? Number(params.get("after_seq")) : undefined,
     };
     return json(queryEvents(DEFAULT_ORG, q));
+  }),
+
+  /**
+   * The frame one event was judged on.
+   *
+   * Served as an image rather than inside the JSON so the browser can cache it,
+   * render it with a plain `<img src>`, and fetch only the ones actually on
+   * screen. The list endpoint carries `hasThumbnail` and nothing heavier.
+   *
+   * 404 rather than a placeholder when there is no picture. A missing thumbnail
+   * is a real and common state -- the simulator posts none, a lost-track event
+   * has no frame to cut -- and the console draws the geometry instead. Shipping
+   * a grey rectangle here would make "no picture was taken" indistinguishable
+   * from "the picture failed to load".
+   */
+  "/api/events/:eventId/thumbnail": handled(async (req: any) => {
+    const encoded = eventThumbnail(req.params.eventId);
+    if (!encoded) throw new NotFound("no thumbnail for this event");
+
+    // The event log is append-only and an id is never reused, so this bytes
+    // stream can never change. Cached hard, which is what makes a list of
+    // fifty thumbnails cost fifty requests once rather than on every render.
+    return new Response(Buffer.from(encoded, "base64"), {
+      headers: {
+        ...CORS,
+        "content-type": "image/jpeg",
+        "cache-control": "public, max-age=31536000, immutable",
+      },
+    });
   }),
 
   /**

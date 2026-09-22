@@ -40,6 +40,7 @@ import time
 from typing import Any
 
 from core import geometry
+from core.thumbnail import thumbnail_of
 from core.payload import live_track
 from modules.base import FrameContext, VisionModule, register
 
@@ -198,7 +199,7 @@ class FenceModule(VisionModule):
 
             zone_states = []
             for zone in relevant:
-                event = self._evaluate(zone, track, detection, frm, to, ctx)
+                event = self._evaluate(zone, track, detection, frm, to, ctx, frame)
                 if event:
                     durable.append(event)
                 memory = track.zones[zone["id"]]
@@ -221,7 +222,7 @@ class FenceModule(VisionModule):
 
     # ── the state machine ────────────────────────────────────────────────
 
-    def _evaluate(self, zone, track, detection, frm, to, ctx) -> dict | None:
+    def _evaluate(self, zone, track, detection, frm, to, ctx, frame=None) -> dict | None:
         memory = track.zones.get(zone["id"])
         if memory is None:
             memory = _ZoneMemory(geometry.side_for_zone(zone["geometry"], zone["points"], to))
@@ -265,7 +266,7 @@ class FenceModule(VisionModule):
                 memory.cooled_until[pending["direction"]] = ctx.ts + self.cooldown_seconds
                 self.confirmed += 1
                 return self._intrusion(
-                    zone, track, detection, ctx,
+                    zone, track, detection, ctx, frame,
                     direction=pending["direction"],
                     crossed_at=pending["at"],
                     held=held,
@@ -294,7 +295,7 @@ class FenceModule(VisionModule):
             memory.cooled_until[direction] = ctx.ts + self.cooldown_seconds
             self.confirmed += 1
             return self._intrusion(
-                zone, track, detection, ctx,
+                zone, track, detection, ctx, frame,
                 direction=direction, crossed_at=to, held=0.0, frames=1,
                 rule="zone.crossing.confirmed",
             )
@@ -352,17 +353,28 @@ class FenceModule(VisionModule):
             "zones": zone_states,
         }
 
-    def _intrusion(self, zone, track, detection, ctx: FrameContext, *,
+    def _intrusion(self, zone, track, detection, ctx: FrameContext, frame=None, *,
                    direction, crossed_at, held, frames, rule) -> dict:
         """
         The durable payload. Every field here answers a question an operator
         will ask at 3 a.m.: which zone, which way, how long was it held, what
         path did it walk, and how sure was the detector.
+
+        `frame` is optional and is the only reason this signature is not pure
+        numbers. The lost-track sweep below has no current frame -- the subject
+        is gone, which is precisely what it is reporting -- so those events
+        carry no picture and the console falls back to drawing the geometry.
         """
+        thumbnail = thumbnail_of(frame, detection.get("bbox_xywh"))
         return {
             "event_type": "intrusion",
             "track_id": detection.get("track_id"),
             "data": {
+                # The frame this was judged on, cropped to the subject. Only on
+                # confirmed crossings, so the per-frame cost is unchanged; see
+                # core/thumbnail.py for why it is cut here rather than fetched
+                # from the hub when somebody opens the incident.
+                **({"thumbnail": thumbnail} if thumbnail else {}),
                 "track_ref": track.track_ref,
                 "class": track.klass,
                 "zone_id": zone["id"],

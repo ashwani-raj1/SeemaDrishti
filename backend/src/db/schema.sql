@@ -199,6 +199,17 @@ CREATE TABLE IF NOT EXISTS event (
   occurred_at       TEXT NOT NULL,
   received_at       TEXT NOT NULL,          -- differs from occurred_at when a link was down
   evidence          TEXT NOT NULL DEFAULT '{}',
+  -- A base64 JPEG of the subject, cut from the frame this was judged on by
+  -- `ibvap/core/thumbnail.py`. NULL is normal and always survivable: the
+  -- simulator posts no picture, a lost-track event has no current frame, and
+  -- the console falls back to drawing the geometry.
+  --
+  -- Stored inline rather than as a file on disk because a BOP's evidence has
+  -- to move as one thing: a row that references a picture the backup did not
+  -- take is a row that lies. At a few tens of KB on confirmed crossings only,
+  -- the column stays smaller than the video of the same second would be. It is
+  -- never SELECTed by the list queries -- see `EVENT_COLUMNS`.
+  thumbnail         TEXT,
   incident_id       TEXT
 );
 

@@ -34,6 +34,15 @@ export interface EventInput {
   severity: Severity;
   /** false means: write it to the log, never raise it to a human. */
   alertable: boolean;
+  /**
+   * Base64 JPEG of the subject, cut from the frame this was judged on.
+   *
+   * Optional everywhere. The simulator sends none, a lost-track event has no
+   * current frame to cut, and a picture must never be the reason an intrusion
+   * fails to record -- so this is the one field whose absence changes nothing
+   * about how the event is treated.
+   */
+  thumbnail?: string | null;
   suppressedReason?: string | null;
   occurredAt: string;
   evidence?: unknown;
@@ -65,6 +74,42 @@ export interface EventRow {
   received_at: string;
   evidence: string;
   incident_id: string | null;
+  /**
+   * 1 when a thumbnail exists, from `thumbnail IS NOT NULL`.
+   *
+   * The base64 itself is NEVER selected into a row. A list of fifty events
+   * would otherwise carry a megabyte of pictures nobody asked for, over a link
+   * section 8 of ibvap/CLAUDE.md promises to keep small. The image is fetched
+   * one at a time by `/api/events/:id/thumbnail`, which is also what lets the
+   * browser cache it like any other image.
+   */
+  has_thumbnail: number;
+}
+
+/**
+ * Every event column except the picture, plus a flag saying there is one.
+ *
+ * Spelled out rather than `SELECT *` for exactly one reason: `thumbnail` is the
+ * first column in this table that is large, and `SELECT *` would have quietly
+ * put it into every list response the day it was added.
+ */
+const EVENT_COLUMNS = `seq, id, org_id, site_id, kind, source_type, source_id, simulated,
+   camera_id, zone_id, tracked_thing_id, class, direction, rule, confidence,
+   severity, alertable, suppressed_reason, occurred_at, received_at, evidence,
+   incident_id, thumbnail IS NOT NULL AS has_thumbnail`;
+
+/**
+ * The base64 JPEG for one event, or null.
+ *
+ * The only place the column is read. Separate from every other read so that
+ * "fetch the picture" is always a deliberate act with its own query.
+ */
+export function eventThumbnail(eventId: string): string | null {
+  const row = one<{ thumbnail: string | null }>(
+    "SELECT thumbnail FROM event WHERE id = $id",
+    { $id: eventId },
+  );
+  return row?.thumbnail ?? null;
 }
 
 /**
@@ -143,11 +188,11 @@ export function recordEvent(input: EventInput): EventRow {
       `INSERT INTO event
          (id, org_id, site_id, kind, source_type, source_id, simulated, camera_id, zone_id,
           tracked_thing_id, class, direction, rule, confidence, severity, alertable,
-          suppressed_reason, occurred_at, received_at, evidence, incident_id)
+          suppressed_reason, occurred_at, received_at, evidence, thumbnail, incident_id)
        VALUES
          ($id, $org, $site, $kind, $stype, $sid, $sim, $camera, $zone,
           $track, $class, $direction, $rule, $confidence, $severity, $alertable,
-          $suppressed, $occurred, $received, $evidence, $incident)`,
+          $suppressed, $occurred, $received, $evidence, $thumbnail, $incident)`,
       {
         $id: eventId,
         $org: input.orgId,
@@ -169,6 +214,7 @@ export function recordEvent(input: EventInput): EventRow {
         $occurred: input.occurredAt,
         $received: nowIso(),
         $evidence: JSON.stringify(input.evidence ?? {}),
+        $thumbnail: input.thumbnail ?? null,
         $incident: incidentId,
       },
     );
@@ -181,7 +227,7 @@ export function recordEvent(input: EventInput): EventRow {
       );
     }
 
-    const row = one<EventRow>("SELECT * FROM event WHERE id = $id", { $id: eventId })!;
+    const row = one<EventRow>(`SELECT ${EVENT_COLUMNS} FROM event WHERE id = $id`, { $id: eventId })!;
     return Object.assign(row, { __opened: opened }) as EventRow;
   });
 
@@ -210,6 +256,8 @@ export function shapeEvent(row: EventRow) {
     occurredAt: row.occurred_at,
     receivedAt: row.received_at,
     evidence: JSON.parse(row.evidence),
+    // The flag, not the picture. `/api/events/:id/thumbnail` serves the image.
+    hasThumbnail: row.has_thumbnail === 1,
     incidentId: row.incident_id,
   };
 }
@@ -281,7 +329,7 @@ export function queryEvents(orgId: string, q: EventQuery) {
 
   const order = q.afterSeq !== undefined ? "seq ASC" : "seq DESC";
   return all<EventRow>(
-    `SELECT * FROM event WHERE ${where.join(" AND ")} ORDER BY ${order} LIMIT $limit`,
+    `SELECT ${EVENT_COLUMNS} FROM event WHERE ${where.join(" AND ")} ORDER BY ${order} LIMIT $limit`,
     params,
   ).map(shapeEvent);
 }

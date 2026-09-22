@@ -269,6 +269,15 @@ function ingestIntrusion(event: VisionEvent, context: CameraContext) {
     severity,
     alertable,
     suppressedReason,
+    // The frame this was judged on, already cropped and JPEG-encoded by the
+    // worker (`ibvap/core/thumbnail.py`). Taken as-is and never re-encoded:
+    // the node's job is to keep what it was sent, not to reinterpret it.
+    //
+    // Kept for SUPPRESSED events too. A crossing the system chose not to shout
+    // about is exactly the one somebody later asks to see, and "we recorded it
+    // but threw the picture away because we were not alarmed" is the worst
+    // possible answer.
+    thumbnail: typeof data.thumbnail === "string" ? data.thumbnail : null,
     occurredAt: event.occurredAt,
     // The bundle the screen draws its "why did this fire" overlay from. Cheap
     // to store, and it is what makes the alert explainable at 3 a.m.

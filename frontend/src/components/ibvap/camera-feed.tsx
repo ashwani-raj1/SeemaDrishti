@@ -91,6 +91,13 @@ export interface CameraFeedProps {
   module?: string | null;
   /** Off for a wall of tiles where the boxes would be too small to read. */
   showBoxes?: boolean;
+  /**
+   * Handed the underlying `<video>` so a surrounding player can pause it, go
+   * fullscreen, or grab a still. Exposed deliberately rather than letting a
+   * wrapper reach in with `querySelector`, which would break silently the day
+   * this markup changes.
+   */
+  onVideo?: (element: HTMLVideoElement | null) => void;
   className?: string;
 }
 
@@ -101,6 +108,7 @@ export function CameraFeed({
   zones = [],
   module = null,
   showBoxes = true,
+  onVideo,
   className,
 }: CameraFeedProps) {
   const videoRef = useRef<HTMLVideoElement | null>(null);
@@ -339,7 +347,10 @@ export function CameraFeed({
       )}
     >
       <video
-        ref={videoRef}
+        ref={(element) => {
+          videoRef.current = element;
+          onVideo?.(element);
+        }}
         autoPlay
         muted
         playsInline
