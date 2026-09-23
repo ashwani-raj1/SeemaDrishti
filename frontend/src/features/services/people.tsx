@@ -267,10 +267,25 @@ export function PeopleScreen() {
     }
   }, [acceptTracks]);
 
+  // Self-paced, not a fixed interval: a blind 750ms wait (copied from the
+  // ANPR page's own convention) was making every update lag by up to
+  // 750ms + whatever detection itself took, even when the backend answered
+  // in 200ms. Requesting the next frame right after the previous one
+  // finishes means the real pace is however fast the detector actually
+  // runs -- no artificial wait stacked on top of it, and no pile-up when a
+  // call is slow, since the next one is not requested until this one ends.
   useEffect(() => {
     if (mode === "media" || !playing || !modelOnline) return;
-    const timer = window.setInterval(() => void scanFrame(), 750);
-    return () => window.clearInterval(timer);
+    let cancelled = false;
+    const MIN_GAP_MS = 30; // yields to the browser between calls; not a cadence
+    const loop = async () => {
+      if (cancelled) return;
+      await scanFrame();
+      if (cancelled) return;
+      window.setTimeout(loop, MIN_GAP_MS);
+    };
+    void loop();
+    return () => { cancelled = true; };
   }, [mode, modelOnline, playing, scanFrame]);
 
   useEffect(() => () => {

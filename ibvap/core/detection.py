@@ -56,6 +56,16 @@ COCO_CLASSES: dict[int, tuple[str, str]] = {
 
 VEHICLE_SUBTYPES = {"car", "two_wheeler", "bus", "truck"}
 
+#: Weight on the NEW box each frame; the rest comes from the smoothed box a
+#: track already had. Lower = steadier but slower to follow real motion;
+#: higher = truer to this frame's raw detection but noisier. 0.5 settles a
+#: single bad frame's error to under 6% of it within four frames -- under a
+#: second at this service's cadence -- while still being visibly smoother
+#: than 1.0 (no smoothing) on the very next frame. Not measured against a
+#: real clip (claude.md §7's rule on unmeasured numbers applies here too);
+#: tune per-camera if a specific scene needs steadier or snappier boxes.
+BOX_SMOOTHING_ALPHA = 0.5
+
 
 class SharedDetector:
     """
@@ -63,9 +73,20 @@ class SharedDetector:
     hand the result to every active module.
     """
 
-    def __init__(self, weights="yolo11n.pt", imgsz=480, conf=0.35, iou=0.5,
+    def __init__(self, weights="yolo11n.pt", imgsz=640, conf=0.35, iou=0.5,
                  tracker_cfg=None, device="cpu", run_id="r0",
-                 classes=None):
+                 classes=None, box_smoothing=BOX_SMOOTHING_ALPHA):
+        # 640, not the pipeline's own 480: this default only reaches callers
+        # that do not pass their own imgsz -- ai_service.py and
+        # people_ai_service.py, both single-camera, on-demand scanners with
+        # real CPU headroom, never main.py's multi-camera pipeline (it always
+        # passes settings.imgsz from config.py, hardcoded to 480 there,
+        # independently of this default). Measured on this machine (20 calls,
+        # first 3 discarded as model-warmup noise -- a raw single-sample
+        # comparison understated this badly on the first attempt): median
+        # detector time 158ms -> 233ms, +34%, and 6 -> 9 people found in the
+        # same frame of data/cam1.mp4. Worth it for a single on-demand
+        # stream; not decided here for five cameras contending on one box.
         self.model = YOLO(weights)
         self.imgsz = imgsz
         self.conf = conf
@@ -74,9 +95,21 @@ class SharedDetector:
         self.device = device
         self.run_id = run_id
         self.classes = sorted(classes if classes is not None else COCO_CLASSES.keys())
+        # 1.0 turns this off entirely -- every box is exactly what the
+        # detector just returned, same as before this existed.
+        self.box_smoothing = box_smoothing
 
         self.calls = 0
         self.seconds = 0.0
+        # track_id -> smoothed (x1, y1, x2, y2) in source pixels, carried
+        # across calls so each frame's EMA blends against the LAST SMOOTHED
+        # box, not the last raw one -- otherwise a single noisy frame would
+        # still show up at full strength one step later. Rebuilt fresh each
+        # call from only the track_ids actually seen that frame (see the end
+        # of detect()), so a track that goes quiet does not leak state
+        # forever and a reused id after ByteTrack's own buffer expires never
+        # inherits a stale position.
+        self._smoothed: dict[int, tuple[float, float, float, float]] = {}
 
     @property
     def mean_ms(self) -> float:
@@ -121,12 +154,29 @@ class SharedDetector:
 
         height, width = frame.shape[:2]
         out: list[dict] = []
+        smoothed_this_frame: dict[int, tuple[float, float, float, float]] = {}
 
         for b in boxes:
             x1, y1, x2, y2 = (float(v) for v in b.xyxy[0].tolist())
             coco_id = int(b.cls[0]) if b.cls is not None else -1
             klass, subtype = COCO_CLASSES.get(coco_id, ("object", "object"))
             track_id = int(b.id[0]) if b.id is not None else None
+
+            # Damps the frame-to-frame coordinate noise a raw per-frame
+            # detector call has even for a stationary subject -- visible as a
+            # box that wiggles despite nothing actually moving. Only tracks
+            # WITH an id are smoothed: an id-less detection has no history to
+            # blend against, and inventing one would smear it toward whatever
+            # unrelated box happened to occupy that memory slot last.
+            if track_id is not None:
+                previous = self._smoothed.get(track_id)
+                if previous is not None:
+                    a = self.box_smoothing
+                    x1 = a * x1 + (1 - a) * previous[0]
+                    y1 = a * y1 + (1 - a) * previous[1]
+                    x2 = a * x2 + (1 - a) * previous[2]
+                    y2 = a * y2 + (1 - a) * previous[3]
+                smoothed_this_frame[track_id] = (x1, y1, x2, y2)
 
             nx1, ny1 = x1 / width, y1 / height
             nx2, ny2 = x2 / width, y2 / height
@@ -152,4 +202,8 @@ class SharedDetector:
                 "is_person": klass == "person",
             })
 
+        # Replaces the whole dict rather than updating it, so a track_id NOT
+        # seen this frame is simply gone -- see the field's own docstring on
+        # why that matters.
+        self._smoothed = smoothed_this_frame
         return out
