@@ -79,7 +79,7 @@ class PlateReader:
         self._recent: dict[Any, tuple[float, str, float]] = {}
 
     @staticmethod
-    def plate_region(bbox_px, frame_shape, lower_frac=0.45, center_w_frac=0.60):
+    def plate_region(bbox_px, frame_shape, lower_frac=0.32, center_w_frac=0.70):
         """
         The lower-central slice of a vehicle box, where a plate sits.
 
@@ -123,8 +123,12 @@ class PlateReader:
                                    tileGridSize=(8, 8)).apply(gray)
         _, thresholded = cv2.threshold(
             enhanced, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)
+        inverted = cv2.bitwise_not(thresholded)
+        adaptive = cv2.adaptiveThreshold(
+            enhanced, 255, cv2.ADAPTIVE_THRESH_GAUSSIAN_C,
+            cv2.THRESH_BINARY, 31, 9)
         best = None
-        for prepared in (enhanced, thresholded):
+        for prepared in (enhanced, thresholded, inverted, adaptive):
             readings = self.reader.readtext(
                 prepared, detail=1, allowlist=self.ALLOWLIST)
             if not readings:

@@ -36,7 +36,6 @@ import { CameraPage } from "./cameras/page";
 import { SectorMapScreen } from "./map/screen";
 import { WatchlistScreen } from "./watchlist/screen";
 import { FenceScreen } from "./services/fence";
-import { AnprScreen } from "./services/anpr";
 import { PeopleScreen } from "./services/people";
 import { FaceScreen } from "./services/face";
 import { CameraHealthScreen } from "./services/camera-health";
@@ -108,13 +107,13 @@ export const SECTIONS: Section[] = [
     element: <FenceScreen />,
   },
   {
-    id: "anpr",
+    id: "watchlist",
     group: "Services",
-    label: "Number plates",
+    label: "Plate watchlist",
     icon: CarFrontIcon,
-    path: "/services/anpr",
-    minRole: "operator",
-    element: <AnprScreen />,
+    path: "/watchlist",
+    minRole: "supervisor",
+    element: <WatchlistScreen />,
   },
   {
     id: "people",
@@ -183,15 +182,6 @@ export const SECTIONS: Section[] = [
     path: "/zones",
     minRole: "supervisor",
     element: <ZonesScreen />,
-  },
-  {
-    id: "watchlist",
-    group: "Configure",
-    label: "Plate watchlist",
-    icon: CarFrontIcon,
-    path: "/watchlist",
-    minRole: "supervisor",
-    element: <WatchlistScreen />,
   },
 ];
 

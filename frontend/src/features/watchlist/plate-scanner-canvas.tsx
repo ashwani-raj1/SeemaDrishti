@@ -5,11 +5,8 @@ import {
   CheckCircle2Icon,
   CrosshairIcon,
   EyeIcon,
-  FileVideoIcon,
   ImageIcon,
   ListOrderedIcon,
-  PauseIcon,
-  PlayIcon,
   RadioIcon,
   RefreshCwIcon,
   RotateCcwIcon,
@@ -18,7 +15,6 @@ import {
   SparklesIcon,
   SwitchCameraIcon,
   TruckIcon,
-  UploadCloudIcon,
   VideoIcon,
   ZapIcon,
 } from "lucide-react";
@@ -61,23 +57,44 @@ interface PlateScannerCanvasProps {
     vehicleType: string;
     occurredAt: string;
   }) => void;
-  /** Number-plates workbench starts an uploaded clip immediately. */
-  autoStartUpload?: boolean;
   /** Count a stable track when first seen instead of waiting for it to exit. */
   countOnFirstDetection?: boolean;
+}
+
+interface CameraSessionState {
+  vehicles: PlateDetection[];
+  total: number;
+}
+
+// v2 intentionally drops the earlier cache, which could contain preset/demo
+// detections restored as if they belonged to a live shared camera.
+const CAMERA_SESSION_STORAGE_KEY = "ibvap:anpr-camera-sessions:v3";
+
+function loadCameraSessions(): Record<string, CameraSessionState> {
+  try {
+    const saved = localStorage.getItem(CAMERA_SESSION_STORAGE_KEY);
+    if (!saved) return {};
+    const parsed = JSON.parse(saved) as Record<string, CameraSessionState>;
+    return Object.fromEntries(Object.entries(parsed).map(([cameraId, state]) => [cameraId, {
+      total: Math.max(0, Number(state.total) || 0),
+      vehicles: (state.vehicles ?? []).filter((vehicle) =>
+        vehicle.camera_id === cameraId && vehicle.simulated === false),
+    }]));
+  } catch {
+    return {};
+  }
 }
 
 export function PlateScannerCanvas({
   detection: _initialDetection,
   onManualScan,
   onVehicleCounted,
-  autoStartUpload = false,
   countOnFirstDetection = false,
 }: PlateScannerCanvasProps) {
   const { media } = useClient();
   const cameraHub = useResource(() => api.mediaCameras(), []);
   const cameras = cameraHub.data?.cameras ?? [];
-  const [sourceMode, setSourceMode] = useState<"camera" | "live" | "upload">("camera");
+  const [sourceMode, setSourceMode] = useState<"camera" | "live">("camera");
   const [selectedCameraId, setSelectedCameraId] = useState("");
 
   // Multi-vehicle detections in current frame
@@ -88,6 +105,10 @@ export function PlateScannerCanvas({
   // Session vehicle accumulator and vehicle count stats
   const [sessionVehicles, setSessionVehicles] = useState<PlateDetection[]>([]);
   const [totalVehiclesCaptured, setTotalVehiclesCaptured] = useState<number>(0);
+  const cameraSessionsRef = useRef<Record<string, CameraSessionState>>(loadCameraSessions());
+  const selectedCameraIdRef = useRef("");
+  const activeSessionCameraRef = useRef("");
+  const hydratingCameraRef = useRef<string | null>(null);
 
   // Live Video / Webcam State
   const [isLiveStreaming, setIsLiveStreaming] = useState(false);
@@ -97,18 +118,10 @@ export function PlateScannerCanvas({
   const [enlargedSnapshot, setEnlargedSnapshot] = useState<string | null>(null);
   const [facingMode, setFacingMode] = useState<"user" | "environment">("environment");
   const liveVideoRef = useRef<HTMLVideoElement | null>(null);
+  const sharedCameraViewportRef = useRef<HTMLDivElement | null>(null);
   const mediaStreamRef = useRef<MediaStream | null>(null);
 
-  // Uploaded Video State
-  const [uploadedVideoUrl, setUploadedVideoUrl] = useState<string | null>(null);
-  const [uploadedFileName, setUploadedFileName] = useState<string>("");
-  const [isPlaying, setIsPlaying] = useState(false);
-  const [videoProgress, setVideoProgress] = useState(0);
-  const [videoDuration, setVideoDuration] = useState(0);
-  const [playbackSpeed, setPlaybackSpeed] = useState<number>(1);
   const [continuousScan, setContinuousScan] = useState(true);
-  const uploadVideoRef = useRef<HTMLVideoElement | null>(null);
-  const fileInputRef = useRef<HTMLInputElement | null>(null);
 
   // Offscreen canvas for actual frame snapshotting & optical processing
   const offscreenCanvasRef = useRef<HTMLCanvasElement | null>(null);
@@ -126,9 +139,14 @@ export function PlateScannerCanvas({
   const trafficSessionRef = useRef(`anpr-${Date.now()}-${Math.random().toString(36).slice(2)}`);
   const lastSirenAtRef = useRef(0);
 
-  const recordCountedVehicle = useCallback((vehicle: PlateDetection, cameraId: string) => {
+  const recordCountedVehicle = useCallback((vehicle: PlateDetection, cameraId: string, sharedCamera = false) => {
     onVehicleCounted?.({
-      sourceKey: `${trafficSessionRef.current}:${vehicle.id}`,
+      // Shared-camera track refs already contain the vision-service run id and
+      // remain stable across browser refreshes. Local camera ids need a browser
+      // session prefix because they do not come from the shared tracker.
+      sourceKey: sharedCamera
+        ? `${cameraId}:${vehicle.id}`
+        : `${trafficSessionRef.current}:${vehicle.id}`,
       cameraId,
       vehicleType: vehicle.vehicle_type || "vehicle",
       occurredAt: vehicle.occurred_at || new Date().toISOString(),
@@ -143,6 +161,47 @@ export function PlateScannerCanvas({
     const first = cameras.find((camera) => camera.ready && camera.seeded) ?? cameras[0];
     if (first) setSelectedCameraId(first.id);
   }, [cameras, selectedCameraId]);
+
+  useEffect(() => {
+    if (!selectedCameraId) return;
+    const previousCamera = activeSessionCameraRef.current;
+    if (previousCamera) {
+      cameraSessionsRef.current[previousCamera] = {
+        vehicles: sessionVehicles,
+        total: totalVehiclesCaptured,
+      };
+    }
+    selectedCameraIdRef.current = selectedCameraId;
+    activeSessionCameraRef.current = selectedCameraId;
+    hydratingCameraRef.current = selectedCameraId;
+    const saved = cameraSessionsRef.current[selectedCameraId] ?? { vehicles: [], total: 0 };
+    setSessionVehicles(saved.vehicles);
+    setTotalVehiclesCaptured(saved.total);
+    setActiveDetections([]);
+    setSelectedVehicleIndex(0);
+  }, [selectedCameraId]);
+
+  useEffect(() => {
+    const cameraId = activeSessionCameraRef.current;
+    if (!cameraId) return;
+    if (hydratingCameraRef.current === cameraId) {
+      hydratingCameraRef.current = null;
+      return;
+    }
+    cameraSessionsRef.current[cameraId] = {
+      vehicles: sessionVehicles,
+      total: totalVehiclesCaptured,
+    };
+    try {
+      const compact = Object.fromEntries(Object.entries(cameraSessionsRef.current).map(([id, state]) => [id, {
+        total: state.total,
+        vehicles: state.vehicles.slice(0, 8),
+      }]));
+      localStorage.setItem(CAMERA_SESSION_STORAGE_KEY, JSON.stringify(compact));
+    } catch {
+      // Database remains the source of truth when browser storage is full.
+    }
+  }, [sessionVehicles, totalVehiclesCaptured]);
 
   const selectedCamera = cameras.find((camera) => camera.id === selectedCameraId) ?? null;
 
@@ -181,8 +240,13 @@ export function PlateScannerCanvas({
   }, []);
 
   useEffect(() => {
-    if (sourceMode !== "camera" || !selectedCameraId) return;
-    return onLive(selectedCameraId, "anpr", (observation) => {
+    // The shared vision service watches every camera continuously. Keep one
+    // lightweight subscription per camera so switching views never pauses or
+    // resets another camera's counter.
+    if (cameras.length === 0) return;
+    const unsubscribers = cameras
+      .filter((camera) => camera.id !== selectedCameraId)
+      .map((camera) => onLive(camera.id, "anpr", (observation) => {
       const at = new Date().toISOString();
       const next = observation.tracks.map((track, index): PlateDetection => {
         const extra = track.extra as AnprExtra;
@@ -191,10 +255,10 @@ export function PlateScannerCanvas({
           ? watchlistCacheRef.current.find((entry) => entry.active && formatPlate(entry.plate_number) === plate) ?? null
           : null;
         return {
-          id: extra.track_ref ?? `${selectedCameraId}:${track.track_id ?? index}`,
+          id: extra.track_ref ?? `${camera.id}:${track.track_id ?? index}`,
           org_id: "org_bsf",
-          camera_id: selectedCameraId,
-          camera_name: selectedCamera?.name ?? selectedCameraId,
+          camera_id: camera.id,
+          camera_name: camera.name,
           zone_id: null,
           plate_number: plate,
           vehicle_type: extra.vehicle_type ?? track.class ?? "vehicle",
@@ -213,19 +277,40 @@ export function PlateScannerCanvas({
         };
       });
 
-      setActiveDetections(next);
-      setSelectedVehicleIndex(0);
-      setSessionVehicles((previous) => {
-        const known = new Set(previous.map((vehicle) => vehicle.id));
-        const additions = next.filter((vehicle) => !known.has(vehicle.id));
-        if (additions.length === 0) return previous;
+      const existing = cameraSessionsRef.current[camera.id] ?? { vehicles: [], total: 0 };
+      const known = new Set(existing.vehicles.map((vehicle) => vehicle.id));
+      const additions = next.filter((vehicle) => !known.has(vehicle.id));
+      const displayAdditions = additions.filter((vehicle) => !existing.vehicles.some((saved) =>
+        saved.vehicle_type === vehicle.vehicle_type &&
+        isDisplayableSnapshot(saved.image_snapshot) &&
+        Math.abs(new Date(saved.occurred_at).getTime() - new Date(vehicle.occurred_at).getTime()) < 15_000));
+      const currentById = new Map(next.map((vehicle) => [vehicle.id, vehicle]));
+      const updatedVehicles = [
+        ...displayAdditions,
+        ...existing.vehicles.map((vehicle) => currentById.get(vehicle.id) ?? vehicle),
+      ].slice(0, 50);
+      if (additions.length > 0) {
         for (const vehicle of additions) {
-          countedVehiclesRef.current.add(vehicle.id);
-          recordCountedVehicle(vehicle, selectedCameraId);
+          countedVehiclesRef.current.add(`${camera.id}:${vehicle.id}`);
+          recordCountedVehicle(vehicle, camera.id, true);
         }
-        setTotalVehiclesCaptured((count) => count + additions.length);
-        return [...additions, ...previous].slice(0, 50);
-      });
+      }
+      const updated = {
+        vehicles: updatedVehicles,
+        total: existing.total + additions.length,
+      };
+      cameraSessionsRef.current[camera.id] = updated;
+
+      if (selectedCameraIdRef.current === camera.id) {
+        // The selected camera gets high-quality OCR frames from the HTTP model;
+        // only use lightweight boxes for the viewport when that model is down.
+        if (!modelOnline) {
+          setActiveDetections(next);
+          setSelectedVehicleIndex(0);
+        }
+        setSessionVehicles(updated.vehicles);
+        setTotalVehiclesCaptured(updated.total);
+      }
 
       const newMatches = next.filter((vehicle) =>
         vehicle.match_status === "MATCHED" && !alarmedVehiclesRef.current.has(vehicle.id));
@@ -237,11 +322,12 @@ export function PlateScannerCanvas({
         const submissionKey = `${vehicle.id}:${vehicle.plate_number}`;
         if (!submittedPlatesRef.current.has(submissionKey)) {
           submittedPlatesRef.current.set(submissionKey, Date.now());
-          onManualScan(vehicle.plate_number, vehicle.vehicle_type, selectedCameraId);
+          onManualScan(vehicle.plate_number, vehicle.vehicle_type, camera.id);
         }
       }
-    });
-  }, [onManualScan, playWatchlistSiren, recordCountedVehicle, selectedCamera?.name, selectedCameraId, sourceMode]);
+    }));
+    return () => unsubscribers.forEach((unsubscribe) => unsubscribe());
+  }, [cameras, modelOnline, onManualScan, playWatchlistSiren, recordCountedVehicle, selectedCameraId]);
 
   // The browser scanner uses a local Python service. Never call it "online"
   // just because the page loaded: check the real model endpoint and show a
@@ -371,7 +457,7 @@ export function PlateScannerCanvas({
       setLiveStreamError(
         err?.message?.includes("Permission") || err?.name === "NotAllowedError"
           ? "Camera permission denied. Please allow camera access in browser settings."
-          : "Camera feed inactive. You can use Upload Video or Preset Checkpoint Feeds.",
+          : "Camera feed inactive. Retry the camera or select a shared camera.",
       );
       setIsLiveStreaming(false);
     }
@@ -407,84 +493,9 @@ export function PlateScannerCanvas({
     setFacingMode((prev) => (prev === "environment" ? "user" : "environment"));
   };
 
-  // ------------------------------------------------------------- Upload Video Logic
-  const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-
-    if (uploadedVideoUrl) {
-      URL.revokeObjectURL(uploadedVideoUrl);
-    }
-
-    const url = URL.createObjectURL(file);
-    setUploadedVideoUrl(url);
-    setUploadedFileName(file.name);
-    setIsPlaying(false);
-    setVideoProgress(0);
-    setActiveDetections([]);
-    setSessionVehicles([]);
-    setTotalVehiclesCaptured(0);
-    trafficSessionRef.current = `anpr-${Date.now()}-${Math.random().toString(36).slice(2)}`;
-    visibleVehiclesRef.current.clear();
-    countedVehiclesRef.current.clear();
-    submittedPlatesRef.current.clear();
-    alarmedVehiclesRef.current.clear();
-
-    if (uploadVideoRef.current) {
-      uploadVideoRef.current.src = url;
-      uploadVideoRef.current.muted = true;
-      uploadVideoRef.current.load();
-    }
-  };
-
-  const handlePlayPause = () => {
-    if (!uploadVideoRef.current) return;
-    if (isPlaying) {
-      uploadVideoRef.current.pause();
-      setIsPlaying(false);
-    } else {
-      void uploadVideoRef.current.play();
-      setIsPlaying(true);
-    }
-  };
-
-  const handleVideoSeek = (e: React.ChangeEvent<HTMLInputElement>) => {
-    if (!uploadVideoRef.current) return;
-    const time = (parseFloat(e.target.value) / 100) * videoDuration;
-    uploadVideoRef.current.currentTime = time;
-    setVideoProgress(parseFloat(e.target.value));
-  };
-
-  const handleSpeedChange = (speed: number) => {
-    setPlaybackSpeed(speed);
-    if (uploadVideoRef.current) {
-      uploadVideoRef.current.playbackRate = speed;
-    }
-  };
-
-  const finalizeVisibleVehicles = useCallback(() => {
-    const remaining = [...visibleVehiclesRef.current.entries()]
-      .filter(([key]) => !countedVehiclesRef.current.has(key));
-    if (remaining.length === 0) return;
-
-    remaining.forEach(([key, vehicleState]) => {
-      countedVehiclesRef.current.add(key);
-      recordCountedVehicle(vehicleState.vehicle, selectedCameraId || "cam_fence_north");
-    });
-    setTotalVehiclesCaptured((count) => count + remaining.length);
-    setSessionVehicles((previous) => {
-      const known = new Set(previous.map((vehicle) => vehicle.id));
-      const additions = remaining
-        .map(([, state]) => state.vehicle)
-        .filter((vehicle) => !known.has(vehicle.id));
-      return [...additions, ...previous].slice(0, 100);
-    });
-    visibleVehiclesRef.current.clear();
-  }, [recordCountedVehicle, selectedCameraId]);
-
   // ------------------------------------------------------------- REAL-TIME DYNAMIC CAR SNAPSHOT & ALPR OCR ENGINE
   // Retained temporarily for preset artwork only. It is never used for live
-  // camera or uploaded-video analysis.
+  // camera analysis.
   const legacySyntheticCapture = useCallback(
     async (
       videoElement: HTMLVideoElement | null,
@@ -756,8 +767,10 @@ export function PlateScannerCanvas({
           ? watchlistCacheRef.current.find((entry) => entry.active && entry.plate_number.replace(/[^A-Z0-9]/gi, "").toUpperCase() === normalized) ?? null
           : null;
         return {
-          id: `live-track-${item.track_key ?? item.track_id ?? index}`,
-          org_id: "org_bsf", camera_id: "cam_fence_north", camera_name: sourceName,
+          id: `${sourceMode === "camera" ? selectedCameraId : "local-live"}:live-track-${item.track_key ?? item.track_id ?? index}`,
+          org_id: "org_bsf",
+          camera_id: sourceMode === "camera" ? selectedCameraId : "cam_fence_north",
+          camera_name: sourceName,
           zone_id: null, plate_number: plate, vehicle_type: item.vehicle_type,
           confidence: item.confidence, plate_confidence: item.plate?.confidence ?? 0,
           plate_source: item.plate?.source ?? "ocr",
@@ -791,27 +804,57 @@ export function PlateScannerCanvas({
           hits: (previous?.hits ?? 0) + 1,
         });
       }
-      setSessionVehicles((previous) => previous.map((saved) => current.get(saved.id) ?? saved));
+      setSessionVehicles((previous) => {
+        if (sourceMode !== "camera") {
+          return previous.map((saved) => current.get(saved.id) ?? saved);
+        }
+        const enriched = [...previous];
+        for (const detection of detections) {
+          const exactIndex = enriched.findIndex((saved) => saved.id === detection.id);
+          if (exactIndex >= 0) {
+            enriched[exactIndex] = detection;
+            continue;
+          }
+          const likelyTrackIndex = enriched.findIndex((saved) =>
+            saved.camera_id === selectedCameraId &&
+            saved.vehicle_type === detection.vehicle_type &&
+            !isDisplayableSnapshot(saved.image_snapshot) &&
+            Math.abs(new Date(saved.occurred_at).getTime() - new Date(detection.occurred_at).getTime()) < 15_000);
+          if (likelyTrackIndex >= 0) {
+            enriched[likelyTrackIndex] = { ...detection, id: enriched[likelyTrackIndex]!.id };
+          } else if (isDisplayableSnapshot(detection.image_snapshot)) {
+            enriched.unshift(detection);
+          }
+        }
+        return enriched.slice(0, 50);
+      });
       const candidates = [...visibleVehiclesRef.current.entries()]
         .filter(([key, state]) =>
           countOnFirstDetection ||
+          sourceMode === "camera" ||
           // Two consecutive observations confirm a real tracked vehicle and
           // update the total while it is still visible. An exit remains a
           // fallback for a vehicle caught in only one sharp frame.
           state.hits >= 2 ||
           (!current.has(key) && now - state.lastSeen >= 5_000))
         .map(([key, state]) => ({ key, vehicle: state.vehicle }));
+      // The selected camera is counted from this high-quality path. Other
+      // cameras continue through the shared background tracker, so a vehicle
+      // is never counted by both pipelines at the same time.
       const newlyCounted = candidates.filter(({ key }) => !countedVehiclesRef.current.has(key));
       if (newlyCounted.length) {
         newlyCounted.forEach(({ key, vehicle }) => {
           countedVehiclesRef.current.add(key);
-          recordCountedVehicle(vehicle, selectedCameraId || "cam_fence_north");
+          recordCountedVehicle(vehicle, selectedCameraId || "cam_fence_north", sourceMode === "camera");
         });
         setTotalVehiclesCaptured((count) => count + newlyCounted.length);
-        setSessionVehicles((previous) => [
-          ...newlyCounted.map(({ vehicle }) => vehicle),
-          ...previous,
-        ].slice(0, 100));
+        setSessionVehicles((previous) => {
+          const existingIds = new Set(previous.map((vehicle) => vehicle.id));
+          const additions = newlyCounted
+            .map(({ vehicle }) => vehicle)
+            .filter((vehicle) => !existingIds.has(vehicle.id));
+          return [...additions, ...previous].slice(0, 100);
+        });
       }
       // Keep visible state after counting so the same stable track cannot be
       // inserted again while it approaches the camera.
@@ -819,7 +862,11 @@ export function PlateScannerCanvas({
         const submissionKey = `${item.id}:${item.plate_number}`;
         if (!submittedPlatesRef.current.has(submissionKey)) {
           submittedPlatesRef.current.set(submissionKey, Date.now());
-          onManualScan(item.plate_number, item.vehicle_type, "cam_fence_north");
+          onManualScan(
+            item.plate_number,
+            item.vehicle_type,
+            sourceMode === "camera" ? selectedCameraId : "cam_fence_north",
+          );
         }
       }
       setModelOnline(true);
@@ -831,7 +878,7 @@ export function PlateScannerCanvas({
     } finally {
       analysisInFlightRef.current = false;
     }
-  }, [countOnFirstDetection, onManualScan, playWatchlistSiren, recordCountedVehicle, selectedCameraId]);
+  }, [countOnFirstDetection, onManualScan, playWatchlistSiren, recordCountedVehicle, selectedCameraId, sourceMode]);
 
   // Continuous Video Scan Interval Loop
   useEffect(() => {
@@ -839,13 +886,17 @@ export function PlateScannerCanvas({
       clearInterval(scanIntervalRef.current);
     }
 
-    if (modelOnline && sourceMode === "live" && isLiveStreaming && continuousScan) {
+    if (modelOnline && sourceMode === "camera" && selectedCamera?.ready && continuousScan) {
+      scanIntervalRef.current = setInterval(() => {
+        const video = sharedCameraViewportRef.current?.querySelector("video") ?? null;
+        void captureAndDetectCar(
+          video,
+          selectedCamera?.name ?? selectedCameraId ?? "Shared Camera",
+        );
+      }, 750);
+    } else if (modelOnline && sourceMode === "live" && isLiveStreaming && continuousScan) {
       scanIntervalRef.current = setInterval(() => {
         void captureAndDetectCar(liveVideoRef.current, "Live Camera Feed");
-      }, 750);
-    } else if (modelOnline && sourceMode === "upload" && isPlaying && continuousScan) {
-      scanIntervalRef.current = setInterval(() => {
-        void captureAndDetectCar(uploadVideoRef.current, uploadedFileName || "Uploaded Video");
       }, 750);
     }
 
@@ -854,21 +905,30 @@ export function PlateScannerCanvas({
         clearInterval(scanIntervalRef.current);
       }
     };
-  }, [sourceMode, isLiveStreaming, isPlaying, continuousScan, uploadedFileName, modelOnline, captureAndDetectCar]);
+  }, [sourceMode, isLiveStreaming, continuousScan, modelOnline, captureAndDetectCar, selectedCamera?.name, selectedCamera?.ready, selectedCameraId]);
 
   // Currently focused vehicle
   const primaryDetection =
-    activeDetections[selectedVehicleIndex] ?? activeDetections[0] ?? sessionVehicles[0] ?? null;
+    activeDetections[selectedVehicleIndex] ?? activeDetections[0] ?? null;
   const isMatched = primaryDetection?.match_status === "MATCHED";
   const plateNumber = primaryDetection?.plate_number || "No plate read";
+  const capturedVehicles = Array.from(new Map(
+    sessionVehicles
+      .filter((vehicle) =>
+        vehicle.camera_id === selectedCameraId &&
+        vehicle.simulated === false &&
+        isDisplayableSnapshot(vehicle.image_snapshot))
+      .map((vehicle) => [vehicle.id, vehicle]),
+  ).values());
   const inspectionDetection =
     (primaryDetection?.plate_number ? primaryDetection : null) ??
-    sessionVehicles.find((vehicle) => Boolean(vehicle.plate_number)) ??
+    capturedVehicles.find((vehicle) => Boolean(vehicle.plate_number)) ??
     primaryDetection;
   const inspectionPlateNumber = inspectionDetection?.plate_number || "No plate read";
+  const hasReadableInspectionPlate = Boolean(inspectionDetection?.plate_number?.trim());
 
   // Vehicle Counts
-  const totalVehiclesCount = totalVehiclesCaptured || sessionVehicles.length;
+  const totalVehiclesCount = totalVehiclesCaptured;
   const inViewCount = activeDetections.length;
   const countByType = sessionVehicles.reduce<Record<string, number>>((acc, veh) => {
     const type = veh.vehicle_type || "vehicle";
@@ -878,27 +938,20 @@ export function PlateScannerCanvas({
 
   return (
     <div className="grid grid-cols-1 gap-6 lg:grid-cols-12">
-      {/* Hidden file input for video upload */}
-      <input
-        type="file"
-        ref={fileInputRef}
-        onChange={handleFileUpload}
-        accept="video/*"
-        className="hidden"
-      />
       <canvas ref={offscreenCanvasRef} className="hidden" />
 
       {/* Main Video Viewport & Detection Overlay */}
       <div className="lg:col-span-8 space-y-4">
         <Card className="overflow-hidden border-2 bg-slate-950 text-slate-100 shadow-2xl relative">
           {/* Viewport Frame */}
-          <div className="relative aspect-video w-full bg-slate-950 overflow-hidden select-none flex items-center justify-center">
+          <div ref={sharedCameraViewportRef} className="relative aspect-video w-full bg-slate-950 overflow-hidden select-none flex items-center justify-center">
             {/* Shared Media Server camera */}
             {sourceMode === "camera" && selectedCameraId && (
               <CameraFeed
                 cameraId={selectedCameraId}
                 whepBase={media?.whepBase}
                 module="anpr"
+                showBoxes={false}
                 className="absolute inset-0 h-full w-full border-0"
               />
             )}
@@ -914,61 +967,6 @@ export function PlateScannerCanvas({
               />
             )}
 
-            {/* 2. Uploaded Video Player Mode */}
-            {sourceMode === "upload" && uploadedVideoUrl && (
-              <video
-                ref={uploadVideoRef}
-                src={uploadedVideoUrl}
-                playsInline
-                muted
-                onTimeUpdate={() => {
-                  if (uploadVideoRef.current) {
-                    setVideoProgress(
-                      (uploadVideoRef.current.currentTime / uploadVideoRef.current.duration) * 100,
-                    );
-                  }
-                }}
-                onLoadedMetadata={() => {
-                  if (uploadVideoRef.current) {
-                    setVideoDuration(uploadVideoRef.current.duration);
-                    if (autoStartUpload) {
-                      void uploadVideoRef.current.play();
-                      setIsPlaying(true);
-                    }
-                  }
-                }}
-                onEnded={() => {
-                  setIsPlaying(false);
-                  finalizeVisibleVehicles();
-                  setActiveDetections([]);
-                }}
-                className="absolute inset-0 w-full h-full object-contain bg-black"
-              />
-            )}
-
-            {/* Empty Upload Prompt when in upload mode with no video selected yet */}
-            {sourceMode === "upload" && !uploadedVideoUrl && (
-              <div
-                onClick={() => fileInputRef.current?.click()}
-                className="absolute inset-0 flex flex-col items-center justify-center p-6 border-2 border-dashed border-slate-700/80 bg-slate-900/60 hover:bg-slate-900/90 cursor-pointer transition-all text-center gap-3 z-10"
-              >
-                <div className="h-14 w-14 rounded-full bg-cyan-500/10 border border-cyan-500/30 flex items-center justify-center text-cyan-400 shadow-lg">
-                  <UploadCloudIcon className="h-7 w-7" />
-                </div>
-                <div>
-                  <h4 className="text-sm font-semibold text-slate-200">
-                    Click to Upload Video File
-                  </h4>
-                  <p className="text-xs text-slate-400 mt-1 max-w-sm">
-                    Supports MP4, WebM, MOV, MKV. Automated ANPR captures car snapshots & extracts license plates in real time.
-                  </p>
-                </div>
-                <Button variant="outline" size="sm" className="mt-2 text-xs font-mono">
-                  Select Video from Device
-                </Button>
-              </div>
-            )}
-
             {/* Live Camera Inactive Fallback */}
             {sourceMode === "live" && liveStreamError && (
               <div className="absolute inset-0 flex flex-col items-center justify-center p-6 bg-slate-900/90 text-center gap-3 z-10">
@@ -980,9 +978,6 @@ export function PlateScannerCanvas({
                 <div className="flex gap-2 mt-2">
                   <Button size="sm" variant="outline" onClick={() => void startLiveStream()}>
                     <RefreshCwIcon className="h-3.5 w-3.5 mr-1" /> Retry Camera
-                  </Button>
-                  <Button size="sm" variant="default" onClick={() => setSourceMode("upload")}>
-                    <FileVideoIcon className="h-3.5 w-3.5 mr-1" /> Switch to Video File
                   </Button>
                 </div>
               </div>
@@ -997,19 +992,13 @@ export function PlateScannerCanvas({
                       ? "bg-emerald-400 animate-pulse"
                       : sourceMode === "live" && isLiveStreaming
                       ? "bg-emerald-400 animate-ping"
-                      : sourceMode === "upload" && isPlaying
-                        ? "bg-cyan-400 animate-pulse"
-                        : "bg-red-500 animate-ping"
+                      : "bg-red-500 animate-ping"
                   }`}
                 />
                 <span className="font-bold tracking-wider text-slate-200 uppercase">
                   {sourceMode === "camera"
                     ? `SHARED CAMERA: ${selectedCamera?.name ?? selectedCameraId}`
-                    : sourceMode === "live"
-                    ? "LIVE CAMERA FEED"
-                    : sourceMode === "upload"
-                      ? `VIDEO FEED: ${uploadedFileName || "LOADED FILE"}`
-                      : "CHECKPOINT ANPR FEED"}
+                    : "LIVE CAMERA FEED"}
                 </span>
               </div>
               <div className="text-slate-400 text-[10px]">
@@ -1058,17 +1047,12 @@ export function PlateScannerCanvas({
 
               <div className="flex items-center gap-2">
                 {/* Manual Snapshot Trigger Button */}
-                {sourceMode !== "camera" && <Button
+                {sourceMode === "live" && <Button
                   size="sm"
                   variant="secondary"
                   className="h-7 text-[11px] gap-1 font-semibold bg-cyan-600 hover:bg-cyan-700 text-white shadow"
                   onClick={() => {
-                    const videoElem =
-                      sourceMode === "live" ? liveVideoRef.current : uploadVideoRef.current;
-                    void captureAndDetectCar(
-                      videoElem,
-                      sourceMode === "live" ? "Live Camera" : "Video Snapshot",
-                    );
+                    void captureAndDetectCar(liveVideoRef.current, "Live Camera");
                   }}
                 >
                   <CameraIcon className="h-3.5 w-3.5" />
@@ -1086,59 +1070,10 @@ export function PlateScannerCanvas({
                   </Button>
                 )}
 
-                {sourceMode === "upload" && uploadedVideoUrl && (
-                  <Button
-                    size="sm"
-                    variant="outline"
-                    className="h-7 px-2 text-[10px]"
-                    onClick={() => fileInputRef.current?.click()}
-                  >
-                    Change Video
-                  </Button>
-                )}
               </div>
             </div>
           </div>
 
-          {/* Uploaded Video Controls Strip */}
-          {sourceMode === "upload" && uploadedVideoUrl && (
-            <div className="bg-slate-900 border-t border-slate-800 px-4 py-2.5 flex flex-col gap-2">
-              <div className="flex items-center gap-3">
-                <Button
-                  size="sm"
-                  variant={isPlaying ? "destructive" : "default"}
-                  className="h-8 px-3 text-xs gap-1.5"
-                  onClick={handlePlayPause}
-                >
-                  {isPlaying ? <PauseIcon className="h-3.5 w-3.5" /> : <PlayIcon className="h-3.5 w-3.5" />}
-                  {isPlaying ? "Pause Playback" : "Play & Read Plates"}
-                </Button>
-
-                <input
-                  type="range"
-                  min="0"
-                  max="100"
-                  value={videoProgress}
-                  onChange={handleVideoSeek}
-                  className="flex-1 h-1.5 bg-slate-700 rounded-lg appearance-none cursor-pointer accent-cyan-500"
-                />
-
-                <div className="flex items-center gap-1">
-                  {[0.5, 1, 2].map((speed) => (
-                    <Button
-                      key={speed}
-                      size="sm"
-                      variant={playbackSpeed === speed ? "secondary" : "ghost"}
-                      className="h-7 px-2 text-[10px] font-mono"
-                      onClick={() => handleSpeedChange(speed)}
-                    >
-                      {speed}x
-                    </Button>
-                  ))}
-                </div>
-              </div>
-            </div>
-          )}
         </Card>
 
         {/* --------------------------------- REAL-TIME VEHICLE COUNTER & STATS STRIP --------------------------------- */}
@@ -1261,21 +1196,29 @@ export function PlateScannerCanvas({
                 <div className="text-xs font-medium text-muted-foreground flex items-center justify-between">
                   <span>{inspectionDetection?.plate_verified === false ? "AI estimate:" : "OCR Confidence:"}</span>
                   <span className={`font-mono font-semibold ${inspectionDetection?.plate_verified === false ? "text-amber-600" : "text-emerald-600"}`}>
-                    {inspectionDetection?.plate_verified === false ? "UNVERIFIED" : `${Math.round((inspectionDetection?.plate_confidence ?? 0.96) * 100)}%`}
+                    {!hasReadableInspectionPlate
+                      ? "0%"
+                      : inspectionDetection?.plate_verified === false
+                        ? "UNVERIFIED"
+                        : `${Math.round((inspectionDetection?.plate_confidence ?? 0) * 100)}%`}
                   </span>
                 </div>
                 <div className="flex flex-wrap gap-1">
-                  {inspectionPlateNumber.replace(/\s+/g, "").split("").map((char, index) => (
-                    <div
-                      key={index}
-                      className="flex flex-col items-center rounded border bg-muted/40 px-1.5 py-0.5 text-center"
-                    >
-                      <span className="font-mono font-bold text-xs text-foreground">{char}</span>
-                      <span className="text-[9px] font-mono text-muted-foreground">
-                        {inspectionDetection?.plate_verified === false ? "AI" : `${95 + ((index * 7) % 5)}%`}
-                      </span>
-                    </div>
-                  ))}
+                  {hasReadableInspectionPlate ? (
+                    inspectionPlateNumber.replace(/\s+/g, "").split("").map((char, index) => (
+                      <div
+                        key={index}
+                        className="flex flex-col items-center rounded border bg-muted/40 px-1.5 py-0.5 text-center"
+                      >
+                        <span className="font-mono font-bold text-xs text-foreground">{char}</span>
+                        <span className="text-[9px] font-mono text-muted-foreground">
+                          {inspectionDetection?.plate_verified === false ? "AI" : `${Math.round((inspectionDetection?.plate_confidence ?? 0) * 100)}%`}
+                        </span>
+                      </div>
+                    ))
+                  ) : (
+                    <span className="text-[11px] text-muted-foreground">Waiting for a readable number plate…</span>
+                  )}
                 </div>
               </div>
             </div>
@@ -1322,7 +1265,7 @@ export function PlateScannerCanvas({
               Feed Source & ANPR Controls
             </CardTitle>
             <CardDescription className="text-xs">
-              Select a shared camera, use a local live camera, or upload a video.
+              Select a shared camera or use a local live camera.
             </CardDescription>
           </CardHeader>
           <CardContent className="space-y-4">
@@ -1330,7 +1273,7 @@ export function PlateScannerCanvas({
               {modelMessage}
             </div>}
             {/* Feed mode selectors */}
-            <div className="grid grid-cols-3 gap-1 rounded-md bg-muted p-1 text-xs">
+            <div className="grid grid-cols-2 gap-1 rounded-md bg-muted p-1 text-xs">
               <button
                 type="button"
                 className={`rounded py-1.5 font-medium transition-colors flex items-center justify-center gap-1 ${
@@ -1353,27 +1296,12 @@ export function PlateScannerCanvas({
               >
                 <RadioIcon className="h-3.5 w-3.5 text-red-500" /> Live Video
               </button>
-              <button
-                type="button"
-                className={`rounded py-1.5 font-medium transition-colors flex items-center justify-center gap-1 ${
-                  sourceMode === "upload"
-                    ? "bg-background text-foreground shadow-sm font-semibold"
-                    : "text-muted-foreground hover:text-foreground"
-                }`}
-                onClick={() => setSourceMode("upload")}
-              >
-                <FileVideoIcon className="h-3.5 w-3.5 text-cyan-400" /> Upload Video
-              </button>
             </div>
 
             {sourceMode === "camera" && (
               <div className="space-y-2">
                 <Label className="text-xs font-semibold">Select shared camera</Label>
-                <Select value={selectedCameraId} onValueChange={(value) => {
-                  setSelectedCameraId(value);
-                  setActiveDetections([]);
-                  setSelectedVehicleIndex(0);
-                }}>
+                <Select value={selectedCameraId} onValueChange={setSelectedCameraId}>
                   <SelectTrigger className="h-9 text-xs"><SelectValue placeholder="Select camera" /></SelectTrigger>
                   <SelectContent>
                     {cameras.map((camera) => (
@@ -1409,58 +1337,6 @@ export function PlateScannerCanvas({
               </div>
             )}
 
-            {/* Mode 3: Upload Video File */}
-            {sourceMode === "upload" && (
-              <div className="space-y-3">
-                <div className="flex items-center gap-2">
-                  <Button
-                    type="button"
-                    variant="outline"
-                    size="sm"
-                    className="gap-1.5 text-xs"
-                    onClick={() => fileInputRef.current?.click()}
-                  >
-                    <UploadCloudIcon className="h-4 w-4 text-cyan-500" />
-                    {uploadedVideoUrl ? "Change video" : "Choose video"}
-                  </Button>
-                  {uploadedFileName && (
-                    <span className="min-w-0 truncate text-xs text-muted-foreground" title={uploadedFileName}>
-                      {uploadedFileName}
-                    </span>
-                  )}
-                </div>
-
-                {uploadedVideoUrl && (
-                  <>
-                    <div className="flex items-center justify-between p-2 rounded border text-xs">
-                      <span className="font-medium">Continuous Scan on Play</span>
-                      <Switch checked={continuousScan} onCheckedChange={setContinuousScan} />
-                    </div>
-
-                    <div className="grid grid-cols-2 gap-2">
-                      <Button
-                        className="w-full font-semibold gap-1.5 text-xs"
-                        onClick={handlePlayPause}
-                      >
-                        {isPlaying ? <PauseIcon className="h-3.5 w-3.5" /> : <PlayIcon className="h-3.5 w-3.5" />}
-                        {isPlaying ? "Pause" : "Play & Read"}
-                      </Button>
-
-                      <Button
-                        variant="secondary"
-                        className="w-full font-semibold gap-1.5 text-xs"
-                        onClick={() => void captureAndDetectCar(uploadVideoRef.current, uploadedFileName || "Video Snapshot")}
-                        disabled={!modelOnline}
-                      >
-                        <CameraIcon className="h-3.5 w-3.5" />
-                        Snap & Count
-                      </Button>
-                    </div>
-                  </>
-                )}
-              </div>
-            )}
-
           </CardContent>
         </Card>
 
@@ -1470,9 +1346,9 @@ export function PlateScannerCanvas({
             <div className="flex items-center justify-between">
               <CardTitle className="text-xs font-semibold flex items-center gap-1.5">
                 <ListOrderedIcon className="h-3.5 w-3.5 text-primary" />
-                Captured Vehicles ({sessionVehicles.length})
+                Captured Vehicles ({capturedVehicles.length})
               </CardTitle>
-              {sessionVehicles.length > 0 && (
+              {capturedVehicles.length > 0 && (
                 <Button
                   size="sm"
                   variant="ghost"
@@ -1493,12 +1369,12 @@ export function PlateScannerCanvas({
             </div>
           </CardHeader>
           <CardContent className="p-2 pt-0 max-h-60 overflow-y-auto space-y-1.5">
-            {sessionVehicles.length === 0 ? (
+            {capturedVehicles.length === 0 ? (
               <div className="text-[11px] text-muted-foreground text-center py-4">
-                No vehicles captured yet. Play a video or click Take Snapshot.
+                No vehicles captured on this camera yet.
               </div>
             ) : (
-              sessionVehicles.map((veh, idx) => {
+              capturedVehicles.map((veh, idx) => {
                 const hit = veh.match_status === "MATCHED";
                 const estimated = veh.plate_verified === false;
                 return (
