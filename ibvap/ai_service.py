@@ -58,7 +58,7 @@ OCR_INTERVAL_SECONDS = 3.0
 # A vehicle is often unreadable when first seen far away, then clear a few
 # seconds later. Waiting thirty seconds cached that first UNKNOWN for almost
 # the whole pass. Successful answers remain cached; only UNKNOWN retries.
-LLM_RETRY_SECONDS = 6.0
+LLM_RETRY_SECONDS = 4.0
 
 STABLE_TRACKS: dict[str, dict] = {}
 NEXT_STABLE_TRACK = 1
@@ -110,8 +110,19 @@ def models() -> tuple[SharedDetector, PlateReader]:
     # Vehicles only here: the scanner is pointed at a car, and detecting
     # everything else would just add boxes an operator did not ask for.
     return (
-        SharedDetector(classes=[2, 3, 5, 7], run_id="scan"),
-        PlateReader(read_interval=OCR_INTERVAL_SECONDS),
+        # Shared-camera vehicles can be small while approaching the gate.
+        # A larger inference image and slightly lower threshold recover those
+        # vehicles without enabling any non-vehicle COCO classes.
+        SharedDetector(
+            classes=[2, 3, 5, 7],
+            run_id="scan",
+            imgsz=640,
+            conf=0.20,
+        ),
+        PlateReader(
+            ocr_confidence=0.20,
+            read_interval=OCR_INTERVAL_SECONDS,
+        ),
     )
 
 
@@ -145,7 +156,10 @@ def stable_track_key(vehicle: dict, width: int, height: int, assigned: set[str])
     best_key, best_score = None, float("-inf")
     for key, previous in STABLE_TRACKS.items():
         age = now - previous["seen"]
-        if key in assigned or previous["kind"] != kind or age > 3.0:
+        # CPU EasyOCR can make the next browser request arrive more than three
+        # seconds later. Keep the geometric track alive long enough for that
+        # response and for the asynchronous Gemini hint to be collected.
+        if key in assigned or previous["kind"] != kind or age > 8.0:
             continue
         px1, py1, px2, py2 = previous["bbox"]
         previous_centre = ((px1 + px2) / 2, (py1 + py2) / 2)
@@ -255,8 +269,8 @@ def llm_plate_fallback(image: np.ndarray, vehicle_bbox, track_key: str,
         return cached.get("result") if cached else None
 
     px1, py1, px2, py2 = reader.plate_region(vehicle_bbox, image.shape,
-                                              lower_frac=0.38,
-                                              center_w_frac=0.62)
+                                              lower_frac=0.32,
+                                              center_w_frac=0.72)
     crop = image[py1:py2, px1:px2]
     if crop is None or crop.size == 0 or crop.shape[1] < 24 or crop.shape[0] < 12:
         LLM_READS[track_key] = {
