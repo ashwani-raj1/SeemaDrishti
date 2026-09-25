@@ -47,7 +47,10 @@
 #
 #                        Omit it to take `defaults.modules` below. Available:
 #                        fence (zone/line intrusion), anpr (plate reading),
-#                        multi_human (person tracking; re-ID is interface-only).
+#                        multi_human (person tracking; re-ID is interface-only),
+#                        face (cascaded face detection inside a person box --
+#                        detection only, never recognition; opt-in per camera
+#                        the same way anpr is, because it loads its own model).
 #                        Fence ZONES are not configured here — they are drawn by
 #                        an operator, stored by the edge node, and pulled from
 #                        its /api/config while running, so an edit takes effect
@@ -68,7 +71,12 @@ defaults:
 cameras:
   - id: cam_fence_north
     label: BOP-01 Fence North
+    # The human-tracking + face-detection demo camera: multi_human for
+    # within-camera tracking, face for the cascaded detector inside each
+    # tracked person's box.
+    modules: [fence, multi_human, face]
     detect: true
+    modules: [fence, anpr, multi_human]
     source:
       kind: file
       path: clips/fence_north.mp4
@@ -99,6 +107,7 @@ cameras:
   - id: cam_waterline
     label: BOP-04 Waterline
     detect: true
+    modules: [fence, anpr, multi_human]
     source:
       kind: file
       path: clips/waterline.mp4
@@ -125,6 +134,21 @@ cameras:
       path: clips/virtual_fence.mp4
       # url: https://www.youtube.com/watch?v=...
  
+
+  - id: cam_border_gate
+    label: Border Gate
+    detect: true
+    # Preserve the source pixels for ANPR snapshots. Other cameras keep the
+    # CPU-friendly 480p default.
+    height: null
+    # Real footage (a car park), unlike the synthetic test patterns on the
+    # other paths -- so this is the one camera where detections actually
+    # appear. ANPR is on because what is in frame is vehicles.
+    modules: [fence, anpr, multi_human]
+    source:
+      kind: file
+      path: clips/border_gate.mp4
+      url: https://youtu.be/dP1UQ59d0Vw?si=IH6BV_MmQP57E6An
   
   
   

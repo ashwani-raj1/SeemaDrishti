@@ -11,6 +11,9 @@ import type {
   ClipManifest, ClipUsage, IncidentDetail, MonitoringZone, NodeSettings, PlateDetection, Point,
   ResetCounts, ServerConfig,
   SimStatus, UpdateWatchlistInput, WatchlistEntry, WatchlistStats,
+  IncidentDetail, MonitoringZone, PlateDetection, Point, ServerConfig, SimStatus,
+  UpdateWatchlistInput, WatchlistEntry, WatchlistStats,
+  VehicleTrafficSummary,
 } from "./types";
 
 /**
@@ -358,6 +361,10 @@ export const api = {
   deleteWatchlistEntry: (id: string, reason: string) =>
     request<{ ok: true }>(`/api/watchlist/${id}`, { method: "DELETE", body: JSON.stringify({ reason }) }),
   watchlistStats: () => request<WatchlistStats>("/api/watchlist/stats"),
+  vehicleTraffic: (params: { days?: number; camera_id?: string } = {}) =>
+    request<VehicleTrafficSummary>(`/api/watchlist/traffic${qs(params)}`),
+  recordVehicleTraffic: (body: { sourceKey: string; cameraId: string; vehicleType: string; occurredAt?: string }) =>
+    post<{ recorded: boolean }>("/api/watchlist/traffic", body),
   plateDetections: (params: { match_status?: string; camera_id?: string; plate?: string; limit?: number } = {}) =>
     request<PlateDetection[]>(`/api/watchlist/detections${qs(params)}`),
   detectVehicleAndPlate: (body: DetectVehicleInput) => post<PlateDetection>("/api/watchlist/detect", body),

@@ -79,7 +79,7 @@ class PlateReader:
         self._recent: dict[Any, tuple[float, str, float]] = {}
 
     @staticmethod
-    def plate_region(bbox_px, frame_shape, lower_frac=0.45, center_w_frac=0.60):
+    def plate_region(bbox_px, frame_shape, lower_frac=0.32, center_w_frac=0.70):
         """
         The lower-central slice of a vehicle box, where a plate sits.
 
@@ -113,27 +113,26 @@ class PlateReader:
         if cached and now - cached[0] < self.read_interval:
             return {"text": cached[1], "confidence": cached[2],
                     "bbox": (px1, py1, px2, py2), "cached": True}
-
         crop = frame[py1:py2, px1:px2]
         if crop is None or crop.size == 0:
             return None
-        # Plates in a night feed are small and usually hit by headlight glare.
-        # Read the same tightly-scoped crop two ways: contrast recovery keeps
-        # faded dark lettering, while Otsu separates a bright plate from the
-        # bumper. We still require a plausible OCR result -- this improves
-        # pixels, it never invents a registration number.
-        enlarged = cv2.resize(crop, None, fx=6, fy=6, interpolation=cv2.INTER_CUBIC)
+        enlarged = cv2.resize(crop, None, fx=6, fy=6,
+                              interpolation=cv2.INTER_CUBIC)
         gray = cv2.cvtColor(enlarged, cv2.COLOR_BGR2GRAY)
-        enhanced = cv2.createCLAHE(clipLimit=3.0, tileGridSize=(8, 8)).apply(gray)
-        _, thresholded = cv2.threshold(enhanced, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)
-
+        enhanced = cv2.createCLAHE(clipLimit=3.0,
+                                   tileGridSize=(8, 8)).apply(gray)
+        _, thresholded = cv2.threshold(
+            enhanced, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)
+        inverted = cv2.bitwise_not(thresholded)
+        adaptive = cv2.adaptiveThreshold(
+            enhanced, 255, cv2.ADAPTIVE_THRESH_GAUSSIAN_C,
+            cv2.THRESH_BINARY, 31, 9)
         best = None
-        for prepared in (enhanced, thresholded):
-            readings = self.reader.readtext(prepared, detail=1, allowlist=self.ALLOWLIST)
+        for prepared in (enhanced, thresholded, inverted, adaptive):
+            readings = self.reader.readtext(
+                prepared, detail=1, allowlist=self.ALLOWLIST)
             if not readings:
                 continue
-            # OCR often yields state, series and number as separate tokens.
-            # Preserve their left-to-right order before validating.
             readings.sort(key=lambda item: min(point[0] for point in item[0]))
             text = normalise_plate("".join(item[1] for item in readings))
             confidence = sum(float(item[2]) for item in readings) / len(readings)
@@ -145,6 +144,11 @@ class PlateReader:
             )
             if plausible and (best is None or confidence > best[1]):
                 best = (text, confidence, readings)
+                # A strong contrast-enhanced read does not need the slower
+                # thresholded retry. Ambiguous reads still receive both passes,
+                # so this reduces latency without lowering recognition quality.
+                if confidence >= 0.55:
+                    break
 
         if best is None:
             return None

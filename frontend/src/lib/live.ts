@@ -72,14 +72,33 @@ export interface AnprExtra {
   };
 }
 
+/** What the face module puts in `extra`. Detection only -- never identity. */
+export interface FaceExtra {
+  track_ref?: string;
+  face?: {
+    /** [x1, y1, x2, y2], normalised 0..1 -- same convention as the track box. */
+    bbox: [number, number, number, number];
+    score: number;
+  };
+}
+
 /** What the multi_human module puts in `extra`. */
 export interface PeopleExtra {
   track_ref?: string;
+  /**
+   * The module's own stable label ("P1", "P2", ...) -- one per
+   * appearance-matched span of tracks, not one per ByteTrack id. Persists
+   * across a short occlusion or a full re-entry that the reid provider
+   * matched; see modules/reid.py's naming rule for what this label does and
+   * does not claim (colour-based re-association, never recognition).
+   */
+  person_id?: string;
   ground?: [number, number];
+  /** The identity's FULL trail (module-side `trail_limit`, default unbounded
+   * for a bounded demo clip) -- one continuous line across the whole span
+   * `person_id` covers, including straight across an occlusion gap. */
   trail?: Array<[number, number]>;
   age_seconds?: number;
-  /** Which earlier TRACK this one resembles. Never an identity. */
-  matched_ref?: string | null;
 }
 
 /** One camera, as the vision service currently reports it. */

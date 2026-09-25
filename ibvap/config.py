@@ -164,6 +164,22 @@ class Settings:
         return str(local) if local.exists() else configured
 
     @property
+    def face_model(self) -> str:
+        """
+        Resolved against THIS directory, not the current one -- the identical
+        bug `weights` documents: a bare relative path resolves differently
+        depending on whether `main.py` was launched from the repo root or
+        from inside `ibvap/`, and a "missing" model on one launch and not the
+        other looks like a broken model rather than a path bug.
+        """
+        configured = self.get("IBVAP_FACE_MODEL",
+                              "data/face_detection_yunet_2023mar.onnx")
+        if Path(configured).is_absolute():
+            return configured
+        local = HERE / configured
+        return str(local) if local.exists() else configured
+
+    @property
     def target_fps(self) -> float:
         """
         Processed frames per second, per camera. NOT the camera's frame rate.

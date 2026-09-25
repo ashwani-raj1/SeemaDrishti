@@ -54,6 +54,17 @@ export interface WatchlistStats {
   readRate: number;
 }
 
+export interface VehicleTrafficPoint {
+  date: string;
+  total: number;
+}
+
+export interface VehicleTrafficSummary {
+  days: number;
+  total: number;
+  points: VehicleTrafficPoint[];
+}
+
 export interface CreateWatchlistInput {
   orgId: string;
   plateNumber: string;
@@ -374,6 +385,69 @@ export function getWatchlistStats(orgId: string): WatchlistStats {
     matches24h: matchesRow?.count ?? 0,
     readRate,
   };
+}
+
+export function recordVehicleTraffic(input: {
+  orgId: string;
+  cameraId: string;
+  sourceKey: string;
+  vehicleType?: string;
+  occurredAt?: string;
+}): { recorded: boolean } {
+  const at = input.occurredAt ?? nowIso();
+  const before = one<{ id: string }>(
+    "SELECT id FROM vehicle_traffic_event WHERE org_id = $org AND source_key = $key",
+    { $org: input.orgId, $key: input.sourceKey },
+  );
+  if (before) return { recorded: false };
+
+  run(
+    `INSERT OR IGNORE INTO vehicle_traffic_event
+       (id, org_id, camera_id, source_key, vehicle_type, occurred_at, created_at)
+     VALUES ($id, $org, $camera, $key, $type, $occurred, $created)`,
+    {
+      $id: id("traffic"),
+      $org: input.orgId,
+      $camera: input.cameraId,
+      $key: input.sourceKey,
+      $type: input.vehicleType ?? "vehicle",
+      $occurred: at,
+      $created: nowIso(),
+    },
+  );
+  return { recorded: true };
+}
+
+export function getVehicleTraffic(
+  orgId: string,
+  options: { days?: number; cameraId?: string } = {},
+): VehicleTrafficSummary {
+  const days = Math.max(1, Math.min(730, Math.floor(options.days ?? 14)));
+  const start = new Date();
+  start.setUTCHours(0, 0, 0, 0);
+  start.setUTCDate(start.getUTCDate() - (days - 1));
+
+  let sql = `SELECT substr(occurred_at, 1, 10) AS date, COUNT(*) AS total
+               FROM vehicle_traffic_event
+              WHERE org_id = $org AND occurred_at >= $since`;
+  const params: Record<string, any> = { $org: orgId, $since: start.toISOString() };
+  if (options.cameraId) {
+    sql += " AND camera_id = $camera";
+    params.$camera = options.cameraId;
+  }
+  sql += " GROUP BY substr(occurred_at, 1, 10) ORDER BY date";
+
+  const counts = new Map(
+    all<{ date: string; total: number }>(sql, params).map((row) => [row.date, Number(row.total)]),
+  );
+  const points: VehicleTrafficPoint[] = [];
+  for (let offset = 0; offset < days; offset++) {
+    const date = new Date(start);
+    date.setUTCDate(start.getUTCDate() + offset);
+    const key = date.toISOString().slice(0, 10);
+    points.push({ date: key, total: counts.get(key) ?? 0 });
+  }
+  return { days, total: points.reduce((sum, point) => sum + point.total, 0), points };
 }
 
 // ------------------------------------------------------------------ Detection & Scanning Engine

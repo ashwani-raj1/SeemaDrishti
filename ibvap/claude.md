@@ -106,6 +106,7 @@ cost that actually matters, for the same boxes three times over.
 | `fence` | zone polygon intrusion + line crossing, debounce, cooldown | `intrusion` |
 | `anpr` | plate crop → OCR inside a tracked vehicle box | `plate_read` |
 | `multi_human` | within-camera person tracking; re-ID is interface-only (§6) | `reidentification` |
+| `face` | cascaded YuNet inside a tracked person's box; detection only | none — live-only |
 
 Which modules run is per camera, in `media/cameras.yml`. Adding a capability is
 a new file in `modules/` plus a name in that manifest — **the dispatcher, the
@@ -113,9 +114,13 @@ WebSocket server and the HTTP sink do not change.** That is the test of whether
 this layer is actually pluggable.
 
 The person-tracking and YuNet face-detection modules that predated this
-refactor were deleted; they are in git history (`core/person.py`,
-`core/face.py`) and face detection would return as a module, not as a
-special case.
+refactor were deleted; the pre-refactor standalone files (`core/person.py`,
+`core/face.py`, and the `people_run.py`/`people_service.py` harnesses that
+imported them) are in git history. Face detection has returned as
+`modules/face.py` — a module, not a special case, exactly as this section
+said it would. It is detection only: a box and a score, never a match against
+anybody, and it emits nothing on the durable path (§14) — "a face was seen"
+with no watchlist to check it against is not evidence.
 
 **5 reliable features beat 15 half-working ones.** If asked for loitering
 detection, night mode or "suspicious activity", push back and ask what evidence
@@ -131,6 +136,7 @@ in a new module reading the same shared pass.
 | One shared pass per frame | modules are consumers of detections, not producers | per-module detectors |
 | `classes` = person, vehicles, boat, dog, cow | exactly the vocabulary a zone's targets are written in (`backend/src/db/seed.ts`); animals ride the same pass for free and are what `log_only` exists for | all-class inference |
 | ByteTrack | IoU + Kalman only, near-zero CPU cost | DeepSORT — runs a re-ID CNN per box per frame, fatal on CPU |
+| `bytetrack.yaml` (repo-local, `track_buffer: 90`) | ultralytics' bundled default (30) is 5s of occlusion tolerance at `IBVAP_TARGET_FPS=6`; short enough that a subject behind a pillar routinely gets a new id. 90 = 15s, still free (motion/IoU only, no appearance model) | editing ultralytics' own bundled copy |
 | `persist=True` | tracker must know frames form a sequence | omitting it resets IDs every call |
 | One tracker **per camera** | ByteTrack state lives on the model object; one shared tracker interleaves N unrelated scenes into one association problem and produces constant id switches | a single global detector |
 | EasyOCR on a cropped plate region | plate text read after the vehicle is localised, so a vehicle with no readable plate is still a valid detection | full-frame OCR, or a second plate-detection model |
@@ -207,20 +213,34 @@ losing them quietly.
 
 ## 6. KNOWN LIMITATIONS — state honestly, never hide
 
-- **No re-identification, today.** `modules/reid.py` ships the interface and
-  `NullReID`, which returns "I don't know" for every crop. ByteTrack has no
-  appearance model, so a long occlusion produces a NEW track id and a subject
-  walking between cameras has no relationship to themselves. **Never claim
-  persistent re-ID, and never describe a tracker id as an identity** — the
-  naming rule is written into the bottom of `modules/reid.py`.
-  `ai_service.py::stable_track_key` stitches ids across HTTP frames using IoU +
-  normalised centre distance; that is a geometric heuristic scoped to one
-  browser session, not re-ID.
+- **Re-identification is real but weak, within one camera.** `modules/reid.py`
+  ships `NullReID` (always "I don't know") and `HistogramReID` — an HSV
+  colour-histogram signature, cosine-matched via `Gallery`. `multi_human`
+  defaults to `histogram` and uses it to fold a reappearing track back into
+  the same `person_id` ("P1", "P2", ...) instead of minting a new one,
+  bridging a gap `bytetrack.yaml`'s own `track_buffer` (§5) did not cover.
+  This is colour-based re-association, not learned appearance matching and
+  not recognition: two people in similar clothing can be folded together, and
+  the SAME person under a large lighting change can be missed. It has never
+  been tried across cameras and should not be assumed to work there. **Never
+  call it recognition, and never call a bare `track_ref` an identity** — a
+  `person_id` is the only label allowed to mean "this is probably the same
+  subject", and even that comes with the caveat above every time it is
+  written about. The naming rule is at the bottom of `modules/reid.py`.
+  `ai_service.py::stable_track_key` is a separate, older thing: it stitches
+  ids across HTTP frames using IoU + normalised centre distance, a geometric
+  heuristic scoped to one browser session, not re-ID.
 - **Plate OCR is resolution-bound.** A plate occupying a few pixels cannot be
   read reliably. It works at a **gate or checkpoint** where plates face the
   camera, not across a wide open scene — which is why `anpr` is enabled per
   camera in the manifest rather than everywhere. The working range must be
   measured in **metres** on the installed camera and reported.
+- **Face detection is resolution-bound the same way.** A 60 px-tall person has
+  a face a few pixels tall; no CPU-sized detector finds that reliably. It
+  works at **choke points** (a gate, checkpost or doorway), not across open
+  terrain — the working range needs measuring in metres, same as ANPR's. YuNet
+  outputs a box and a score, never an identity; the word "recognition" must
+  never describe `modules/face.py`.
 - **Threads, not processes.** One asyncio task per camera with CPU work pushed
   through `asyncio.to_thread`. That works while the GIL is released inside
   ultralytics/OpenCV native code, which is where nearly all the time goes. It is
@@ -298,6 +318,8 @@ where every box says "AI Engine" · the word "recognition" for detection-only co
 ```
 main.py                entrypoint: capture → shared pass → modules → both sinks
 config.py              .env + cameras.yml + zones pulled from the node
+debug_view.py          one-command local-file test harness, no hub/node needed
+bytetrack.yaml         IBVAP's tracker tuning (longer track_buffer -- see §5)
 ai_service.py          FastAPI /detect for the browser plate scanner (port 8001)
 run-anpr.ps1           installs requirements, launches ai_service under uvicorn
 
@@ -310,8 +332,9 @@ core/dispatcher.py     LiveChannel (WS fanout) + DurableSink (HTTP, retry)
 modules/base.py        VisionModule interface + REGISTRY
 modules/fence.py       zone + line crossing, debounce, per-direction cooldown
 modules/anpr.py        PlateReader + AnprModule
-modules/multi_human.py within-camera person tracking, re-ID hook
-modules/reid.py        ReIDProvider interface, NullReID, Gallery
+modules/multi_human.py within-camera person tracking; person_id + reid fold-in (§6)
+modules/reid.py        ReIDProvider interface, NullReID, HistogramReID, Gallery
+modules/face.py        cascaded YuNet inside a person box; detection only, live-only
 
 data/                  videos + weights (git-ignored and claude-ignored)
 yolo11n.pt             detector weights; downloads itself on first run
