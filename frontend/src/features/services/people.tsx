@@ -1,9 +1,10 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { CameraIcon, InfoIcon, RotateCcwIcon, SearchIcon, UploadCloudIcon, UsersIcon, VideoIcon, XIcon } from "lucide-react";
+import { CameraIcon, InfoIcon, RotateCcwIcon, ScanFaceIcon, SearchIcon, ShieldAlertIcon, UploadCloudIcon, UsersIcon, VideoIcon, XIcon } from "lucide-react";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Input } from "@/components/ui/input";
 import { PageShell } from "@/components/ibvap/page-shell";
 import { CameraFeed } from "@/components/ibvap/camera-feed";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
@@ -22,6 +23,18 @@ const TARGET_MATCH_THRESHOLD = 0.75;
 
 type SourceMode = "media" | "live" | "upload";
 
+interface WatchlistMatch {
+  name: string;
+  score: number;
+  signal: "face" | "appearance";
+}
+
+interface WatchlistEntry {
+  name: string;
+  hasFace: boolean;
+  hasAppearance: boolean;
+}
+
 interface ScannerTrack {
   key: string;
   personId: string | null;
@@ -32,6 +45,10 @@ interface ScannerTrack {
   /** How closely this crop's clothing colour matches the target search's
    * reference photo, 0..1. Absent when no target search is active. */
   targetScore: number | null;
+  /** The best-scoring NAMED watchlist entry this crop matched, if any --
+   * by face when a face was visible and enrolled, by clothing colour
+   * otherwise. Absent when the watchlist is empty. */
+  watchlistMatch: WatchlistMatch | null;
 }
 
 /** Deterministic per-identity colour -- same hash shape as camera-feed.tsx's
@@ -40,6 +57,56 @@ function colourFor(key: string): string {
   let hash = 0;
   for (let i = 0; i < key.length; i++) hash = (hash * 31 + key.charCodeAt(i)) | 0;
   return `hsl(${Math.abs(hash) % 360}, 85%, 60%)`;
+}
+
+interface TrackDisplay {
+  colour: string;
+  label: string;
+  emphasized: boolean;
+  dimmed: boolean;
+}
+
+/**
+ * What to draw for one track, in ONE place -- shared by the trail layer and
+ * the box layer so they can never disagree about which track is emphasized.
+ *
+ * PRIORITY, STRONGEST EVIDENCE FIRST: a watchlist match (a NAMED, persistent
+ * claim) beats a target-search match (an unnamed, one-off claim) beats plain
+ * tracking (no identity claim at all, just "a person"). Whichever wins is
+ * amber for watchlist, red for target search -- deliberately different
+ * colours, because "recognized as this specific enrolled person" and "looks
+ * like the person in this one photo" are different strengths of claim and
+ * must never look the same on screen.
+ */
+function displayFor(
+  track: ScannerTrack,
+  bestTarget: ScannerTrack | null,
+  bestTargetConfirmed: boolean,
+  targetActive: boolean,
+): TrackDisplay {
+  if (track.watchlistMatch) {
+    const pct = (track.watchlistMatch.score * 100).toFixed(0);
+    const signalNote = track.watchlistMatch.signal === "face" ? "" : " (clothing)";
+    return {
+      colour: "#f59e0b", emphasized: true, dimmed: false,
+      label: `${track.watchlistMatch.name} ${pct}%${signalNote}`,
+    };
+  }
+  const isTargetMatch = targetActive && bestTargetConfirmed && track.key === bestTarget?.key;
+  if (isTargetMatch) {
+    return {
+      colour: "#ef4444", emphasized: true, dimmed: false,
+      label: `TARGET ${((track.targetScore ?? 0) * 100).toFixed(0)}%`,
+    };
+  }
+  return {
+    colour: colourFor(track.personId ?? track.key),
+    emphasized: false,
+    dimmed: targetActive, // a search in progress dims everyone but its match
+    label: targetActive && track.targetScore != null
+      ? `${(track.targetScore * 100).toFixed(0)}%`
+      : `${track.personId ?? "..."} ${(track.confidence * 100).toFixed(0)}%`,
+  };
 }
 
 /**
@@ -81,6 +148,19 @@ function colourFor(key: string): string {
  * Said here in code and in the UI copy alike: this is clothing-colour
  * matching, not face recognition, and the score is shown for every
  * candidate rather than collapsed into a single silent "found" flag.
+ *
+ * WATCHLIST: target search's persistent, NAMED sibling. Where a target
+ * search forgets its reference photo the moment an operator clears it, a
+ * watchlist entry has a NAME and stays enrolled until explicitly removed --
+ * "alert me whenever this specific person shows up," not "who is this
+ * person in front of me right now." It uses a face signature
+ * (`modules/face.py`'s FaceEmbedder, genuinely identity-discriminative when
+ * a face is visible) when one was enrolled and one is visible, falling back
+ * to the same clothing-colour signature target search uses otherwise. The
+ * backend always says which signal produced a match -- the UI must never
+ * flatten that into a bare name, because "recognized by their face" and
+ * "recognized by their shirt colour" are very different strengths of
+ * evidence for the same word "recognized".
  */
 export function PeopleScreen() {
   const { media } = useClient();
@@ -108,6 +188,13 @@ export function PeopleScreen() {
   const [targetError, setTargetError] = useState<string | null>(null);
   const [targetBusy, setTargetBusy] = useState(false);
 
+  // Watchlist: persistent, named entries -- independent of target search.
+  const [watchlist, setWatchlist] = useState<WatchlistEntry[]>([]);
+  const [enrollName, setEnrollName] = useState("");
+  const [enrollBusy, setEnrollBusy] = useState(false);
+  const [enrollError, setEnrollError] = useState<string | null>(null);
+  const watchlistFileRef = useRef<HTMLInputElement | null>(null);
+
   useEffect(() => {
     if (cameraId || cameras.length === 0) return;
     const first = cameras.find((camera) => camera.ready && camera.seeded) ?? cameras[0];
@@ -134,9 +221,10 @@ export function PeopleScreen() {
 
   // "Cameras" mode: the SAME live channel and the SAME CameraFeed component
   // every other service page uses -- this effect only feeds the stats strip.
-  // targetScore is always null here: the vision service's own multi_human
-  // instance has no reference photo to score against (see the module
-  // docstring on why target search is scoped to live camera/upload only).
+  // targetScore/watchlistMatch are always null here: the vision service's
+  // own multi_human instance has no reference photo or watchlist to score
+  // against (see the module docstring on why both are scoped to live
+  // camera/upload only).
   useEffect(() => {
     if (mode !== "media" || !cameraId) return;
     return onLive(cameraId, "multi_human", (observation) => {
@@ -150,6 +238,7 @@ export function PeopleScreen() {
           trail: extra.trail ?? [],
           ageSeconds: extra.age_seconds ?? 0,
           targetScore: null,
+          watchlistMatch: null,
         };
       }));
     });
@@ -189,6 +278,61 @@ export function PeopleScreen() {
     setTargetConfidence(null);
     setTargetError(null);
     void fetch(`${PEOPLE_AI_BASE}/target`, { method: "DELETE" }).catch(() => {});
+  }, []);
+
+  const loadWatchlist = useCallback(async () => {
+    try {
+      const response = await fetch(`${PEOPLE_AI_BASE}/watchlist`);
+      if (!response.ok) return;
+      const result = await response.json() as {
+        entries: Array<{ name: string; has_face: boolean; has_appearance: boolean }>;
+      };
+      setWatchlist(result.entries.map((entry) => ({
+        name: entry.name, hasFace: entry.has_face, hasAppearance: entry.has_appearance,
+      })));
+    } catch {
+      // Service offline -- the "TRACKING OFFLINE" badge already says so.
+    }
+  }, []);
+
+  useEffect(() => { void loadWatchlist(); }, [loadWatchlist]);
+
+  const enrollWatchlist = useCallback(async (file?: File) => {
+    const name = enrollName.trim();
+    if (!file || !name) return;
+    setEnrollBusy(true);
+    setEnrollError(null);
+    try {
+      const dataUrl = await new Promise<string>((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = () => resolve(reader.result as string);
+        reader.onerror = () => reject(reader.error);
+        reader.readAsDataURL(file);
+      });
+      const response = await fetch(`${PEOPLE_AI_BASE}/watchlist`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ name, image: dataUrl }),
+      });
+      const result = await response.json() as { detail?: string };
+      if (!response.ok) throw new Error(result.detail ?? "could not enrol this photo");
+      setEnrollName("");
+      await loadWatchlist();
+    } catch (error) {
+      setEnrollError(error instanceof Error ? error.message : "could not enrol this photo");
+    } finally {
+      setEnrollBusy(false);
+    }
+  }, [enrollName, loadWatchlist]);
+
+  const removeWatchlistEntry = useCallback(async (name: string) => {
+    setWatchlist((entries) => entries.filter((entry) => entry.name !== name));
+    try {
+      await fetch(`${PEOPLE_AI_BASE}/watchlist/${encodeURIComponent(name)}`, { method: "DELETE" });
+    } catch {
+      // Best-effort -- a stale local removal that the backend never saw is
+      // corrected on the next loadWatchlist() a poll or reload triggers.
+    }
   }, []);
 
   useEffect(() => {
@@ -248,6 +392,7 @@ export function PeopleScreen() {
           track_ref?: string; person_id?: string | null;
           trail?: Array<[number, number]>; age_seconds?: number;
           target_score?: number | null;
+          watchlist_match?: { name: string; score: number; signal: "face" | "appearance" } | null;
         };
       }> };
       acceptTracks(result.tracks.map((item, index) => ({
@@ -258,6 +403,7 @@ export function PeopleScreen() {
         trail: item.extra.trail ?? [],
         ageSeconds: item.extra.age_seconds ?? 0,
         targetScore: item.extra.target_score ?? null,
+        watchlistMatch: item.extra.watchlist_match ?? null,
       })));
       setModelOnline(true);
     } catch {
@@ -334,6 +480,8 @@ export function PeopleScreen() {
         onChange={(event) => upload(event.target.files?.[0])} />
       <input ref={targetFileRef} type="file" accept="image/*" className="hidden"
         onChange={(event) => void setTarget(event.target.files?.[0])} />
+      <input ref={watchlistFileRef} type="file" accept="image/*" className="hidden"
+        onChange={(event) => { void enrollWatchlist(event.target.files?.[0]); event.target.value = ""; }} />
       <canvas ref={canvasRef} className="hidden" />
 
       <Alert>
@@ -345,6 +493,20 @@ export function PeopleScreen() {
           real evidence, not a guess, but not a face or a name either. Two
           people dressed alike can occasionally be told apart imperfectly.
           Ids are never shared between cameras or between separate clips.
+        </AlertDescription>
+      </Alert>
+
+      <Alert>
+        <ScanFaceIcon />
+        <AlertTitle>The watchlist's face signal is real matching -- with real limits</AlertTitle>
+        <AlertDescription>
+          When a watchlist entry has a face and a live crop has one too, they are compared with
+          a real face-embedding model (verified correct on two known-different reference photos
+          before shipping), not a guess -- the match score shown is genuine evidence. It has not
+          been measured against real camera footage, distance, angle or lighting, so treat a
+          match as "worth a look," not a certainty, and never as a legal identification. When no
+          face is visible, matching silently falls back to clothing colour, which is far weaker
+          -- the "face" / "clothing only" label on each entry says which applies.
         </AlertDescription>
       </Alert>
 
@@ -418,6 +580,56 @@ export function PeopleScreen() {
 
       <Card>
         <CardHeader className="pb-3">
+          <CardTitle className="flex items-center gap-2 text-base"><ShieldAlertIcon className="size-4" /> Watchlist</CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-3">
+          {mode === "media" ? (
+            <p className="text-sm text-muted-foreground">
+              The watchlist works on <strong>Live camera</strong> and <strong>Upload video</strong>
+              {" "}-- same reason target search does (see above).
+            </p>
+          ) : (
+            <>
+              <div className="flex flex-wrap items-center gap-2">
+                <Input value={enrollName} onChange={(event) => setEnrollName(event.target.value)}
+                  placeholder="Name this person" className="max-w-[200px]" disabled={enrollBusy} />
+                <Button size="sm" variant="outline" disabled={!enrollName.trim() || enrollBusy}
+                  onClick={() => watchlistFileRef.current?.click()}>
+                  <ScanFaceIcon /> Add photo
+                </Button>
+                {enrollBusy && <span className="text-xs text-muted-foreground">Enrolling…</span>}
+              </div>
+              {enrollError && <p className="text-sm text-destructive">{enrollError}</p>}
+              {watchlist.length === 0 ? (
+                <p className="text-sm text-muted-foreground">
+                  Name someone and add their photo -- a face if visible, clothing colour as a
+                  fallback -- and every tracked person is checked against them, on every frame,
+                  until removed. This is real face matching when a face is enrolled (see the
+                  info box below), not a guess.
+                </p>
+              ) : (
+                <div className="flex flex-wrap gap-2">
+                  {watchlist.map((entry) => (
+                    <Badge key={entry.name} variant="secondary" className="gap-1.5 py-1 pl-2.5 pr-1">
+                      {entry.name}
+                      <span className="text-[10px] text-muted-foreground">
+                        {entry.hasFace ? "face" : entry.hasAppearance ? "clothing only" : "no signature"}
+                      </span>
+                      <button type="button" onClick={() => void removeWatchlistEntry(entry.name)}
+                        className="ml-1 rounded-full p-0.5 hover:bg-muted-foreground/20" aria-label={`Remove ${entry.name}`}>
+                        <XIcon className="size-3" />
+                      </button>
+                    </Badge>
+                  ))}
+                </div>
+              )}
+            </>
+          )}
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader className="pb-3">
           <div className="flex flex-wrap items-center justify-between gap-3">
             <CardTitle className="text-base">Tracking source</CardTitle>
             <div className="flex gap-2">
@@ -477,43 +689,39 @@ export function PeopleScreen() {
                 )}
 
                 {/* Trails, as one continuous SVG polyline per identity -- drawn
-                    under the boxes, same layering as camera-feed.tsx. When a
-                    target search is active, everyone but the confirmed match
-                    fades back so the one trail that matters reads at a glance. */}
+                    under the boxes, same layering as camera-feed.tsx. Whichever
+                    signal is strongest for a track -- a watchlist match, then a
+                    target-search match, then plain tracking -- decides its
+                    colour and whether everyone else fades back to let it read
+                    at a glance. See displayFor() for the priority order. */}
                 <svg viewBox="0 0 1 1" preserveAspectRatio="none"
                   className="pointer-events-none absolute inset-0 h-full w-full">
                   {tracks.filter((t) => t.trail.length > 1).map((t) => {
-                    const isMatch = bestMatchConfirmed && t.key === bestMatch?.key;
-                    const dimmed = targetActive && !isMatch;
+                    const d = displayFor(t, bestMatch, bestMatchConfirmed, targetActive);
                     return (
                       <polyline key={`trail-${t.key}`}
                         points={t.trail.map(([x, y]) => `${x},${y}`).join(" ")}
-                        fill="none" stroke={isMatch ? "#ef4444" : colourFor(t.personId ?? t.key)}
-                        strokeOpacity={dimmed ? 0.25 : 1}
-                        strokeWidth={isMatch ? 0.01 : 0.006} vectorEffect="non-scaling-stroke" />
+                        fill="none" stroke={d.colour}
+                        strokeOpacity={d.dimmed ? 0.25 : 1}
+                        strokeWidth={d.emphasized ? 0.01 : 0.006} vectorEffect="non-scaling-stroke" />
                     );
                   })}
                 </svg>
 
                 {tracks.map((item) => {
-                  const isMatch = bestMatchConfirmed && item.key === bestMatch?.key;
-                  const dimmed = targetActive && !isMatch;
-                  const colour = isMatch ? "#ef4444" : colourFor(item.personId ?? item.key);
-                  const label = targetActive && item.targetScore != null
-                    ? (isMatch ? "TARGET " : "") + `${(item.targetScore * 100).toFixed(0)}%`
-                    : `${item.personId ?? "..."} ${(item.confidence * 100).toFixed(0)}%`;
+                  const d = displayFor(item, bestMatch, bestMatchConfirmed, targetActive);
                   return (
                     <div key={item.key} className="pointer-events-none absolute"
                       style={{
-                        border: `${isMatch ? 3 : 2}px solid ${colour}`,
-                        opacity: dimmed ? 0.4 : 1,
-                        boxShadow: isMatch ? "0 0 0 2px rgba(239,68,68,0.35)" : undefined,
+                        border: `${d.emphasized ? 3 : 2}px solid ${d.colour}`,
+                        opacity: d.dimmed ? 0.4 : 1,
+                        boxShadow: d.emphasized ? `0 0 0 2px ${d.colour}59` : undefined,
                         left: `${item.bbox[0] * 100}%`, top: `${item.bbox[1] * 100}%`,
                         width: `${(item.bbox[2] - item.bbox[0]) * 100}%`, height: `${(item.bbox[3] - item.bbox[1]) * 100}%`,
                       }}>
                       <span className="absolute -top-6 left-0 whitespace-nowrap px-1.5 py-0.5 text-[11px] font-semibold text-slate-950"
-                        style={{ backgroundColor: colour }}>
-                        {label}
+                        style={{ backgroundColor: d.colour }}>
+                        {d.label}
                       </span>
                     </div>
                   );

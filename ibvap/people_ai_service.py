@@ -36,6 +36,28 @@ in similar clothing will both score high, and the console must show the
 score, never a bare "found" flag, so an operator can judge it rather than
 trust it blindly.
 
+WATCHLIST (POST /watchlist): a target search's persistent, NAMED sibling.
+Where /target holds one unnamed reference photo for one session, the
+watchlist holds any number of NAMED entries that persist until explicitly
+removed, and every /detect call checks every tracked person against all of
+them. Each entry carries up to two signals, both extracted once at
+enrolment:
+
+    face        modules/face.py's FaceEmbedder (SFace) -- genuinely
+                identity-discriminative when a face is actually visible.
+                See modules/face.py's own docstring for what has and has
+                not been verified about it.
+    appearance  the SAME HistogramReID colour signature /target uses --
+                the fallback for when no face was detected in the
+                enrolment photo, or in the current frame being scored.
+
+A match prefers the face signal when both a live face and an enrolled face
+embedding exist, because it is the stronger evidence; it falls back to
+clothing colour otherwise. Never silently "recognition" either way --
+`extra.watchlist_match` always carries a `signal` field naming which one
+fired, so the console can show an operator the difference between "this is
+probably them, by their face" and "this is probably them, by their shirt".
+
 Launch from THIS directory (it imports core/ and modules/ as siblings):
     python -m uvicorn people_ai_service:app --host 127.0.0.1 --port 8002
 
@@ -53,22 +75,43 @@ from pydantic import BaseModel
 
 from core.detection import SharedDetector
 from modules.base import FrameContext, build
+from modules.face import DEFAULT_MODEL as FACE_DETECT_MODEL
+from modules.face import DEFAULT_RECOGNITION_MODEL, FaceDetector, FaceEmbedder
 from modules.reid import HistogramReID, cosine
 
 # Registers "multi_human" in modules.base.REGISTRY. Only this one module is
-# imported -- this service has no reason to load fence/anpr/face alongside it.
+# imported -- this service has no reason to load fence/anpr alongside it.
 import modules.multi_human  # noqa: E402,F401
+
+#: opencv_zoo's own published same-identity threshold for this exact SFace
+#: model -- a real citation, not a guess, unlike most thresholds in this
+#: codebase which have to say "not measured yet" (claude.md §7).
+FACE_MATCH_THRESHOLD = 0.363
+
+#: Not measured against a real clip -- the same starting point
+#: modules/multi_human.py settled on for HistogramReID after real-clip
+#: near-misses, reused here rather than inventing a second unmeasured number.
+APPEARANCE_MATCH_THRESHOLD = 0.75
+
+#: A head sits near the top of a standing, sitting or crouching subject
+#: alike -- same reasoning modules/face.py's own FaceModule uses.
+FACE_SEARCH_UPPER_FRAC = 0.55
 
 app = FastAPI(title="SeemaDrishti local people tracking")
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["http://localhost:3000", "http://127.0.0.1:3000"],
-    allow_methods=["POST", "GET"],
+    allow_methods=["POST", "GET", "DELETE"],
     allow_headers=["content-type"],
 )
 
 
 class Frame(BaseModel):
+    image: str
+
+
+class WatchlistEntry(BaseModel):
+    name: str
     image: str
 
 
@@ -92,6 +135,37 @@ class _Models:
         # /detect call skips the extra scoring pass entirely in that state.
         self.target_reid = HistogramReID()
         self.target_embedding: list[float] | None = None
+        # Shared by /target's optional face boost and the watchlist -- one
+        # detector/embedder pair, not one per feature.
+        self.face_detector = FaceDetector(FACE_DETECT_MODEL)
+        self.face_embedder = FaceEmbedder(DEFAULT_RECOGNITION_MODEL)
+        # name -> {"face": [floats] | None, "appearance": [floats] | None}.
+        # Persists across /reset on purpose -- see /reset's own docstring.
+        self.watchlist: dict[str, dict] = {}
+
+
+def _face_signature(state: _Models, image, bbox_px) -> tuple[list[float] | None, float | None]:
+    """
+    Search the upper fraction of a person's box for a face and, if one is
+    found, embed it. Returns (embedding, detection_score) or (None, None).
+
+    Shared between enrolment (POST /watchlist) and per-frame scoring
+    (/detect) so the two never drift into finding a face two different ways.
+    """
+    x1, y1, x2, y2 = bbox_px
+    y_cut = y1 + int((y2 - y1) * FACE_SEARCH_UPPER_FRAC)
+    crop = image[y1:y_cut, x1:x2]
+    if crop.size == 0:
+        return None, None
+    try:
+        faces = state.face_detector.detect(crop)
+    except FileNotFoundError:
+        return None, None
+    if not faces:
+        return None, None
+    best = max(faces, key=lambda f: f["score"])
+    embedding = state.face_embedder.embed(crop, best["raw"])
+    return embedding, best["score"]
 
 
 _models: _Models | None = None
@@ -154,6 +228,58 @@ def clear_target():
     return {"ok": True}
 
 
+@app.post("/watchlist")
+def enroll_watchlist(entry: WatchlistEntry):
+    """
+    Enrol a NAMED person: extract whichever signals the photo actually
+    supports (a face if one is visible, clothing colour always, as long as a
+    person was found at all) and remember them under `entry.name`,
+    overwriting any earlier entry with the same name.
+
+    Enrolling with NEITHER signal extractable is refused rather than stored
+    as an empty entry that could never match anything -- a name with nothing
+    behind it would look like a working watchlist entry until an operator
+    discovered otherwise, at the worst possible moment.
+    """
+    image = decode(entry.image)
+    state = models()
+    people = [d for d in state.detector.detect(image) if d.get("is_person")]
+    if not people:
+        raise HTTPException(400, "no person found in the photo")
+    subject = max(people, key=lambda p: p["confidence"])
+
+    appearance = state.target_reid.embed(image, subject["bbox_px"])
+    face, face_score = _face_signature(state, image, subject["bbox_px"])
+
+    if appearance is None and face is None:
+        raise HTTPException(400, "could not extract any appearance or face signature from the photo")
+
+    state.watchlist[entry.name] = {"face": face, "appearance": appearance}
+    return {
+        "ok": True,
+        "person_confidence": round(float(subject["confidence"]), 3),
+        "face_detected": face is not None,
+        "face_confidence": round(face_score, 3) if face_score is not None else None,
+    }
+
+
+@app.get("/watchlist")
+def list_watchlist():
+    state = models()
+    return {"entries": [
+        {"name": name, "has_face": entry["face"] is not None,
+         "has_appearance": entry["appearance"] is not None}
+        for name, entry in state.watchlist.items()
+    ]}
+
+
+@app.delete("/watchlist/{name}")
+def remove_watchlist(name: str):
+    state = models()
+    state.watchlist.pop(name, None)
+    return {"ok": True}
+
+
 @app.post("/detect")
 def detect(frame: Frame):
     image = decode(frame.image)
@@ -182,6 +308,42 @@ def detect(frame: Frame):
                 if embedding is not None else None
             )
 
+    if state.watchlist:
+        # Face computed at most ONCE per track per frame -- shared across
+        # every watchlist entry's comparison, not re-detected per name. With
+        # N entries this is one face search plus N cheap vector comparisons,
+        # never N face searches.
+        by_ref = {d["track_ref"]: d for d in detections if d.get("track_ref")}
+        for track in live:
+            det = by_ref.get(track["extra"].get("track_ref"))
+            if det is None:
+                continue
+            face_embedding, _ = _face_signature(state, image, det["bbox_px"])
+            appearance_embedding = state.target_reid.embed(image, det["bbox_px"])
+
+            best_name, best_score, best_signal = None, 0.0, None
+            for name, entry in state.watchlist.items():
+                if face_embedding is not None and entry["face"] is not None:
+                    score = state.face_embedder.similarity(face_embedding, entry["face"])
+                    if score >= FACE_MATCH_THRESHOLD and score > best_score:
+                        best_name, best_score, best_signal = name, score, "face"
+                # Appearance is checked even when a face comparison already
+                # ran: a strong clothing match can still matter to report
+                # alongside a weak or absent face one, but face NEVER loses
+                # to a competing appearance match for the same name -- the
+                # `best_signal != "face"` guard is what keeps a worse
+                # colour-only guess from overwriting a better face-based one.
+                if (appearance_embedding is not None and entry["appearance"] is not None
+                        and best_signal != "face"):
+                    score = cosine(appearance_embedding, entry["appearance"])
+                    if score >= APPEARANCE_MATCH_THRESHOLD and score > best_score:
+                        best_name, best_score, best_signal = name, score, "appearance"
+
+            track["extra"]["watchlist_match"] = (
+                {"name": best_name, "score": round(best_score, 4), "signal": best_signal}
+                if best_name is not None else None
+            )
+
     # Already the exact shape core/payload.py's live_track() builds for the
     # vision service's own WS channel -- one producer, one shape, same as
     # main.py's LiveObservation. No second JSON convention to keep in sync.
@@ -197,11 +359,11 @@ def reset():
     scanned before it, and a stranger in the new clip could be folded into an
     old "P3" from a video that has nothing to do with them.
 
-    The reference photo is deliberately NOT cleared here: the whole point of
-    a target search is finding the SAME person across DIFFERENT footage, so
-    loading a second clip while still looking for them is the expected case,
-    not a reason to forget who the operator uploaded a photo of. Call
-    DELETE /target explicitly to end a search.
+    The reference photo AND the watchlist are deliberately NOT cleared here:
+    the whole point of either is finding the SAME person(s) across DIFFERENT
+    footage, so loading a second clip while still looking is the expected
+    case, not a reason to forget who the operator is watching for. Call
+    DELETE /target, or DELETE /watchlist/{name}, to end a search explicitly.
     """
     state = models()
     state.multi_human = build("multi_human", "scan-people", {})

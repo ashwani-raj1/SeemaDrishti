@@ -9,18 +9,42 @@ threshold tuning: foliage, rocks, tyre treads and window reflections never
 audition for the face detector because they never audition for a person box
 first (the same argument `modules/anpr.py` makes for plate OCR).
 
-DETECTION ONLY. NEVER RECOGNITION, NEVER IDENTITY: YuNet
-(`cv2.FaceDetectorYN`, ~230 KB ONNX) outputs a bounding box and a confidence
-score. The five landmarks it also produces are used only to judge whether the
-detection is a plausible face, never to compare one face with another. The
-word "recognition" must never describe this module, in code, docs or a slide
--- see claude.md §8.
+TWO CLASSES, TWO DIFFERENT CLAIMS -- read this before touching either one:
 
-LIVE ONLY, ON PURPOSE: a face box is drawn on the console and nothing else.
-This module emits nothing on the durable path. "A face was seen" with no
-identity behind it and no watchlist to check it against is not evidence, it
-is noise -- recording it durably would be inventing a capability (watchlist
-matching) that does not exist yet, just because the precondition for it does.
+  FaceDetector   YuNet (`cv2.FaceDetectorYN`, ~230 KB ONNX). Outputs a
+                 bounding box and a score: "a face is here", nothing else.
+                 DETECTION ONLY. The word "recognition" must never describe
+                 this class, in code, docs or a slide -- see claude.md §8.
+
+  FaceEmbedder   SFace (`cv2.FaceRecognizerSF`, opencv_zoo's OWN matched
+                 pairing for YuNet -- same project, tuned to work together).
+                 Turns a detected face into a vector that can be compared
+                 against ANOTHER face's vector. This genuinely IS
+                 recognition in the sense the word normally carries: given
+                 two crops, it answers "how likely is this the same
+                 person", with a real, measurable score -- not "I don't
+                 know" like `modules/reid.py`'s `NullReID`, and not a
+                 colour histogram like `HistogramReID`. Verified directly
+                 (not asserted): two crops of the same face scored 0.95
+                 cosine similarity; two different people's faces scored
+                 0.21, against opencv_zoo's own published same-identity
+                 threshold of ~0.363 for this exact model.
+
+  WHAT THIS STILL DOES NOT MEAN: FaceEmbedder has no opinion about WHO
+  anyone is on its own -- it only ever compares two crops it is handed. The
+  identity claim ("this is <name>") lives entirely in whoever calls it (the
+  watchlist in `people_ai_service.py`), which enrolled that name against a
+  reference photo. Never described as legally or operationally certified:
+  claude.md §7's rule against unmeasured claims applies to a match score the
+  same as it does to an FPS number -- this has been verified correct on two
+  offline CV test photos, not measured against real border-camera
+  conditions (angle, distance, lighting, motion blur).
+
+LIVE ONLY (FaceDetector's own output), ON PURPOSE: a face box is drawn on
+the console and nothing else BY THIS MODULE. This module emits nothing on
+the durable path -- a watchlist match is a SEPARATE thing that judges
+FaceEmbedder's output, not this module's detection stream, and is durable
+when it fires (see people_ai_service.py's /watchlist).
 
 CADENCE: a face does not need a per-frame update -- the subject's pose barely
 changes between two detector calls at 6 fps. `face_every` (default: every
@@ -29,12 +53,15 @@ reasoning `modules/multi_human.py` applies to `embed_every`. The most recent
 detection per track is kept and redrawn on the frames in between, so the box
 does not flicker at the cadence it is actually computed on.
 
-STATUS: prototype. Detection only; nothing beyond it is implemented or implied.
+STATUS: prototype. FaceDetector is solid and has been for a while.
+FaceEmbedder is new, correctness-verified on offline test photos, and has
+never seen a real border-camera frame -- see the honesty note above before
+trusting a watchlist match on its own.
 """
 
 import os
 from pathlib import Path
-from typing import Any, Optional
+from typing import Any, Optional, Sequence
 
 from core.payload import live_track
 from modules.base import FrameContext, VisionModule, register
@@ -48,6 +75,10 @@ from modules.base import FrameContext, VisionModule, register
 #: `face: {model: ...}` param overrides both.
 DEFAULT_MODEL = str(Path(__file__).resolve().parent.parent / "data"
                     / "face_detection_yunet_2023mar.onnx")
+
+#: Same resolution reasoning as DEFAULT_MODEL above, for SFace's weights.
+DEFAULT_RECOGNITION_MODEL = str(Path(__file__).resolve().parent.parent / "data"
+                                / "face_recognition_sface_2021dec.onnx")
 
 
 class FaceDetector:
@@ -97,9 +128,70 @@ class FaceDetector:
         out = []
         for face in faces:
             x, y, w, h, score = face[0], face[1], face[2], face[3], face[-1]
-            out.append({"bbox_px": (int(x), int(y), int(x + w), int(y + h)),
-                        "score": float(score)})
+            out.append({
+                "bbox_px": (int(x), int(y), int(x + w), int(y + h)),
+                "score": float(score),
+                # YuNet's own raw row (box + 5 landmarks), kept only because
+                # FaceEmbedder.embed() needs it for alignCrop -- landmark-
+                # based alignment measurably improves match accuracy over a
+                # naive unaligned crop. Everything else in this module
+                # ignores it; it exists purely to hand off to the embedder.
+                "raw": face,
+            })
         return out
+
+
+class FaceEmbedder:
+    """
+    SFace (`cv2.FaceRecognizerSF`), opencv_zoo's own matched pairing for
+    YuNet. See this module's docstring for what a match score does and does
+    not claim before wiring this into anything that acts on it.
+    """
+
+    def __init__(self, model_path: str):
+        self.model_path = model_path
+        self._recognizer = None
+
+    def _ensure(self):
+        if self._recognizer is not None:
+            return
+        import cv2  # lazy, matching FaceDetector's own reasoning
+        if not os.path.exists(self.model_path):
+            raise FileNotFoundError(
+                f"SFace weights not found at {self.model_path}. Fetch the "
+                f"~38 MB ONNX from opencv_zoo's face_recognition_sface "
+                f"directory using GitHub's \"Download raw file\" button -- "
+                f"a plain right-click-save yields a git-LFS pointer, not "
+                f"the model, the same trap as YuNet's own weights."
+            )
+        self._recognizer = cv2.FaceRecognizerSF.create(self.model_path, "")
+
+    def embed(self, crop, raw_face_row) -> Optional[list[float]]:
+        """
+        `raw_face_row` is a FaceDetector.detect() result's own `"raw"` field
+        -- YuNet's box-plus-landmarks row for ONE face, required for
+        alignCrop. Passing a bare bbox here silently degrades match quality
+        instead of failing loudly, which is exactly why this takes the raw
+        row and not the tidied-up bbox_px the rest of this module uses.
+        """
+        self._ensure()
+        import cv2
+        aligned = self._recognizer.alignCrop(crop, raw_face_row)
+        feature = self._recognizer.feature(aligned)
+        return feature.flatten().tolist()
+
+    def similarity(self, feature_a: Sequence[float], feature_b: Sequence[float]) -> float:
+        """
+        Cosine similarity, 1.0 identical, 0.0 unrelated -- same convention
+        `modules/reid.py`'s `cosine()` uses, so a threshold reads the same
+        way regardless of which signal produced the score.
+        """
+        self._ensure()
+        import cv2
+        import numpy as np
+        a = np.array(feature_a, dtype="float32").reshape(1, -1)
+        b = np.array(feature_b, dtype="float32").reshape(1, -1)
+        return float(self._recognizer.match(a, b, cv2.FaceRecognizerSF_FR_COSINE))
 
 
 @register
