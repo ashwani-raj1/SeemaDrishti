@@ -20,7 +20,7 @@ import { canUse, enabledSections, GROUP_ORDER, type Section } from "@/features/r
 import { cn } from "@/lib/utils";
 
 export function AppSidebar() {
-  const { config, org, site, role } = useClient();
+  const { config, org, role } = useClient();
   const { pathname } = useLocation();
 
   const sections = enabledSections(config.sections);

@@ -21,6 +21,25 @@
   .tabular-nums {
     font-variant-numeric: tabular-nums;
   }
+
+  /* Dense control-room typography, scoped to the redesigned watchlist only. */
+  .watchlist-workspace {
+    font-family: "Segoe UI Variable Text", Inter, "Segoe UI", ui-sans-serif, system-ui, sans-serif;
+    font-feature-settings: "kern", "liga", "cv02", "cv03", "tnum";
+    font-weight: 500;
+    letter-spacing: 0.006em;
+    line-height: 1.35;
+  }
+
+  .watchlist-workspace :is(h1, h2, h3, [data-slot="card-title"]) {
+    font-family: "Segoe UI Variable Display", "Segoe UI Variable Text", Inter, "Segoe UI", sans-serif;
+    font-weight: 650;
+    letter-spacing: -0.004em;
+  }
+
+  .watchlist-workspace :is(button, input, select, label) {
+    font-family: inherit;
+  }
 }
 
 /*

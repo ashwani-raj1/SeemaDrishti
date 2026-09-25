@@ -1,6 +1,8 @@
 import * as React from "react"
 
-const MOBILE_BREAKPOINT = 768
+// Keep the navigation off-canvas on tablets and smaller laptops. The fixed
+// desktop sidebar otherwise leaves too little room for dense monitoring views.
+const MOBILE_BREAKPOINT = 1100
 
 export function useIsMobile() {
   const [isMobile, setIsMobile] = React.useState<boolean | undefined>(undefined)
