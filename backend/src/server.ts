@@ -8,6 +8,7 @@ import { zoneRoutes } from "./routes/zones";
 import { mediaConfig } from "./core/env";
 import { cameraRoutes } from "./routes/cameras";
 import { watchlistRoutes } from "./routes/watchlist";
+import { personWatchlistRoutes } from "./routes/person_watchlist";
 import { mediaRoutes } from "./routes/media";
 import {
   crossReference,
@@ -111,6 +112,7 @@ const routes = {
   ...zoneRoutes,
   ...cameraRoutes,
   ...watchlistRoutes,
+  ...personWatchlistRoutes,
   ...mediaRoutes,
 
   // ---------------------------------------------------------------- incidents
@@ -178,6 +180,7 @@ const routes = {
     const q: EventQuery = {
       cameraId: params.get("camera_id") ?? undefined,
       zoneId: params.get("zone_id") ?? undefined,
+      kind: params.get("kind") ?? undefined,
       severity: (params.get("severity") as EventQuery["severity"]) ?? undefined,
       class: params.get("class") ?? undefined,
       alertableOnly: params.get("alertable") === "true",

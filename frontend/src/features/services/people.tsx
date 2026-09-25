@@ -12,6 +12,8 @@ import { useClient } from "@/client/context";
 import { api } from "@/lib/api";
 import { onLive, type PeopleExtra } from "@/lib/live";
 import { useResource } from "@/lib/use-resource";
+import { relative } from "@/lib/format";
+import type { IbvapEvent } from "@/lib/types";
 
 const PEOPLE_AI_BASE = "http://127.0.0.1:8002";
 
@@ -168,6 +170,11 @@ export function PeopleScreen() {
   const cameras = hub.data?.cameras ?? [];
   const [mode, setMode] = useState<SourceMode>("media");
   const [cameraId, setCameraId] = useState("");
+  // "Cameras" mode only: one large tile for the selected camera, or a grid of
+  // every configured camera at once. Independent of `mode` itself -- Live
+  // camera and Upload video have exactly one source, so this toggle would be
+  // meaningless there and is hidden outside mode === "media".
+  const [cameraView, setCameraView] = useState<"single" | "grid">("single");
   const [tracks, setTracks] = useState<ScannerTrack[]>([]);
   const [totalPeople, setTotalPeople] = useState(0);
   const [modelOnline, setModelOnline] = useState(false);
@@ -194,6 +201,14 @@ export function PeopleScreen() {
   const [enrollBusy, setEnrollBusy] = useState(false);
   const [enrollError, setEnrollError] = useState<string | null>(null);
   const watchlistFileRef = useRef<HTMLInputElement | null>(null);
+
+  // Cross-camera sightings: durable watchlist_match events, queried from the
+  // backend rather than accumulated client-side, so this is real history --
+  // it survives a page reload and includes a match from a camera this tab was
+  // never even pointed at, which is the whole point of a "where has this
+  // person been seen" view (see backend/src/l3/person_watchlist.ts's own
+  // comment on why the backend is the single source of truth here).
+  const [sightings, setSightings] = useState<IbvapEvent[]>([]);
 
   useEffect(() => {
     if (cameraId || cameras.length === 0) return;
@@ -296,6 +311,22 @@ export function PeopleScreen() {
   }, []);
 
   useEffect(() => { void loadWatchlist(); }, [loadWatchlist]);
+
+  useEffect(() => {
+    let cancelled = false;
+    const load = async () => {
+      try {
+        const events = await api.events({ kind: "watchlist_match", limit: 25 });
+        if (!cancelled) setSightings(events);
+      } catch {
+        // The edge node being briefly unreachable should not blank out a
+        // list an operator may be actively reading; just try again next tick.
+      }
+    };
+    void load();
+    const interval = setInterval(load, 8000);
+    return () => { cancelled = true; clearInterval(interval); };
+  }, []);
 
   const enrollWatchlist = useCallback(async (file?: File) => {
     const name = enrollName.trim();
@@ -628,6 +659,44 @@ export function PeopleScreen() {
         </CardContent>
       </Card>
 
+      {sightings.length > 0 && (
+        <Card>
+          <CardHeader className="pb-3">
+            <CardTitle className="text-base">Recent watchlist sightings</CardTitle>
+          </CardHeader>
+          <CardContent>
+            {/* The literal cross-camera "path": where a watchlist name has
+                been durably matched, across however many different cameras,
+                ordered by time -- built entirely from backend/src/l3/
+                person_watchlist.ts's recorded events, not a pixel trail this
+                page invents, because a trail cannot span two physically
+                different cameras but a timestamped record can. */}
+            <ul className="space-y-2">
+              {sightings.map((event) => {
+                const evidence = event.evidence as { matchedName?: string; signal?: string; score?: number };
+                const cameraName = cameras.find((c) => c.id === event.cameraId)?.name ?? event.cameraId ?? "unknown camera";
+                return (
+                  <li key={event.id} className="flex flex-wrap items-center justify-between gap-2 border-b pb-2 text-sm last:border-0 last:pb-0">
+                    <div className="flex items-center gap-2">
+                      <Badge variant={evidence.signal === "face" ? "destructive" : "secondary"}>
+                        {evidence.matchedName ?? "unknown"}
+                      </Badge>
+                      <span className="text-muted-foreground">at {cameraName}</span>
+                      {typeof evidence.score === "number" && (
+                        <span className="text-xs text-muted-foreground">
+                          {(evidence.score * 100).toFixed(0)}% {evidence.signal === "appearance" ? "(clothing)" : "(face)"}
+                        </span>
+                      )}
+                    </div>
+                    <span className="text-xs text-muted-foreground">{relative(event.occurredAt)}</span>
+                  </li>
+                );
+              })}
+            </ul>
+          </CardContent>
+        </Card>
+      )}
+
       <Card>
         <CardHeader className="pb-3">
           <div className="flex flex-wrap items-center justify-between gap-3">
@@ -647,26 +716,70 @@ export function PeopleScreen() {
         </CardHeader>
         <CardContent className="space-y-4">
           {mode === "media" && (
-            <div className="flex flex-wrap items-center gap-3">
-              <Select value={cameraId} onValueChange={(value) => { setCameraId(value); resetSession(); }}>
-                <SelectTrigger className="w-[300px]"><SelectValue placeholder="Select camera" /></SelectTrigger>
-                <SelectContent>
-                  {cameras.map((camera) => (
-                    <SelectItem key={camera.id} value={camera.id}>{camera.name}</SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-              {selectedCamera && (
-                <Badge variant={selectedCamera.ready ? "secondary" : "destructive"}>
-                  {selectedCamera.name} · {selectedCamera.ready ? "LIVE" : "NO FEED"}
-                </Badge>
-              )}
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <div className="flex flex-wrap items-center gap-3">
+                <Select value={cameraId} onValueChange={(value) => { setCameraId(value); resetSession(); }}>
+                  <SelectTrigger className="w-[300px]"><SelectValue placeholder="Select camera" /></SelectTrigger>
+                  <SelectContent>
+                    {cameras.map((camera) => (
+                      <SelectItem key={camera.id} value={camera.id}>{camera.name}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                {cameraView === "single" && selectedCamera && (
+                  <Badge variant={selectedCamera.ready ? "secondary" : "destructive"}>
+                    {selectedCamera.name} · {selectedCamera.ready ? "LIVE" : "NO FEED"}
+                  </Badge>
+                )}
+              </div>
+              <div className="flex gap-2">
+                <Button size="sm" variant={cameraView === "single" ? "default" : "outline"}
+                  onClick={() => setCameraView("single")}>
+                  Single camera
+                </Button>
+                <Button size="sm" variant={cameraView === "grid" ? "default" : "outline"}
+                  onClick={() => setCameraView("grid")}>
+                  Multiple cameras
+                </Button>
+              </div>
             </div>
           )}
 
           <div className="relative overflow-hidden rounded-lg bg-black">
             {mode === "media" ? (
-              cameraId && <CameraFeed cameraId={cameraId} whepBase={media?.whepBase} module="multi_human" className="border-0" />
+              cameraView === "grid" ? (
+                <div className="grid gap-3 bg-transparent p-3 sm:grid-cols-2 xl:grid-cols-3">
+                  {cameras.length === 0 && (
+                    <p className="col-span-full py-8 text-center text-sm text-muted-foreground">
+                      No cameras configured.
+                    </p>
+                  )}
+                  {cameras.map((camera) => (
+                    <div key={camera.id} className="space-y-1.5">
+                      <button type="button"
+                        className="w-full text-left text-xs font-medium text-white/80 hover:text-white"
+                        onClick={() => { setCameraId(camera.id); setCameraView("single"); resetSession(); }}>
+                        {camera.name} <span className="text-white/40">— view large</span>
+                      </button>
+                      {/* module={null}: every card runs its own multi_human +
+                          face channels merged, same reasoning as the single
+                          tile below -- a wall of tiles is exactly where a red
+                          ring on the ONE matching tile earns its keep. */}
+                      <CameraFeed cameraId={camera.id} whepBase={media?.whepBase} module={null} />
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                cameraId && (
+                  // module={null}, not "multi_human": this is the one place in
+                  // the app that merges every module's view for this camera, so
+                  // a watchlist match -- which lives on the FACE module's own
+                  // channel, see modules/face.py -- actually reaches this tile.
+                  // Passing "multi_human" alone would silently show tracking
+                  // and nothing else, exactly the gap this feature closes.
+                  <CameraFeed cameraId={cameraId} whepBase={media?.whepBase} module={null} className="border-0" />
+                )
+              )
             ) : (
               <div className="relative aspect-video">
                 {mode === "upload" && !videoUrl ? (

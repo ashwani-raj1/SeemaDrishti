@@ -91,6 +91,7 @@ const qs = (params: Record<string, unknown>) => {
 export type EventQuery = {
   camera_id?: string;
   zone_id?: string;
+  kind?: string;
   severity?: string;
   class?: string;
   alertable?: boolean;

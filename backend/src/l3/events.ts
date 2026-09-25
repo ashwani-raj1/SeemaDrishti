@@ -234,6 +234,7 @@ export interface EventQuery {
   cameraId?: string;
   zoneId?: string;
   incidentId?: string;
+  kind?: string;
   severity?: Severity;
   class?: string;
   alertableOnly?: boolean;
@@ -251,6 +252,7 @@ export function queryEvents(orgId: string, q: EventQuery) {
   if (q.cameraId) (where.push("camera_id = $camera"), (params.$camera = q.cameraId));
   if (q.zoneId) (where.push("zone_id = $zone"), (params.$zone = q.zoneId));
   if (q.incidentId) (where.push("incident_id = $incident"), (params.$incident = q.incidentId));
+  if (q.kind) (where.push("kind = $kind"), (params.$kind = q.kind));
   if (q.severity) (where.push("severity = $severity"), (params.$severity = q.severity));
   if (q.class) (where.push("class = $class"), (params.$class = q.class));
   if (q.alertableOnly) where.push("alertable = 1");

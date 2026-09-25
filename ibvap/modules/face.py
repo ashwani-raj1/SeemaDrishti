@@ -65,6 +65,8 @@ from typing import Any, Optional, Sequence
 
 from core.payload import live_track
 from modules.base import FrameContext, VisionModule, register
+from modules.reid import HistogramReID
+from modules.watchlist_client import WatchlistClient
 
 #: Resolved against THIS directory, not the current one -- the identical
 #: reason `config.py Settings.weights` resolves against `HERE`: a bare
@@ -222,6 +224,28 @@ class FaceModule(VisionModule):
             self._best: dict[str, dict] = {}
             self.faces_seen = 0
 
+        # Watchlist matching is opt-in on whether a backend address was given
+        # (main.py always gives one; debug_view.py and a bare FaceModule in a
+        # test do not, and detection keeps working exactly as before without
+        # it -- see this module's own docstring on the two separate claims).
+        backend_url = params.get("backend_url")
+        if backend_url and not hasattr(self, "_watchlist"):
+            self._embedder = FaceEmbedder(params.get("recognition_model") or DEFAULT_RECOGNITION_MODEL)
+            self._appearance = HistogramReID()
+            self._watchlist = WatchlistClient(
+                backend_url,
+                refresh_seconds=float(params.get("watchlist_refresh_seconds", 5.0)),
+            )
+            self._watchlist_warned = False
+            # Per-track: the current match (redrawn between run_now ticks,
+            # same reasoning as `_best`), and the LAST matched id a durable
+            # event was already sent for -- so a continuing match is drawn on
+            # every frame but only ALERTED once, not every face_every ticks.
+            self._match: dict[str, dict] = {}
+            self._alerted: dict[str, str] = {}
+        elif not backend_url:
+            self._watchlist = None
+
     def process(self, frame, detections: list[dict], ctx: FrameContext):
         live: list[dict] = []
         durable: list[dict] = []  # detection only -- never anything durable
@@ -235,11 +259,17 @@ class FaceModule(VisionModule):
 
         for person in people:
             ref = person["track_ref"]
+            found = None
             if run_now:
                 found = self._find_face(frame, person)
                 if found:
                     self.faces_seen += 1
                     self._best[ref] = found
+
+            if run_now and self._watchlist is not None:
+                durable_item = self._match_watchlist(frame, person, ref, found)
+                if durable_item:
+                    durable.append(durable_item)
 
             extra: dict[str, Any] = {"track_ref": ref}
             best = self._best.get(ref)
@@ -252,6 +282,13 @@ class FaceModule(VisionModule):
                     "bbox": [fx1 / width, fy1 / height, fx2 / width, fy2 / height],
                     "score": round(best["score"], 3),
                 }
+            match = self._match.get(ref)
+            if match:
+                extra["watchlist_match"] = {
+                    "name": match["name"],
+                    "score": round(match["score"], 3),
+                    "signal": match["signal"],
+                }
             live.append(live_track(person, extra))
 
         # Tracks that left frame keep no state here worth expiring on a timer
@@ -260,8 +297,63 @@ class FaceModule(VisionModule):
         seen = {p["track_ref"] for p in people}
         for ref in [r for r in self._best if r not in seen]:
             del self._best[ref]
+        if self._watchlist is not None:
+            for ref in [r for r in self._match if r not in seen]:
+                del self._match[ref]
+            for ref in [r for r in self._alerted if r not in seen]:
+                del self._alerted[ref]
 
         return live, durable
+
+    def _match_watchlist(self, frame, person: dict, ref: str, found: Optional[dict]) -> Optional[dict]:
+        """
+        One track's watchlist comparison for this tick. Face embedding only
+        when a face was actually found THIS tick (re-embedding a stale crop
+        from a previous tick would waste cycles for no new information);
+        appearance is recomputed every tick regardless, since it is exactly
+        the fallback for when no face is visible at all.
+
+        Returns a durable event dict when this track's match just CHANGED
+        (became matched, or matched a different entry) -- self._alerted is
+        what makes a continuing match drawn every frame but alerted once,
+        the same "confirm once, don't re-announce" instinct multi_human's own
+        identity minting follows.
+        """
+        face_embedding = None
+        if found is not None and self._watchlist is not None:
+            try:
+                face_embedding = self._embedder.embed(found["crop"], found["raw"])
+            except FileNotFoundError as error:
+                if not self._watchlist_warned:
+                    print(f"[face] watchlist face matching disabled: {error}")
+                    self._watchlist_warned = True
+                self._watchlist = None
+        if self._watchlist is None:
+            return None
+
+        appearance_embedding = self._appearance.embed(frame, person["bbox_px"])
+        match = self._watchlist.match(face_embedding, appearance_embedding)
+
+        if not match:
+            self._match.pop(ref, None)
+            self._alerted.pop(ref, None)
+            return None
+
+        self._match[ref] = match
+        if self._alerted.get(ref) == match["id"]:
+            return None
+        self._alerted[ref] = match["id"]
+        return {
+            "event_type": "watchlist_match",
+            "track_id": person.get("track_id"),
+            "data": {
+                "matched_id": match["id"],
+                "signal": match["signal"],
+                "score": round(match["score"], 4),
+                "track_ref": ref,
+                "bbox": [round(v, 5) for v in person["bbox_xywh"]],
+            },
+        }
 
     def _find_face(self, frame, person) -> Optional[dict]:
         x1, y1, x2, y2 = person["bbox_px"]
@@ -281,9 +373,12 @@ class FaceModule(VisionModule):
             return None
         best = max(faces, key=lambda f: f["score"])
         fx1, fy1, fx2, fy2 = best["bbox_px"]
-        # Back to full-frame pixels: the crop was offset by (x1, y1).
+        # Back to full-frame pixels: the crop was offset by (x1, y1). `crop`
+        # and `raw` are kept alongside for FaceEmbedder.embed(), which needs
+        # them in this SAME coordinate space -- see this module's watchlist
+        # matching in process() below.
         return {"bbox_px": (x1 + fx1, y1 + fy1, x1 + fx2, y1 + fy2),
-                "score": best["score"]}
+                "score": best["score"], "crop": crop, "raw": best["raw"]}
 
     def stats(self) -> dict:
         return {"tracked_faces": len(self._best), "faces_seen": self.faces_seen}

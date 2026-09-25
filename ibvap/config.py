@@ -189,6 +189,10 @@ class Settings:
     def zone_refresh_seconds(self) -> float:
         return self.float_("IBVAP_ZONE_REFRESH_SECONDS", 15.0)
 
+    @property
+    def watchlist_refresh_seconds(self) -> float:
+        return self.float_("IBVAP_WATCHLIST_REFRESH_SECONDS", 5.0)
+
 
 @dataclass
 class CameraConfig:

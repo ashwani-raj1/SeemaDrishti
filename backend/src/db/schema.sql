@@ -343,3 +343,36 @@ CREATE INDEX IF NOT EXISTS vehicle_traffic_by_time
 CREATE INDEX IF NOT EXISTS vehicle_traffic_by_camera
   ON vehicle_traffic_event(camera_id, occurred_at DESC);
 
+-- ---------------------------------------------------------------- person watchlist (face + appearance)
+--
+-- The plate watchlist's sibling for people, not a copy of its shape: a plate
+-- is compared by string edit-distance (platesMatch, above); a person is
+-- compared by embedding cosine similarity, computed once by the vision
+-- service's own models (ibvap/modules/face.py) and stored here as plain JSON
+-- float arrays -- this table holds vectors, never photos, and never runs a
+-- model itself. Both signals are optional and independent: a close-up photo
+-- yields a face embedding (strong), a photo with no usable face still yields
+-- an appearance embedding (weak, colour-based) so enrolment never silently
+-- fails just because a face was not visible.
+--
+-- The single source of truth for TWO different processes: ibvap/main.py's
+-- live per-camera pipeline and ibvap/people_ai_service.py's upload/webcam
+-- endpoint both poll this table (GET /api/watchlist/people) on a timer and
+-- match against their own cached copy, the same pattern zones already use
+-- (see media/cameras.yml's comment on zone_refresh_seconds) -- so an
+-- enrolment reaches every camera without restarting a worker.
+CREATE TABLE IF NOT EXISTS person_watchlist (
+  id                   TEXT PRIMARY KEY,
+  org_id               TEXT NOT NULL REFERENCES organisation(id),
+  name                 TEXT NOT NULL,
+  face_embedding       TEXT,                 -- JSON float array, or NULL
+  appearance_embedding TEXT,                 -- JSON float array, or NULL
+  notes                TEXT,
+  active               INTEGER NOT NULL DEFAULT 1,
+  added_by             TEXT,
+  created_at           TEXT NOT NULL,
+  updated_at           TEXT NOT NULL,
+  UNIQUE(org_id, name)
+);
+
+CREATE INDEX IF NOT EXISTS person_watchlist_by_org ON person_watchlist(org_id, active);

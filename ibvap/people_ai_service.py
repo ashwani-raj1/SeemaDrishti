@@ -66,6 +66,7 @@ STATUS: prototype.
 
 import base64
 import time
+import urllib.error
 
 import cv2
 import numpy as np
@@ -73,25 +74,17 @@ from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 
+from config import Settings
 from core.detection import SharedDetector
 from modules.base import FrameContext, build
 from modules.face import DEFAULT_MODEL as FACE_DETECT_MODEL
 from modules.face import DEFAULT_RECOGNITION_MODEL, FaceDetector, FaceEmbedder
 from modules.reid import HistogramReID, cosine
+from modules.watchlist_client import WatchlistClient
 
 # Registers "multi_human" in modules.base.REGISTRY. Only this one module is
 # imported -- this service has no reason to load fence/anpr alongside it.
 import modules.multi_human  # noqa: E402,F401
-
-#: opencv_zoo's own published same-identity threshold for this exact SFace
-#: model -- a real citation, not a guess, unlike most thresholds in this
-#: codebase which have to say "not measured yet" (claude.md §7).
-FACE_MATCH_THRESHOLD = 0.363
-
-#: Not measured against a real clip -- the same starting point
-#: modules/multi_human.py settled on for HistogramReID after real-clip
-#: near-misses, reused here rather than inventing a second unmeasured number.
-APPEARANCE_MATCH_THRESHOLD = 0.75
 
 #: A head sits near the top of a standing, sitting or crouching subject
 #: alike -- same reasoning modules/face.py's own FaceModule uses.
@@ -100,7 +93,7 @@ FACE_SEARCH_UPPER_FRAC = 0.55
 app = FastAPI(title="SeemaDrishti local people tracking")
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:3000", "http://127.0.0.1:3000"],
+    allow_origins=["http://localhost:3000", "http://127.0.0.1:3000", "http://localhost:3001", "http://127.0.0.1:3001"],
     allow_methods=["POST", "GET", "DELETE"],
     allow_headers=["content-type"],
 )
@@ -139,9 +132,16 @@ class _Models:
         # detector/embedder pair, not one per feature.
         self.face_detector = FaceDetector(FACE_DETECT_MODEL)
         self.face_embedder = FaceEmbedder(DEFAULT_RECOGNITION_MODEL)
-        # name -> {"face": [floats] | None, "appearance": [floats] | None}.
-        # Persists across /reset on purpose -- see /reset's own docstring.
-        self.watchlist: dict[str, dict] = {}
+        # The backend now owns the watchlist (see modules/watchlist_client.py
+        # and backend/src/l3/person_watchlist.ts) -- this process is a client
+        # of it, the same as ibvap/main.py's live camera pipeline is, so an
+        # entry enrolled from the People page's Upload/Live-webcam mode is
+        # also matched against on every real camera, and vice versa. Persists
+        # across /reset on purpose -- see /reset's own docstring.
+        settings = Settings()
+        self.watchlist = WatchlistClient(
+            settings.backend_url, refresh_seconds=settings.watchlist_refresh_seconds,
+        )
 
 
 def _face_signature(state: _Models, image, bbox_px) -> tuple[list[float] | None, float | None]:
@@ -254,7 +254,10 @@ def enroll_watchlist(entry: WatchlistEntry):
     if appearance is None and face is None:
         raise HTTPException(400, "could not extract any appearance or face signature from the photo")
 
-    state.watchlist[entry.name] = {"face": face, "appearance": appearance}
+    try:
+        state.watchlist.enroll(entry.name, face_embedding=face, appearance_embedding=appearance)
+    except (urllib.error.URLError, OSError) as error:
+        raise HTTPException(502, f"could not reach the edge node to store this entry: {error}") from error
     return {
         "ok": True,
         "person_confidence": round(float(subject["confidence"]), 3),
@@ -267,16 +270,19 @@ def enroll_watchlist(entry: WatchlistEntry):
 def list_watchlist():
     state = models()
     return {"entries": [
-        {"name": name, "has_face": entry["face"] is not None,
-         "has_appearance": entry["appearance"] is not None}
-        for name, entry in state.watchlist.items()
+        {"name": entry["name"], "has_face": bool(entry.get("face_embedding")),
+         "has_appearance": bool(entry.get("appearance_embedding"))}
+        for entry in state.watchlist.entries()
     ]}
 
 
 @app.delete("/watchlist/{name}")
 def remove_watchlist(name: str):
     state = models()
-    state.watchlist.pop(name, None)
+    try:
+        state.watchlist.remove(name)
+    except (urllib.error.URLError, OSError) as error:
+        raise HTTPException(502, f"could not reach the edge node to remove this entry: {error}") from error
     return {"ok": True}
 
 
@@ -308,11 +314,12 @@ def detect(frame: Frame):
                 if embedding is not None else None
             )
 
-    if state.watchlist:
-        # Face computed at most ONCE per track per frame -- shared across
-        # every watchlist entry's comparison, not re-detected per name. With
-        # N entries this is one face search plus N cheap vector comparisons,
-        # never N face searches.
+    if state.watchlist.entries():
+        # Face computed at most ONCE per track per frame; matching itself is
+        # delegated to modules/watchlist_client.py's WatchlistClient.match()
+        # -- the exact same function ibvap/main.py's live camera pipeline
+        # calls, so this ad-hoc endpoint and a real camera can never drift
+        # into scoring a match two different ways.
         by_ref = {d["track_ref"]: d for d in detections if d.get("track_ref")}
         for track in live:
             det = by_ref.get(track["extra"].get("track_ref"))
@@ -320,28 +327,10 @@ def detect(frame: Frame):
                 continue
             face_embedding, _ = _face_signature(state, image, det["bbox_px"])
             appearance_embedding = state.target_reid.embed(image, det["bbox_px"])
-
-            best_name, best_score, best_signal = None, 0.0, None
-            for name, entry in state.watchlist.items():
-                if face_embedding is not None and entry["face"] is not None:
-                    score = state.face_embedder.similarity(face_embedding, entry["face"])
-                    if score >= FACE_MATCH_THRESHOLD and score > best_score:
-                        best_name, best_score, best_signal = name, score, "face"
-                # Appearance is checked even when a face comparison already
-                # ran: a strong clothing match can still matter to report
-                # alongside a weak or absent face one, but face NEVER loses
-                # to a competing appearance match for the same name -- the
-                # `best_signal != "face"` guard is what keeps a worse
-                # colour-only guess from overwriting a better face-based one.
-                if (appearance_embedding is not None and entry["appearance"] is not None
-                        and best_signal != "face"):
-                    score = cosine(appearance_embedding, entry["appearance"])
-                    if score >= APPEARANCE_MATCH_THRESHOLD and score > best_score:
-                        best_name, best_score, best_signal = name, score, "appearance"
-
+            match = state.watchlist.match(face_embedding, appearance_embedding)
             track["extra"]["watchlist_match"] = (
-                {"name": best_name, "score": round(best_score, 4), "signal": best_signal}
-                if best_name is not None else None
+                {"name": match["name"], "score": round(match["score"], 4), "signal": match["signal"]}
+                if match else None
             )
 
     # Already the exact shape core/payload.py's live_track() builds for the
