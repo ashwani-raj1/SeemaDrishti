@@ -7,7 +7,7 @@
  */
 import type {
   Action, CameraDetail, CameraIncidents, ChainVerdict, CreateWatchlistInput,
-  Decision, DetectVehicleInput, FrameAnalysisResult, Health, HubCameraList, IbvapEvent, Incident,
+  Decision, DetectVehicleInput, Health, HubCameraList, IbvapEvent, Incident,
   IncidentDetail, MonitoringZone, PlateDetection, Point, ServerConfig, SimStatus,
   UpdateWatchlistInput, WatchlistEntry, WatchlistStats,
   VehicleTrafficSummary,
@@ -250,9 +250,6 @@ export const api = {
   plateDetections: (params: { match_status?: string; camera_id?: string; plate?: string; limit?: number } = {}) =>
     request<PlateDetection[]>(`/api/watchlist/detections${qs(params)}`),
   detectVehicleAndPlate: (body: DetectVehicleInput) => post<PlateDetection>("/api/watchlist/detect", body),
-  simulatePlateDetection: (preset?: string) => post<PlateDetection>("/api/watchlist/simulate", { preset }),
-  analyzeFrame: (body: { cameraId?: string; zoneId?: string | null; timeOffset?: number; simulated?: boolean } = {}) =>
-    post<FrameAnalysisResult>("/api/watchlist/analyze-frame", body),
 };
 
 

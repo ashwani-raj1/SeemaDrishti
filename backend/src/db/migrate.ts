@@ -90,6 +90,11 @@ export function migrateAfter(db: Database): void {
   // Columns first: these apply whether or not there is a legacy zone table.
   addColumn(db, "camera", "enabled", "INTEGER NOT NULL DEFAULT 1");
   addColumn(db, "camera", "updated_at", "TEXT");
+  addColumn(db, "plate_detection", "verified", "INTEGER NOT NULL DEFAULT 1");
+  // ANPR evidence now follows the operational 15-day retention policy.
+  if (tableExists(db, "organisation")) {
+    db.exec("UPDATE organisation SET retention_days = 15");
+  }
 
   if (!tableExists(db, LEGACY)) return;
 

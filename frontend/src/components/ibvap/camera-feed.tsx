@@ -89,6 +89,8 @@ export interface CameraFeedProps {
   module?: string | null;
   /** Off for a wall of tiles where the boxes would be too small to read. */
   showBoxes?: boolean;
+  /** `cover` removes letterboxing in compact camera-wall tiles. */
+  fit?: "contain" | "cover";
   className?: string;
 }
 
@@ -99,6 +101,7 @@ export function CameraFeed({
   zones = [],
   module = null,
   showBoxes = true,
+  fit = "contain",
   className,
 }: CameraFeedProps) {
   const videoRef = useRef<HTMLVideoElement | null>(null);
@@ -347,7 +350,7 @@ export function CameraFeed({
         autoPlay
         muted
         playsInline
-        className="h-full w-full object-contain"
+        className={cn("h-full w-full", fit === "cover" ? "object-cover" : "object-contain")}
       />
       <canvas
         ref={canvasRef}

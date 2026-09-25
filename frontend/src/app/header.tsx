@@ -117,7 +117,7 @@ export function CommandHeader() {
     ZONE_OPTIONS.find((z) => z.name === selectedZone) ?? ZONE_OPTIONS[0]!;
 
   return (
-    <header className="relative sticky top-0 z-20 flex h-13 w-full shrink-0 items-center justify-between border-b border-slate-200/90 dark:border-slate-800 bg-white dark:bg-[#14130d] px-3 sm:px-4 overflow-hidden">
+    <header className="relative sticky top-0 z-20 flex h-13 w-full shrink-0 items-center justify-between gap-2 overflow-hidden border-b border-slate-200/90 bg-white px-2.5 dark:border-slate-800 dark:bg-[#14130d] sm:px-4">
       {/* Top Navbar Background Banner Image */}
       <div className="absolute inset-0 pointer-events-none z-0 overflow-hidden">
         <img
@@ -130,30 +130,30 @@ export function CommandHeader() {
       </div>
 
       {/* LEFT: Sidebar toggle + Sector Details dynamically updating with selected Zone */}
-      <div className="relative z-10 flex items-center gap-2 sm:gap-3 min-w-0">
+      <div className="relative z-10 flex min-w-0 flex-1 items-center gap-2 sm:gap-3 lg:flex-none">
         <SidebarTrigger className="-ml-1 text-slate-600 dark:text-slate-300 hover:text-slate-900" />
 
         {/* Sector Name & Operational Posture */}
-        <div className="flex flex-col text-left">
-          <div className="flex items-center gap-1.5 font-bold text-xs text-slate-800 dark:text-slate-200">
-            <span>{currentZoneConfig.bop}</span>
+        <div className="flex min-w-0 flex-col text-left">
+          <div className="flex min-w-0 items-center gap-1.5 text-xs font-bold text-slate-800 dark:text-slate-200">
+            <span className="truncate">{currentZoneConfig.bop}</span>
             <span className="text-slate-400 font-normal">|</span>
-            <span className="text-blue-600 dark:text-blue-400 font-semibold">
+            <span className="hidden shrink-0 font-semibold text-blue-600 dark:text-blue-400 sm:inline">
               {currentZoneConfig.sector}
             </span>
           </div>
-          <span className="text-[10px] font-medium text-slate-500 dark:text-slate-400 hidden sm:block">
+          <span className="hidden truncate text-[10px] font-medium text-slate-500 dark:text-slate-400 lg:block">
             {currentZoneConfig.subtitle}
           </span>
         </div>
       </div>
 
       {/* CENTER: Zone Filter + Live Badge (Hidden on very small screens) */}
-      <div className="relative z-10 hidden md:flex items-center gap-3">
+      <div className="relative z-10 hidden items-center gap-3 lg:flex">
         {/* Zone Dropdown with increased width */}
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
-            <button className="flex flex-col items-start w-56 sm:w-64 px-3.5 py-1 rounded-md border border-slate-200 dark:border-slate-700 bg-slate-50/80 dark:bg-slate-800/60 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors shadow-2xs">
+            <button className="flex w-48 flex-col items-start rounded-md border border-slate-200 bg-slate-50/80 px-3.5 py-1 shadow-2xs transition-colors hover:bg-slate-100 dark:border-slate-700 dark:bg-slate-800/60 dark:hover:bg-slate-800 xl:w-64">
               <span className="text-[9px] uppercase font-semibold text-slate-400 leading-none">
                 Zone
               </span>
@@ -195,7 +195,7 @@ export function CommandHeader() {
       </div>
 
       {/* RIGHT: Theme Toggle + Bell + Digital Clock + Actor */}
-      <div className="relative z-10 flex items-center gap-2 sm:gap-3.5">
+      <div className="relative z-10 flex shrink-0 items-center gap-1.5 sm:gap-2 xl:gap-3.5">
         {/* Theme Switcher Button (Sun / Moon) */}
         <button
           onClick={() => setTheme(theme === "dark" ? "light" : "dark")}
@@ -218,7 +218,7 @@ export function CommandHeader() {
         </button>
 
         {/* Digital Real-Time Clock */}
-        <div className="hidden sm:flex flex-col items-end pl-1 pr-1.5">
+        <div className="hidden flex-col items-end pl-1 pr-1.5 xl:flex">
           <span className="font-mono text-xs sm:text-sm font-bold text-slate-800 dark:text-slate-100 tracking-wider">
             {currentTime || "22:30:34"}
           </span>
@@ -232,8 +232,8 @@ export function CommandHeader() {
           <DropdownMenuTrigger asChild>
             <Button variant="outline" size="sm" className="h-8 px-2 text-xs">
               <UserCogIcon className="size-3.5 mr-1" />
-              <span className="hidden md:inline font-medium">{actor?.name ?? "Operator"}</span>
-              <Badge variant="secondary" className="ml-1 px-1 py-0 text-[10px] font-mono">
+              <span className="hidden font-medium xl:inline">{actor?.name ?? "Operator"}</span>
+              <Badge variant="secondary" className="px-1 py-0 font-mono text-[10px] xl:ml-1">
                 {actor?.role ?? "op"}
               </Badge>
             </Button>
