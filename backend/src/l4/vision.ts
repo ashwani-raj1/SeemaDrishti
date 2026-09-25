@@ -4,7 +4,7 @@ import type { CameraStatus, Severity, Zone } from "../core/types";
 import { recordEvent, shapeEvent } from "../l3/events";
 import { zonesForCamera } from "../l3/zones";
 import { setCameraStatus } from "../l3/cameras";
-import { processVehicleAndPlateDetection } from "../l3/watchlist";
+import { processVehicleAndPlateDetection, recordVehicleTraffic } from "../l3/watchlist";
 import { BadRequest } from "./hooks";
 
 /**
@@ -44,7 +44,7 @@ export interface VisionEvent {
   simulated: boolean;
 }
 
-const KNOWN_EVENTS = new Set(["intrusion", "plate_read", "camera_health", "reidentification"]);
+const KNOWN_EVENTS = new Set(["intrusion", "vehicle_detection", "plate_read", "camera_health", "reidentification"]);
 
 function requireString(value: unknown, field: string): string {
   if (typeof value !== "string" || !value.trim()) throw new BadRequest(`${field} is required`);
@@ -283,6 +283,23 @@ function ingestIntrusion(event: VisionEvent, context: CameraContext) {
 
 // ------------------------------------------------------------------ plate read
 
+function ingestVehicleDetection(event: VisionEvent, context: CameraContext) {
+  const trackRef = requireString(event.data.track_ref, "data.track_ref");
+  return recordVehicleTraffic({
+    orgId: context.orgId,
+    cameraId: event.cameraId,
+    // sourceId contains the Vision run id, and trackRef is stable for the
+    // physical track. Retries therefore cannot count the vehicle twice.
+    sourceKey: `${event.sourceId}:${event.cameraId}:${trackRef}`,
+    vehicleType: typeof event.data.vehicle_type === "string"
+      ? event.data.vehicle_type
+      : "vehicle",
+    occurredAt: event.occurredAt,
+  });
+}
+
+// ------------------------------------------------------------------ plate read
+
 function ingestPlateRead(event: VisionEvent, context: CameraContext) {
   const data = event.data;
   const plate = typeof data.plate === "string" ? data.plate.trim() : "";
@@ -299,6 +316,7 @@ function ingestPlateRead(event: VisionEvent, context: CameraContext) {
     plateConfidence: typeof data.plate_confidence === "number" ? data.plate_confidence : undefined,
     bbox: bboxOf(data.bbox),
     plateBbox: bboxOf(data.plate_bbox),
+    imageSnapshot: typeof data.image_snapshot === "string" ? data.image_snapshot : null,
     simulated: event.simulated,
     occurredAt: event.occurredAt,
   });
@@ -411,6 +429,8 @@ export function ingestVisionEvent(event: VisionEvent) {
       return { event: shapeEvent(ingestIntrusion(event, context)) };
     case "plate_read":
       return { plateDetection: ingestPlateRead(event, context) };
+    case "vehicle_detection":
+      return { vehicleTraffic: ingestVehicleDetection(event, context) };
     case "camera_health":
       return { event: shapeEvent(ingestCameraHealth(event, context)) };
     case "reidentification":

@@ -265,7 +265,7 @@ describe("audit log", () => {
   const supervisor = { id: "usr_supervisor", name: "Shift Supervisor", role: "supervisor" as const };
 
   test("an incident's status comes from the recorded decision, not a column", () => {
-    const incidents = events.listIncidents(ORG, { limit: 1 });
+    const incidents = events.listIncidents(ORG, { limit: 1, includeSimulated: true });
     const target = incidents[0]!;
     expect(target.status).toBe("OPEN");
 
@@ -282,7 +282,7 @@ describe("audit log", () => {
   });
 
   test("escalating without a reason is refused", () => {
-    const target = events.listIncidents(ORG, { limit: 1 })[0]!;
+    const target = events.listIncidents(ORG, { limit: 1, includeSimulated: true })[0]!;
     expect(() =>
       audit.recordAction({
         actor: supervisor,
