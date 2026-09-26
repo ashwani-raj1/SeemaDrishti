@@ -2,7 +2,6 @@ import { DEFAULT_ORG } from "../db/seed";
 import { actorOf, handled, json, NotFound, query, readJson, requireRole } from "../http";
 import { BadRequest } from "../l4/hooks";
 import {
-  analyzeFrame,
   createWatchlistEntry,
   deleteWatchlistEntry,
   getWatchlistEntry,
@@ -12,7 +11,6 @@ import {
   processVehicleAndPlateDetection,
   queryPlateDetections,
   recordVehicleTraffic,
-  simulatePresetPlateDetection,
   updateWatchlistEntry,
 } from "../l3/watchlist";
 
@@ -76,6 +74,9 @@ export const watchlistRoutes = {
       if (!body.sourceKey || typeof body.sourceKey !== "string") {
         throw new BadRequest("sourceKey is required");
       }
+      if (!body.cameraId || typeof body.cameraId !== "string") {
+        throw new BadRequest("cameraId is required");
+      }
       return json(recordVehicleTraffic({
         orgId: DEFAULT_ORG,
         cameraId: body.cameraId ?? "cam_fence_north",
@@ -92,7 +93,7 @@ export const watchlistRoutes = {
       matchStatus: params.get("match_status") ?? undefined,
       cameraId: params.get("camera_id") ?? undefined,
       plateNumber: params.get("plate") ?? undefined,
-      limit: params.has("limit") ? Number(params.get("limit")) : 50,
+      limit: params.has("limit") ? Number(params.get("limit")) : undefined,
       offset: params.has("offset") ? Number(params.get("offset")) : undefined,
     });
     return json(detections);
@@ -102,6 +103,9 @@ export const watchlistRoutes = {
     POST: handled(async (req) => {
       const body = await readJson(req);
       const cameraId = body.cameraId ?? "cam_fence_north";
+      if (!body.plateNumber || typeof body.plateNumber !== "string" || !body.plateNumber.trim()) {
+        throw new BadRequest("plateNumber is required; no ANPR record was created");
+      }
 
       const detection = processVehicleAndPlateDetection({
         orgId: DEFAULT_ORG,
@@ -114,32 +118,10 @@ export const watchlistRoutes = {
         bbox: body.bbox,
         plateBbox: body.plateBbox,
         imageSnapshot: body.imageSnapshot ?? null,
-        simulated: body.simulated !== false,
+        simulated: body.simulated === true,
       });
 
       return json(detection, 201);
-    }),
-  },
-
-  "/api/watchlist/simulate": {
-    POST: handled(async (req) => {
-      const body = await readJson(req).catch(() => ({}) as Record<string, any>);
-      const preset = body.preset ?? "flagged_scorpio";
-      const result = simulatePresetPlateDetection(preset, DEFAULT_ORG);
-      return json(result, 201);
-    }),
-  },
-
-  "/api/watchlist/analyze-frame": {
-    POST: handled(async (req) => {
-      const body = await readJson(req).catch(() => ({}) as Record<string, any>);
-      const result = analyzeFrame(DEFAULT_ORG, {
-        cameraId: body.cameraId,
-        zoneId: body.zoneId,
-        timeOffset: body.timeOffset,
-        simulated: body.simulated !== false,
-      });
-      return json(result, 200);
     }),
   },
 

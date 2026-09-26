@@ -96,6 +96,11 @@ class LiveChannel:
     def __init__(self, bind="0.0.0.0", port=8100):
         self.bind = bind
         self.port = port
+        # Startup is not complete until the websocket has actually bound its
+        # port.  The supervisor waits on this flag before it starts camera
+        # workers; otherwise a second process can fail to bind yet continue
+        # posting durable detections, double-counting every vehicle.
+        self.ready = asyncio.Event()
         self.sent = 0
         self._dropped_total = 0
         self._clients: set[_Client] = set()
@@ -128,6 +133,7 @@ class LiveChannel:
         async with serve(self._handle, self.bind, self.port,
                          ping_interval=20, ping_timeout=20) as server:
             self._server = server
+            self.ready.set()
             print(f"[live] ws://{self.bind}:{self.port} - live observation channel")
             await stop.wait()
             # MUST close before leaving the block. `serve()`'s __aexit__ awaits

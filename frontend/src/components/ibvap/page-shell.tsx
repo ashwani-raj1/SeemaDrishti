@@ -33,7 +33,7 @@ export function PageShell({
   children: ReactNode;
 }) {
   return (
-    <div className="flex flex-col gap-4 p-4 md:p-6">
+    <div className="flex min-w-0 flex-col gap-4 p-3 sm:p-4 xl:p-6">
       {breadcrumbs && breadcrumbs.length > 0 && (
         <Breadcrumb>
           <BreadcrumbList>
@@ -56,10 +56,10 @@ export function PageShell({
 
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div className="flex min-w-0 flex-col gap-1">
-          <h1 className="text-xl font-semibold tracking-tight">{title}</h1>
-          {description && <p className="text-sm text-muted-foreground">{description}</p>}
+          <h1 className="text-lg font-semibold tracking-tight sm:text-xl">{title}</h1>
+          {description && <p className="max-w-4xl text-xs leading-5 text-muted-foreground sm:text-sm">{description}</p>}
         </div>
-        {actions && <div className="flex items-center gap-2">{actions}</div>}
+        {actions && <div className="flex max-w-full items-center gap-2">{actions}</div>}
       </div>
       {toolbar}
       {children}

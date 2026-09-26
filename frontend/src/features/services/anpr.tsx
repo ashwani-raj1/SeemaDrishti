@@ -198,7 +198,10 @@ export function AnprScreen() {
       const response = await fetch("http://127.0.0.1:8001/detect", {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ image: canvas.toDataURL("image/jpeg", 0.86) }),
+        body: JSON.stringify({
+          image: canvas.toDataURL("image/jpeg", 0.86),
+          source_id: mode === "live" ? "service-live-camera" : `upload:${fileName || "video"}`,
+        }),
       });
       if (!response.ok) throw new Error("ANPR service unavailable");
       const result = await response.json() as { detections: Array<{

@@ -63,12 +63,16 @@ export interface FenceExtra {
 export interface AnprExtra {
   track_ref?: string;
   vehicle_type?: string;
+  image_snapshot?: string | null;
   plate?: {
     text: string;
     confidence: number;
     bbox: [number, number, number, number];
+    source?: "ocr" | "llm";
+    model?: string | null;
     /** Always false on this channel. The accepted read comes from the node. */
     confirmed: boolean;
+    image_snapshot?: string | null;
   };
 }
 

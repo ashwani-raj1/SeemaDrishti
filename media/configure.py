@@ -175,6 +175,45 @@ def build(values, cameras, problems):
     whep_port = env(values, "IBVAP_WHEP_PORT", "8889")
     advertise = env(values, "IBVAP_MEDIA_ADVERTISE_IP", "")
 
+    paths = {cam["id"]: path_entry(cam, problems) for cam in cameras}
+
+    # Start exactly ONE shared vision process when the first detectable media
+    # path becomes ready. That process reads the same manifest and handles all
+    # cameras selected by IBVAP_WORKER_CAMERAS (normally `all`). Attaching one
+    # worker per path would load YOLO/EasyOCR repeatedly and overwhelm a
+    # CPU-only deployment.
+    launcher = next((cam for cam in cameras if cam.get("detect", True)), None)
+    if launcher is not None:
+        python = Path(sys.executable).resolve().as_posix()
+        vision = (ROOT / "ibvap" / "main.py").resolve().as_posix()
+        paths[launcher["id"]]["runOnReady"] = (
+            f'"{python}" "{vision}" '
+            "--cameras all --imgsz 384 --target-fps 2"
+        )
+        # If the detector crashes while the media path remains healthy,
+        # MediaMTX brings it back. MediaMTX also terminates the managed command
+        # when the hub stops, so no orphan per-camera workers are left behind.
+        paths[launcher["id"]]["runOnReadyRestart"] = True
+
+    # The Plate Watchlist's uploaded-video and shared-camera modes intentionally
+    # use the same high-quality request/response ANPR pipeline. Start that one
+    # local API once as another MediaMTX-managed service; it is not a per-camera
+    # process. A second ready path owns the hook because MediaMTX exposes one
+    # runOnReady command per path.
+    anpr_launcher = next(
+        (cam for cam in cameras
+         if cam.get("detect", True) and (launcher is None or cam["id"] != launcher["id"])),
+        None,
+    )
+    if anpr_launcher is not None:
+        python = Path(sys.executable).resolve().as_posix()
+        app_dir = (ROOT / "ibvap").resolve().as_posix()
+        paths[anpr_launcher["id"]]["runOnReady"] = (
+            f'"{python}" -m uvicorn ai_service:app '
+            f'--app-dir "{app_dir}" --host 127.0.0.1 --port 8001'
+        )
+        paths[anpr_launcher["id"]]["runOnReadyRestart"] = True
+
     config = {
         "logLevel": "info",
         "logDestinations": ["stdout"],
@@ -204,7 +243,7 @@ def build(values, cameras, problems):
         "srt": False,
         "moq": False,
 
-        "paths": {cam["id"]: path_entry(cam, problems) for cam in cameras},
+        "paths": paths,
     }
     return config
 
