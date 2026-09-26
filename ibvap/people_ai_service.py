@@ -220,6 +220,40 @@ def set_target(frame: Frame):
     return {"ok": True, "confidence": round(float(subject["confidence"]), 3)}
 
 
+@app.post("/identify")
+def identify(frame: Frame):
+    """
+    "Who is this" for the person dossier page: take a photo, find the most
+    confident person in it, extract both signals and ask the SAME
+    WatchlistClient.match() the live pipeline uses "does this match anyone
+    already enrolled". Read-only -- this never enrols or remembers anything,
+    it only answers the one question the dossier page's photo-search needs.
+
+    A watchlist entry's NAME is the join key into the dossier (backend's
+    GET /api/watchlist/people/{name}/dossier), so this is deliberately the
+    smallest possible response: enough to look someone up, nothing the
+    caller could mistake for the dossier itself.
+    """
+    image = decode(frame.image)
+    state = models()
+    people = [d for d in state.detector.detect(image) if d.get("is_person")]
+    if not people:
+        raise HTTPException(400, "no person found in the photo")
+    subject = max(people, key=lambda p: p["confidence"])
+
+    face_embedding, _ = _face_signature(state, image, subject["bbox_px"])
+    appearance_embedding = state.target_reid.embed(image, subject["bbox_px"])
+    match = state.watchlist.match(face_embedding, appearance_embedding)
+    if not match:
+        return {"matched": False}
+    return {
+        "matched": True,
+        "name": match["name"],
+        "score": round(match["score"], 4),
+        "signal": match["signal"],
+    }
+
+
 @app.delete("/target")
 def clear_target():
     """Back to plain tracking -- every /detect call stops scoring against anyone."""

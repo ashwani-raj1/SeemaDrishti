@@ -2,7 +2,8 @@ import { all, one, run, bool } from "../db";
 import { id, nowIso } from "../core/ids";
 import { recordAction } from "./audit";
 import { publish } from "../l4/bus";
-import { recordEvent } from "./events";
+import { recordEvent, queryEvents } from "./events";
+import { normalizePlate } from "./watchlist";
 
 /**
  * The person watchlist -- named entries, matched by face/appearance embedding
@@ -19,6 +20,12 @@ export interface PersonWatchlistEntry {
   face_embedding: number[] | null;
   appearance_embedding: number[] | null;
   notes: string | null;
+  /** MOCK -- see schema.sql's table comment. Operator-entered, never derived. */
+  address: string | null;
+  /** MOCK ownership claim -- the plate strings themselves are real ANPR
+   * vocabulary (formatPlate's own shape), the claim that this person owns
+   * them is not. */
+  owned_plates: string[];
   active: boolean;
   added_by: string | null;
   created_at: string;
@@ -37,6 +44,8 @@ export interface UpsertPersonWatchlistInput {
   faceEmbedding?: number[] | null;
   appearanceEmbedding?: number[] | null;
   notes?: string | null;
+  address?: string | null;
+  ownedPlates?: string[] | null;
 }
 
 export function listPersonWatchlist(orgId: string, options: { activeOnly?: boolean } = {}): PersonWatchlistEntry[] {
@@ -76,6 +85,8 @@ export function upsertPersonWatchlistEntry(input: UpsertPersonWatchlistInput, ac
           SET face_embedding = $face,
               appearance_embedding = $appearance,
               notes = $notes,
+              address = $address,
+              owned_plates = $plates,
               active = 1,
               updated_at = $at
         WHERE id = $id`,
@@ -84,6 +95,10 @@ export function upsertPersonWatchlistEntry(input: UpsertPersonWatchlistInput, ac
         $face: input.faceEmbedding != null ? JSON.stringify(input.faceEmbedding) : null,
         $appearance: input.appearanceEmbedding != null ? JSON.stringify(input.appearanceEmbedding) : null,
         $notes: input.notes ?? existing.notes,
+        $address: input.address !== undefined ? input.address : existing.address,
+        $plates: input.ownedPlates !== undefined
+          ? JSON.stringify(input.ownedPlates ?? [])
+          : JSON.stringify(existing.owned_plates),
         $at: at,
       },
     );
@@ -101,8 +116,8 @@ export function upsertPersonWatchlistEntry(input: UpsertPersonWatchlistInput, ac
   const entryId = id("pw");
   run(
     `INSERT INTO person_watchlist
-       (id, org_id, name, face_embedding, appearance_embedding, notes, active, added_by, created_at, updated_at)
-     VALUES ($id, $org, $name, $face, $appearance, $notes, 1, $added_by, $at, $at)`,
+       (id, org_id, name, face_embedding, appearance_embedding, notes, address, owned_plates, active, added_by, created_at, updated_at)
+     VALUES ($id, $org, $name, $face, $appearance, $notes, $address, $plates, 1, $added_by, $at, $at)`,
     {
       $id: entryId,
       $org: input.orgId,
@@ -110,6 +125,8 @@ export function upsertPersonWatchlistEntry(input: UpsertPersonWatchlistInput, ac
       $face: input.faceEmbedding != null ? JSON.stringify(input.faceEmbedding) : null,
       $appearance: input.appearanceEmbedding != null ? JSON.stringify(input.appearanceEmbedding) : null,
       $notes: input.notes ?? null,
+      $address: input.address ?? null,
+      $plates: JSON.stringify(input.ownedPlates ?? []),
       $added_by: actor.name,
       $at: at,
     },
@@ -123,6 +140,117 @@ export function upsertPersonWatchlistEntry(input: UpsertPersonWatchlistInput, ac
   });
   publish({ type: "person_watchlist_change", data: { action: "add", entry: created } });
   return created;
+}
+
+/**
+ * Editing the mock profile fields alone -- an operator filling in "where
+ * this person lives" or "what they drive" without re-enrolling a photo.
+ * Deliberately its own function rather than overloading upsertPersonWatchlistEntry:
+ * that one REQUIRES at least one embedding signal (it is how a new entry is
+ * born); this one requires the entry to already exist and touches neither
+ * embedding, so the two can never be confused about what they are for.
+ */
+export function updatePersonProfile(
+  orgId: string,
+  name: string,
+  patch: { address?: string | null; ownedPlates?: string[] },
+  actor: Actor,
+): PersonWatchlistEntry {
+  const existing = getPersonWatchlistByName(orgId, name);
+  if (!existing) throw new Error(`no watchlist entry ${name}`);
+  const at = nowIso();
+  run(
+    `UPDATE person_watchlist SET address = $address, owned_plates = $plates, updated_at = $at WHERE id = $id`,
+    {
+      $id: existing.id,
+      $address: patch.address !== undefined ? patch.address : existing.address,
+      $plates: JSON.stringify(patch.ownedPlates !== undefined ? patch.ownedPlates : existing.owned_plates),
+      $at: at,
+    },
+  );
+  const updated = getPersonWatchlistEntry(existing.id)!;
+  recordAction({
+    actor, orgId, verb: "person_watchlist.update_profile",
+    targetType: "person_watchlist", targetId: existing.id,
+    reason: "Profile details edited",
+    detail: { name, address: patch.address, ownedPlates: patch.ownedPlates },
+  });
+  publish({ type: "person_watchlist_change", data: { action: "update", entry: updated } });
+  return updated;
+}
+
+export interface PersonDossierSighting {
+  cameraId: string | null;
+  cameraName: string;
+  signal: "face" | "appearance";
+  score: number;
+  occurredAt: string;
+}
+
+export interface PersonDossierVehicleSighting {
+  plateNumber: string;
+  cameraId: string;
+  cameraName?: string;
+  confidence: number;
+  matchStatus: string;
+  occurredAt: string;
+}
+
+export interface PersonDossier {
+  profile: PersonWatchlistEntry;
+  sightings: PersonDossierSighting[];
+  vehicleSightings: PersonDossierVehicleSighting[];
+}
+
+/**
+ * One person's whole picture: real sighting history (from durable
+ * watchlist_match events, see recordPersonWatchlistMatch below) plus real
+ * ANPR reads of the plates they are mock-recorded as owning. Two REAL data
+ * sources -- a camera actually saw a face/appearance, a camera actually
+ * read a plate -- joined through ONE mock fact (this plate belongs to this
+ * person). The dossier UI must keep that distinction visible, not flatten
+ * "real sighting of a mock-linked plate" into "confirmed sighting of this
+ * person": the plate could belong to someone else entirely.
+ */
+export function personDossier(orgId: string, name: string): PersonDossier | null {
+  const profile = getPersonWatchlistByName(orgId, name);
+  if (!profile) return null;
+
+  const sightings: PersonDossierSighting[] = queryEvents(orgId, { kind: "watchlist_match", limit: 500 })
+    .filter((event) => (event.evidence as any)?.matchedWatchlistId === profile.id)
+    .map((event) => ({
+      cameraId: event.cameraId,
+      cameraName: (event.evidence as any)?.camera ?? event.cameraId ?? "unknown camera",
+      signal: (event.evidence as any)?.signal === "appearance" ? "appearance" : "face",
+      score: typeof (event.evidence as any)?.score === "number" ? (event.evidence as any).score : event.confidence ?? 0,
+      occurredAt: event.occurredAt,
+    }));
+
+  // A bounded recent window, filtered in JS by normalized plate equality --
+  // NOT the LIKE-based substring filter queryPlateDetections offers, which
+  // compares a normalized (no-space) search term against the DB's
+  // SPACED, formatPlate()-shaped column and so can miss a real match (see
+  // this session's own ANPR investigation). Small scale is fine here: this
+  // is a demo-post log, not a national database (same reasoning
+  // queryEvents's own 500-row cap already accepts elsewhere).
+  const wanted = new Set(profile.owned_plates.map(normalizePlate));
+  const vehicleSightings: PersonDossierVehicleSighting[] = wanted.size === 0 ? [] : all<any>(
+    `SELECT pd.*, c.name AS camera_name FROM plate_detection pd
+       LEFT JOIN camera c ON c.id = pd.camera_id
+      WHERE pd.org_id = $org ORDER BY pd.occurred_at DESC LIMIT 500`,
+    { $org: orgId },
+  )
+    .filter((row) => wanted.has(normalizePlate(row.plate_number)))
+    .map((row) => ({
+      plateNumber: row.plate_number,
+      cameraId: row.camera_id,
+      cameraName: row.camera_name,
+      confidence: row.confidence,
+      matchStatus: row.match_status,
+      occurredAt: row.occurred_at,
+    }));
+
+  return { profile, sightings, vehicleSightings };
 }
 
 export function deletePersonWatchlistEntryByName(orgId: string, name: string, actor: Actor): void {
@@ -203,6 +331,8 @@ function shapePersonWatchlistEntry(row: any): PersonWatchlistEntry {
     face_embedding: row.face_embedding ? JSON.parse(row.face_embedding) : null,
     appearance_embedding: row.appearance_embedding ? JSON.parse(row.appearance_embedding) : null,
     notes: row.notes ?? null,
+    address: row.address ?? null,
+    owned_plates: row.owned_plates ? JSON.parse(row.owned_plates) : [],
     active: bool(row.active),
     added_by: row.added_by ?? null,
     created_at: row.created_at,

@@ -90,6 +90,8 @@ export function migrateAfter(db: Database): void {
   // Columns first: these apply whether or not there is a legacy zone table.
   addColumn(db, "camera", "enabled", "INTEGER NOT NULL DEFAULT 1");
   addColumn(db, "camera", "updated_at", "TEXT");
+  addColumn(db, "person_watchlist", "address", "TEXT");
+  addColumn(db, "person_watchlist", "owned_plates", "TEXT");
 
   if (!tableExists(db, LEGACY)) return;
 
