@@ -120,7 +120,15 @@ cameras:
     # Real footage (a car park), unlike the synthetic test patterns on the
     # other paths -- so this is the one camera where detections actually
     # appear. ANPR is on because what is in frame is vehicles.
-    modules: [fence, anpr, multi_human]
+    #
+    # `clips` keeps a short ring of processed frames and cuts the seconds
+    # either side of a confirmed crossing out of it, so an incident arrives
+    # carrying the frames it was judged from. Opt-in per camera because the
+    # ring costs real RAM (see ibvap/core/clip.py for the arithmetic), and
+    # enabled here because this is the camera that actually produces
+    # crossings. `clip_pre_seconds` / `clip_post_seconds` default to 4 and 2.
+    modules:
+      fence: { clips: true }
     source:
       kind: file
       path: clips/virtual_fence.mp4

@@ -20,7 +20,8 @@ import { api, needsReason } from "@/lib/api";
 import { clockTime, relative } from "@/lib/format";
 import type { Decision, Incident } from "@/lib/types";
 import { cn } from "@/lib/utils";
-import { useIncidents } from "./use-incidents";
+import { NO_FILTERS, useIncidents, type IncidentFilters } from "./use-incidents";
+import { IncidentFilterBar } from "./filter-bar";
 
 /** Where an incident happened, spoken the way a radio call would say it. */
 const incidentGrid = (incident: Incident) => {
@@ -47,7 +48,9 @@ export function IncidentsScreen() {
   const [params, setParams] = useSearchParams();
   const navigate = useNavigate();
   const [showClosed, setShowClosed] = useState(false);
-  const { incidents, loading, error, reload, merge } = useIncidents(showClosed);
+  const [filters, setFilters] = useState<IncidentFilters>(NO_FILTERS);
+  const { incidents, loading, refreshing, error, loadedAt, reload, refresh, merge } =
+    useIncidents(showClosed, filters);
 
   const [cursor, setCursor] = useState(0);
   const [prompt, setPrompt] = useState<{ decision: Decision; incident: Incident } | null>(null);
@@ -142,6 +145,20 @@ export function IncidentsScreen() {
     return () => window.removeEventListener("keydown", onKey);
   }, [incidents.length, selected, act]);
 
+  /**
+   * Classes to offer in the filter, from what is actually here.
+   *
+   * A fixed vocabulary would offer "boat" on a post with no water and hand the
+   * operator a filter that can only ever return nothing. Event KINDS are fixed
+   * (they are the node's own contract); classes are whatever this ground
+   * produces.
+   */
+  const classesPresent = useMemo(
+    () =>
+      [...new Set(incidents.flatMap((incident) => incident.classes ?? []))].sort(),
+    [incidents],
+  );
+
   const critical = useMemo(
     () => incidents.filter((incident) => incident.severity === "CRITICAL" && incident.status === "OPEN").length,
     [incidents],
@@ -160,18 +177,28 @@ export function IncidentsScreen() {
         </div>
       }
       toolbar={
-        <div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
-          <Badge variant="outline" className="font-mono">
-            {incidents.length} shown
-          </Badge>
-          {critical > 0 && (
-            <Badge variant="outline" className="border-destructive/40 bg-destructive/10 font-mono text-destructive">
-              {critical} critical open
+        <div className="space-y-2">
+          <IncidentFilterBar
+            filters={filters}
+            onChange={setFilters}
+            classes={classesPresent}
+            onRefresh={() => void refresh()}
+            refreshing={refreshing}
+            loadedAt={loadedAt}
+          />
+          <div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
+            <Badge variant="outline" className="font-mono">
+              {incidents.length} shown
             </Badge>
-          )}
-          <span className="ml-auto hidden font-mono md:inline">
-            ↑↓ move · ⏎ open · A ack · E escalate · D dismiss
-          </span>
+            {critical > 0 && (
+              <Badge variant="outline" className="border-destructive/40 bg-destructive/10 font-mono text-destructive">
+                {critical} critical open
+              </Badge>
+            )}
+            <span className="ml-auto hidden font-mono md:inline">
+              ↑↓ move · ⏎ open · A ack · E escalate · D dismiss
+            </span>
+          </div>
         </div>
       }
     >

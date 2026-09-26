@@ -25,7 +25,8 @@
     "react-leaflet": "^5.0.0",
     "react-router-dom": "^7.18.3",
     "sonner": "^2.0.8",
-    "tailwind-merge": "^3.3.1"
+    "tailwind-merge": "^3.3.1",
+    "zustand": "^5.0.15"
   },
   "devDependencies": {
     "@types/bun": "latest",

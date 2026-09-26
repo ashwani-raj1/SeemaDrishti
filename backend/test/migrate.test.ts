@@ -167,3 +167,87 @@ describe("migrating off the single-camera zone", () => {
     expect((db.query("SELECT COUNT(*) AS n FROM zone").get() as any).n).toBe(0);
   });
 });
+
+describe("one camera, one zone", () => {
+  /**
+   * A database already on the new shape, but with a camera in two zones --
+   * which is what every running post looked like before this rule, the seeded
+   * data included.
+   *
+   * The failure this guards against is not a wrong answer, it is a dead node:
+   * `schema.sql` is applied whole on every boot, its CREATE UNIQUE INDEX
+   * throws on existing duplicates, and it throws at module-import time.
+   */
+  function doubleBoundDatabase(): Database {
+    const fresh = new Database(":memory:");
+    fresh.exec(SCHEMA);
+    const at = "2026-09-01T00:00:00.000Z";
+    fresh.exec(`
+      INSERT INTO organisation (id, name, code, created_at)
+        VALUES ('org', 'Org', 'ORG', '${at}');
+      INSERT INTO site (id, org_id, name, kind, created_at)
+        VALUES ('site', 'org', 'Site', 'bop', '${at}');
+      INSERT INTO camera (id, site_id, name, created_at)
+        VALUES ('cam_1', 'site', 'Cam 1', '${at}');
+      INSERT INTO zone (id, org_id, site_id, name, kind, active, created_at, updated_at)
+        VALUES ('zone_a', 'org', 'site', 'A', 'fence_line', 1, '${at}', '${at}'),
+               ('zone_b', 'org', 'site', 'B', 'fence_line', 1, '${at}', '${at}');
+    `);
+    // Straight INSERTs would hit the index this migration exists to satisfy,
+    // so the duplicate is created with it dropped -- exactly the state an
+    // older database is already in on disk.
+    fresh.exec("DROP INDEX IF EXISTS zone_camera_one_zone");
+    fresh.exec(`
+      INSERT INTO zone_camera
+        (id, zone_id, camera_id, geometry, points, placed, active, created_at, updated_at)
+      VALUES
+        ('zc_undrawn', 'zone_a', 'cam_1', 'line', '[[0,0.5],[1,0.5]]', 0, 1, '${at}', '${at}'),
+        ('zc_drawn',   'zone_b', 'cam_1', 'line', '[[0,0.7],[1,0.7]]', 1, 1, '${at}', '${at}');
+    `);
+    return fresh;
+  }
+
+  test("a database that already violates the rule still boots", () => {
+    db = doubleBoundDatabase();
+    expect(() => migrate(db!)).not.toThrow();
+
+    const live = db
+      .query("SELECT id FROM zone_camera WHERE camera_id = 'cam_1' AND active = 1")
+      .all() as Array<{ id: string }>;
+    expect(live).toHaveLength(1);
+  });
+
+  test("the binding somebody actually DREW is the one that survives", () => {
+    db = doubleBoundDatabase();
+    migrate(db);
+
+    const live = db
+      .query("SELECT id FROM zone_camera WHERE camera_id = 'cam_1' AND active = 1")
+      .get() as { id: string };
+    expect(live.id).toBe("zc_drawn");
+  });
+
+  test("the loser is retired, not deleted -- past events still point at it", () => {
+    db = doubleBoundDatabase();
+    migrate(db);
+
+    const loser = db
+      .query("SELECT active FROM zone_camera WHERE id = 'zc_undrawn'")
+      .get() as { active: number };
+    expect(loser.active).toBe(0);
+  });
+
+  test("running it twice changes nothing the second time", () => {
+    db = doubleBoundDatabase();
+    migrate(db);
+    const first = db.query("SELECT id, active FROM zone_camera ORDER BY id").all();
+    migrate(db);
+    expect(db.query("SELECT id, active FROM zone_camera ORDER BY id").all()).toEqual(first);
+  });
+
+  test("a camera in exactly one zone is left alone", () => {
+    db = new Database(":memory:");
+    db.exec(SCHEMA);
+    expect(() => migrate(db!)).not.toThrow();
+  });
+});

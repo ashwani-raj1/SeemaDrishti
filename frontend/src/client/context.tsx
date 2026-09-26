@@ -7,7 +7,7 @@ import { api, configureApi, setActor } from "@/lib/api";
 import { connectStream, onStreamState, type StreamState } from "@/lib/stream";
 import { connectLive } from "@/lib/live";
 import type {
-  AppUser, Camera, MediaConfig, Organisation, Role, ServerConfig, Site,
+  AppUser, Camera, MediaConfig, NodeSettings, Organisation, Role, ServerConfig, Site,
 } from "@/lib/types";
 import { FALLBACK_CONFIG, loadClientConfig, type ClientConfig } from "./config";
 
@@ -19,6 +19,12 @@ interface ClientContextValue {
   site: Site | null;
   cameras: Camera[];
   media: MediaConfig | null;
+  /**
+   * Node behaviour in force right now. Null until the first config load, and
+   * refreshed by `refreshServer` after a settings write -- so a screen that
+   * quotes the grouping window quotes the value the node is actually using.
+   */
+  settings: NodeSettings | null;
   users: AppUser[];
   actor: AppUser | null;
   role: Role;
@@ -127,6 +133,7 @@ export function ClientProvider({ children }: { children: React.ReactNode }) {
       site: server?.site ?? null,
       cameras: server?.cameras ?? [],
       media: server?.media ?? null,
+      settings: server?.settings ?? null,
       users: server?.users ?? [],
       actor,
       role: actor?.role ?? "operator",

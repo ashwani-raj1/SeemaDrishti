@@ -48,6 +48,11 @@ uvicorn[standard]>=0.30,<1
 #                     gives us.
 #   numpy          -- arrives with opencv and ultralytics; pinning it here
 #                     invites a version fight between the two
+#   pytest         -- lives in requirements-dev.txt instead. A demo laptop
+#                     installs this file and nothing else; a test runner it
+#                     will never invoke is one more thing that can fail the
+#                     night before submission. The tests need no model, no
+#                     camera and no network, so the split costs nothing.
 #   a ReID model   -- modules/reid.py ships the interface and a no-op provider.
 #                     An embedding model is a real CPU cost that has not been
 #                     measured on team hardware yet (claude.md §7), and adding

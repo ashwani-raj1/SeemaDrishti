@@ -107,3 +107,23 @@ export function SuppressedBadge({ reason }: { reason: string }) {
     </Badge>
   );
 }
+
+/**
+ * A shape nobody drew.
+ *
+ * One component, one wording, so the console cannot describe this state three
+ * different ways on three pages. The consequence is in the title rather than
+ * the label, because the label has to survive being read at a glance on a dark
+ * tile at three in the morning.
+ */
+export function ProvisionalBadge({ className }: { className?: string }) {
+  return (
+    <Badge
+      variant="outline"
+      className={cn("border-dashed border-amber-600 font-mono text-xs text-amber-600", className)}
+      title="Default shape - nobody has drawn this against the camera's view. Crossings are recorded and never alerted."
+    >
+      PROVISIONAL
+    </Badge>
+  );
+}

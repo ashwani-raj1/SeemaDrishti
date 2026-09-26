@@ -662,7 +662,7 @@ export function PlateScannerCanvas({
           org_id: "org_bsf",
           camera_id: "cam_fence_north",
           camera_name: sourceName,
-          zone_id: "zone_fence_line",
+          zone_id: "zone_perimeter",
           zone_name: "Fence Line North",
           plate_number: plateString,
           vehicle_type: detectedClass,

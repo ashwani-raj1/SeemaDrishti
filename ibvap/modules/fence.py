@@ -40,6 +40,7 @@ import time
 from typing import Any
 
 from core import geometry
+from core.thumbnail import thumbnail_of
 from core.payload import live_track
 from modules.base import FrameContext, VisionModule, register
 
@@ -105,8 +106,36 @@ class FenceModule(VisionModule):
                 "direction": zone.get("direction", "both"),
                 "confirm_seconds": float(zone.get("confirm_seconds", 0.0)),
                 "classes": set(zone.get("classes") or []),
+                # Carried, never acted on. A crossing of an undrawn shape is
+                # still a crossing and this module's job is to say so; whether
+                # it is worth waking anyone is a statement about meaning, and
+                # meaning lives with the operator-editable targets on the node
+                # (see point 3 at the top of this file). Suppressing it here
+                # would also make a supervisor's fix wait for a SECOND
+                # process's poll, and would destroy the very record the flag
+                # exists to create — an event never sent cannot be told apart
+                # from anything.
+                "provisional": bool(zone.get("provisional", False)),
+                # This geometry came from a cache because the node was
+                # unreachable at startup. Carried for the same reason as
+                # `provisional`, and treated the same way at the far end: the
+                # operator may have moved the shape during the outage, so the
+                # node records the crossing and does not alert on it.
+                "stale": bool(zone.get("stale", False)),
+                "cached_at": zone.get("cached_at"),
             })
         self.zones = zones
+
+        # Say so once, on change — `configure()` runs every refresh interval
+        # whether or not anything changed, so an unconditional print buries the
+        # demo terminal in the same line every 15 seconds.
+        announced = getattr(self, "_announced", set())
+        for zone in zones:
+            if zone["provisional"] and zone["id"] not in announced:
+                print(f"[fence] {self.camera_id}: zone {zone['id']} "
+                      f"\"{zone['name']}\" is a PROVISIONAL default shape - "
+                      f"nobody has drawn it against this camera's view")
+        self._announced = {z["id"] for z in zones if z["provisional"]}
 
         # A zone that changed shape must not leave a track mid-crossing against
         # geometry that no longer exists: the pending crossing would confirm
@@ -170,13 +199,16 @@ class FenceModule(VisionModule):
 
             zone_states = []
             for zone in relevant:
-                event = self._evaluate(zone, track, detection, frm, to, ctx)
+                event = self._evaluate(zone, track, detection, frm, to, ctx, frame)
                 if event:
                     durable.append(event)
                 memory = track.zones[zone["id"]]
                 zone_states.append({
                     "zone_id": zone["id"],
                     "name": zone["name"],
+                    # So the console can mark the shape without waiting for a
+                    # durable event to arrive.
+                    "provisional": zone["provisional"],
                     "side": memory.side,
                     "pending": memory.pending is not None,
                     "held": round(ctx.ts - memory.pending["since"], 2) if memory.pending else 0.0,
@@ -190,7 +222,7 @@ class FenceModule(VisionModule):
 
     # ── the state machine ────────────────────────────────────────────────
 
-    def _evaluate(self, zone, track, detection, frm, to, ctx) -> dict | None:
+    def _evaluate(self, zone, track, detection, frm, to, ctx, frame=None) -> dict | None:
         memory = track.zones.get(zone["id"])
         if memory is None:
             memory = _ZoneMemory(geometry.side_for_zone(zone["geometry"], zone["points"], to))
@@ -202,6 +234,18 @@ class FenceModule(VisionModule):
         # --- a crossing is already being held, waiting to confirm
         if memory.pending:
             pending = memory.pending
+            if side_now == 0:
+                # On the line itself. `side_for_zone` is tri-state and 0 means
+                # undetermined, not "the other side" — so this is not a
+                # reversal and must not be rejected as flicker. Hold the
+                # pending crossing, and do NOT count this frame as evidence: a
+                # subject standing on the line has not reached the far side, so
+                # it cannot be proof that it did.
+                #
+                # Held seconds keep accruing, which is correct — the two clocks
+                # are deliberately independent (see CONFIRM above), and the
+                # frame counter is the one guarding against a stalled stream.
+                return None
             if side_now != pending["side_after"]:
                 # Came straight back. Flicker, not a crossing. Rejected here and
                 # never sent: the durable channel carries confirmed facts only,
@@ -228,6 +272,8 @@ class FenceModule(VisionModule):
                     held=held,
                     frames=pending["frames"],
                     rule="zone.crossing.confirmed",
+                    # The frame the crossing happened on, not this one.
+                    thumbnail=pending.get("thumb"),
                 )
             return None
 
@@ -254,14 +300,37 @@ class FenceModule(VisionModule):
                 zone, track, detection, ctx,
                 direction=direction, crossed_at=to, held=0.0, frames=1,
                 rule="zone.crossing.confirmed",
+                # No pending state to carry one, because the supervisor asked
+                # for no delay at all -- so this frame IS the crossing frame.
+                thumbnail=thumbnail_of(frame, detection.get("bbox_xywh")),
             )
 
+        # THE PICTURE IS CUT HERE, at the moment of crossing, and carried until
+        # the crossing resolves one way or the other.
+        #
+        # Cutting it at CONFIRM instead was wrong twice. A crossing that was
+        # never confirmed -- the subject stepped out of view on the line, which
+        # is exactly what avoiding a camera looks like -- reached the node with
+        # no picture at all, because `_evict` has no frame to cut from by
+        # definition. And a confirmed one got a frame N frames LATE, by which
+        # time a vehicle has usually left the shot, so the evidence for
+        # "something crossed here" was a photograph of empty ground.
+        #
+        # One encode per crossing attempt, not per frame. Attempts are seconds
+        # apart at worst, so this stays inside the budget in section 3.
         memory.pending = {
             "direction": direction,
             "side_after": side_now,
             "since": ctx.ts,
             "frames": 1,
             "at": to,
+            "thumb": thumbnail_of(frame, detection.get("bbox_xywh")),
+            # The last thing actually observed about the subject. `_evict` has
+            # no detection of its own, and reporting 0.0 confidence with no box
+            # made a lost crossing look like a detection the model had no faith
+            # in, rather than one it lost sight of.
+            "confidence": detection.get("confidence"),
+            "bbox": detection.get("bbox_xywh"),
         }
         return None
 
@@ -286,15 +355,32 @@ class FenceModule(VisionModule):
                 if zone is None:
                     continue
                 self.lost += 1
+                pending = memory.pending
                 out.append(self._intrusion(
-                    zone, track, {"class": track.klass, "confidence": 0.0,
-                                  "bbox_xywh": None, "track_id": None},
+                    zone, track,
+                    # The last thing actually observed, carried from the moment
+                    # the crossing started. This used to be a hardcoded
+                    # confidence of 0.0 and no box, which the console rendered
+                    # as "vehicle 0%" -- reading as a detection nobody believed
+                    # rather than one that walked out of frame mid-crossing.
+                    {
+                        "class": track.klass,
+                        "confidence": pending.get("confidence") or 0.0,
+                        "bbox_xywh": pending.get("bbox"),
+                        "track_id": None,
+                    },
                     ctx,
-                    direction=memory.pending["direction"],
-                    crossed_at=memory.pending["at"],
-                    held=track.last_seen - memory.pending["since"],
-                    frames=memory.pending["frames"],
+                    direction=pending["direction"],
+                    crossed_at=pending["at"],
+                    held=track.last_seen - pending["since"],
+                    frames=pending["frames"],
                     rule="zone.crossing.unconfirmed_track_lost",
+                    # The picture from when it was still there. There is no
+                    # current frame to cut -- that is the whole meaning of this
+                    # event -- so without carrying one, the crossings most
+                    # worth looking at were the only ones with nothing to look
+                    # at.
+                    thumbnail=pending.get("thumb"),
                 ))
             del self._tracks[ref]
         return out
@@ -310,21 +396,37 @@ class FenceModule(VisionModule):
         }
 
     def _intrusion(self, zone, track, detection, ctx: FrameContext, *,
-                   direction, crossed_at, held, frames, rule) -> dict:
+                   direction, crossed_at, held, frames, rule,
+                   thumbnail: str | None = None) -> dict:
         """
         The durable payload. Every field here answers a question an operator
         will ask at 3 a.m.: which zone, which way, how long was it held, what
         path did it walk, and how sure was the detector.
+
+        `thumbnail` is handed in rather than cut here, because the frame worth
+        keeping is the one the crossing STARTED on and this is called anywhere
+        from three frames to thirty seconds later. Every caller carries it from
+        the pending state; see `_evaluate`.
         """
         return {
             "event_type": "intrusion",
             "track_id": detection.get("track_id"),
             "data": {
+                # The frame this was judged on, cropped to the subject. Only on
+                # confirmed crossings, so the per-frame cost is unchanged; see
+                # core/thumbnail.py for why it is cut here rather than fetched
+                # from the hub when somebody opens the incident.
+                **({"thumbnail": thumbnail} if thumbnail else {}),
                 "track_ref": track.track_ref,
                 "class": track.klass,
                 "zone_id": zone["id"],
                 "zone_name": zone["name"],
                 "zone_kind": zone["kind"],
+                # The node reads this in ingestIntrusion and records the event
+                # without alerting. Reported, not obeyed — see configure().
+                "provisional": zone["provisional"],
+                "stale": zone["stale"],
+                "cached_at": zone["cached_at"],
                 "geometry": zone["geometry"],
                 "points": [[round(x, 5), round(y, 5)] for x, y in zone["points"]],
                 "direction": direction,
@@ -343,6 +445,11 @@ class FenceModule(VisionModule):
     def stats(self) -> dict:
         return {
             "zones": len(self.zones),
+            # The run summary is this project's only measurement surface, and
+            # "3 of 5 zones are defaults nobody drew" is the number that
+            # explains a quiet demo.
+            "provisional_zones": sum(1 for z in self.zones if z["provisional"]),
+            "stale_zones": sum(1 for z in self.zones if z["stale"]),
             "tracks": len(self._tracks),
             "confirmed": self.confirmed,
             "rejected_flicker": self.rejected,

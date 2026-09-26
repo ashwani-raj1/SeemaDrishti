@@ -1,23 +1,31 @@
 import { all, one } from "./db";
 import { seed, DEFAULT_ORG, DEFAULT_SITE } from "./db/seed";
+import { detachments } from "./db/migrate";
 import { nowIso } from "./core/ids";
 import { SEVERITY_RANK, type Severity } from "./core/types";
 import { liveTrackCount } from "./l2/fence";
 import { listZones, zonesForCamera } from "./l3/zones";
+import { withLogging, logFallback, logFormat } from "./core/logger";
 import { zoneRoutes } from "./routes/zones";
-import { mediaConfig } from "./core/env";
+import { debugMode, mediaConfig } from "./core/env";
 import { cameraRoutes } from "./routes/cameras";
 import { watchlistRoutes } from "./routes/watchlist";
 import { mediaRoutes } from "./routes/media";
+import { clipRoutes } from "./routes/clips";
+import { settingsRoutes } from "./routes/settings";
 import {
   crossReference,
+  eventThumbnail,
   getIncident,
+  incidentCamera,
   listIncidents,
   queryEvents,
   shapeEvent,
   type EventQuery,
 } from "./l3/events";
 import { actionsFor, queryActions, recordAction, verifyChain } from "./l3/audit";
+import { resetOperationalData, resetPreview } from "./l3/reset";
+import { getSettings } from "./l3/settings";
 import { streamResponse, subscriberCount, publish } from "./l4/bus";
 import {
   BadRequest,
@@ -34,7 +42,55 @@ import * as sim from "./sim/simulator";
 
 seed();
 
+// A schema migration can change what is being watched -- the one-zone-per-camera
+// rule retires duplicate bindings. That belongs in the hash chain like any other
+// change to coverage, and it cannot be written from inside migrate.ts, because
+// l3/audit.ts imports ../db and the migration runs while that module is still
+// being constructed. So it is recorded here, at the first moment it can be.
+for (const detached of detachments) {
+  recordAction({
+    actor: { id: "system", name: "schema migration", role: "admin" },
+    orgId: DEFAULT_ORG,
+    verb: "zone.camera.detach",
+    targetType: "zone",
+    targetId: detached.zoneId,
+    reason: "one camera belongs to one zone",
+    detail: { cameraId: detached.cameraId, bindingId: detached.bindingId },
+  });
+}
+
 const PORT = Number(process.env.PORT ?? 8000);
+
+/**
+ * The filters `/api/events` and `/api/history` share.
+ *
+ * One parser, two doors, on purpose: history is the audited door and must
+ * never be the weaker of the two. A filter that works on one and not the other
+ * sends an operator to the unaudited one to get their answer.
+ *
+ * `alertable` is tri-state -- absent means both. After the provisional-zone
+ * work the interesting query is `alertable=false`, i.e. what did we record and
+ * deliberately not shout about.
+ */
+function eventQuery(params: URLSearchParams): EventQuery {
+  const tri = (key: string) =>
+    params.has(key) ? params.get(key) === "true" : undefined;
+
+  return {
+    cameraId: params.get("camera_id") ?? undefined,
+    zoneId: params.get("zone_id") ?? undefined,
+    incidentId: params.get("incident_id") ?? undefined,
+    severity: (params.get("severity") as EventQuery["severity"]) ?? undefined,
+    class: params.get("class") ?? undefined,
+    kind: params.get("kind") ?? undefined,
+    alertable: tri("alertable"),
+    suppressedReason: params.get("suppressed_reason") ?? undefined,
+    simulated: tri("simulated"),
+    since: params.get("since") ?? undefined,
+    until: params.get("until") ?? undefined,
+    limit: Number(params.get("limit") ?? 200),
+  };
+}
 
 // ------------------------------------------------------------------ routes
 
@@ -67,6 +123,11 @@ const routes = {
       // camera's RTSP credentials stay in media/cameras.yml on the hub machine
       // and never enter this database or this response.
       media: mediaConfig(),
+      // Behaviour the console has to be able to explain. The grouping window
+      // is why two crossings appear as one incident, so it travels with the
+      // rest of the deployment's shape rather than being a number only the
+      // settings page knows how to ask for.
+      settings: getSettings(DEFAULT_ORG),
       // A camera reaches its zones through the binding table now, and each
       // one arrives already resolved -- this camera's shape, and the target
       // list after any camera override.
@@ -89,6 +150,13 @@ const routes = {
           points: zone.points,
           direction: zone.direction,
           confirmSeconds: zone.confirm_seconds,
+          // True when nobody has drawn this shape against this camera's view:
+          // it is the stock placeholder, and the node records crossings of it
+          // without ever alerting. The vision service carries this through to
+          // the event as a FACT and never acts on it -- severity is the node's
+          // job (ibvap/CLAUDE.md sections 1 and 14). `provisional === !placed`;
+          // `placed` is the console's word for the same bit.
+          provisional: !zone.placed,
           targets: zone.targets,
           // Derived from the targets, for the map tooltips and status board
           // that only ever want "what is alerted on here, and how loudly".
@@ -109,9 +177,11 @@ const routes = {
   }),
 
   ...zoneRoutes,
+  ...clipRoutes,
   ...cameraRoutes,
   ...watchlistRoutes,
   ...mediaRoutes,
+  ...settingsRoutes,
 
   // ---------------------------------------------------------------- incidents
 
@@ -122,6 +192,14 @@ const routes = {
         status: params.get("status") ?? undefined,
         cameraId: params.get("camera_id") ?? undefined,
         zoneId: params.get("zone_id") ?? undefined,
+        // The queue's own filters. Named to match `/api/events` where they
+        // mean the same thing, so an operator moving between the two screens
+        // does not have to learn two vocabularies for one question.
+        kind: params.get("kind") ?? undefined,
+        severity: params.get("severity") ?? undefined,
+        class: params.get("class") ?? undefined,
+        since: params.get("since") ?? undefined,
+        until: params.get("until") ?? undefined,
         limit: Number(params.get("limit") ?? 100),
       }),
     );
@@ -134,6 +212,11 @@ const routes = {
     return json({
       incident,
       events: queryEvents(DEFAULT_ORG, { incidentId, limit: 500 }),
+      // The camera this came from, as its own field. `crossReference` below
+      // knows the camera only through the zone, and bails entirely when an
+      // incident has no zone -- which is exactly the case for a camera that
+      // went dark. Those incidents used to carry no camera information at all.
+      camera: incidentCamera(incidentId),
       // The full chain of accountability for this piece of work.
       actions: actionsFor("incident", incidentId),
       // What else watches this zone, and what it saw around the same time.
@@ -176,18 +259,107 @@ const routes = {
   "/api/events": handled(async (req) => {
     const params = query(req);
     const q: EventQuery = {
-      cameraId: params.get("camera_id") ?? undefined,
-      zoneId: params.get("zone_id") ?? undefined,
-      severity: (params.get("severity") as EventQuery["severity"]) ?? undefined,
-      class: params.get("class") ?? undefined,
-      alertableOnly: params.get("alertable") === "true",
-      since: params.get("since") ?? undefined,
-      until: params.get("until") ?? undefined,
+      ...eventQuery(params),
+      // Replay for a reconnecting peer; history has no use for it.
       afterSeq: params.has("after_seq") ? Number(params.get("after_seq")) : undefined,
-      limit: Number(params.get("limit") ?? 200),
     };
     return json(queryEvents(DEFAULT_ORG, q));
   }),
+
+  /**
+   * The frame one event was judged on.
+   *
+   * Served as an image rather than inside the JSON so the browser can cache it,
+   * render it with a plain `<img src>`, and fetch only the ones actually on
+   * screen. The list endpoint carries `hasThumbnail` and nothing heavier.
+   *
+   * 404 rather than a placeholder when there is no picture. A missing thumbnail
+   * is a real and common state -- the simulator posts none, a lost-track event
+   * has no frame to cut -- and the console draws the geometry instead. Shipping
+   * a grey rectangle here would make "no picture was taken" indistinguishable
+   * from "the picture failed to load".
+   */
+  "/api/events/:eventId/thumbnail": handled(async (req: any) => {
+    const encoded = eventThumbnail(req.params.eventId);
+    if (!encoded) throw new NotFound("no thumbnail for this event");
+
+    // The event log is append-only and an id is never reused, so this bytes
+    // stream can never change. Cached hard, which is what makes a list of
+    // fifty thumbnails cost fifty requests once rather than on every render.
+    return new Response(Buffer.from(encoded, "base64"), {
+      headers: {
+        ...CORS,
+        "content-type": "image/jpeg",
+        "cache-control": "public, max-age=31536000, immutable",
+      },
+    });
+  }),
+
+  /**
+   * Empty the operational record. Developer boxes only.
+   *
+   * THREE LOCKS, and each one is doing different work:
+   *
+   *   1. `IBVAP_DEBUG` must be on. Off is what a deployment gets by saying
+   *      nothing, so this route does not exist on a post at all -- not
+   *      disabled, not permission-denied, absent. A capability that can only
+   *      be reached by editing a file on the machine is not a capability an
+   *      operator can be socially engineered into using.
+   *   2. Shift supervisor or admin. The same bar as creating a zone.
+   *   3. The caller must type the confirmation word. A destructive action one
+   *      click deep is a destructive action somebody takes by accident.
+   *
+   * GET reports what a reset would remove, so the console can say "1,284
+   * events" on the button rather than asking for a leap of faith.
+   *
+   * The audit row is written BEFORE the delete, on purpose: a crash in between
+   * must leave a console that has forgotten everything with a record saying
+   * why, not a silent gap that is indistinguishable from tampering. The audit
+   * log itself is never cleared -- see `l3/reset.ts`.
+   */
+  "/api/admin/reset": {
+    GET: handled(async (req: any) => {
+      const actor = actorOf(req);
+      requireRole(actor, "supervisor", "admin");
+      if (!debugMode()) throw new NotFound("not a developer node");
+      return json({ debug: true, counts: resetPreview() });
+    }),
+
+    POST: handled(async (req: any) => {
+      const actor = actorOf(req);
+      requireRole(actor, "supervisor", "admin");
+      if (!debugMode()) throw new NotFound("not a developer node");
+
+      const body = await readJson(req);
+      if (body.confirm !== "RESET") {
+        throw new BadRequest('confirm must be the word "RESET"');
+      }
+      const reason = typeof body.reason === "string" ? body.reason.trim() : "";
+      if (reason.length < 3) throw new BadRequest("say why, in a few words");
+
+      const counts = resetPreview();
+      recordAction({
+        actor,
+        orgId: DEFAULT_ORG,
+        verb: "admin.reset",
+        targetType: "site",
+        targetId: DEFAULT_SITE,
+        reason,
+        detail: counts,
+        before: counts,
+        after: { events: 0, incidents: 0, alerts: 0, trackedThings: 0, plateDetections: 0 },
+      });
+
+      const removed = resetOperationalData();
+
+      // Every open console is showing rows that no longer exist. Told to
+      // refetch rather than left to discover it by clicking something gone.
+      publish({ type: "incident", data: { reset: true } as any });
+      publish({ type: "event", data: { reset: true } as any });
+
+      return json({ ok: true, removed });
+    }),
+  },
 
   /**
    * Looking backwards through the record. Supervisors only -- and every search
@@ -199,15 +371,7 @@ const routes = {
     requireRole(actor, "supervisor", "admin");
 
     const params = query(req);
-    const q: EventQuery = {
-      cameraId: params.get("camera_id") ?? undefined,
-      zoneId: params.get("zone_id") ?? undefined,
-      severity: (params.get("severity") as EventQuery["severity"]) ?? undefined,
-      class: params.get("class") ?? undefined,
-      since: params.get("since") ?? undefined,
-      until: params.get("until") ?? undefined,
-      limit: Number(params.get("limit") ?? 200),
-    };
+    const q: EventQuery = eventQuery(params);
 
     const results = queryEvents(DEFAULT_ORG, q);
 
@@ -317,11 +481,16 @@ const server = Bun.serve({
   // ten seconds by default, which silently tore the operator's stream down and
   // made the screen flicker between "live" and "no link" all shift.
   idleTimeout: 0,
-  routes: routes as any,
-  fetch(req) {
+  // Wrapped once, over the whole table: a logger you have to remember
+  // to add at each route is a logger missing from the route you most need.
+  routes: withLogging(routes) as any,
+  // Logged too: an unmatched path is the symptom when a console or a worker
+  // is pointed at the wrong URL, and that is precisely when a silent 404 costs
+  // an hour.
+  fetch: logFallback((req) => {
     if (req.method === "OPTIONS") return new Response(null, { status: 204, headers: CORS });
     return fail("not found", 404);
-  },
+  }),
   error(error) {
     console.error(error);
     return fail(error.message, 500);
@@ -329,6 +498,7 @@ const server = Bun.serve({
 });
 
 console.log(`IBVAP edge node on ${server.url}`);
+console.log(`  request log  ${logFormat} (IBVAP_LOG=dev|combined|off)`);
 console.log(`  detections  POST ${server.url}hooks/ingress/detections`);
 console.log(`  vision      POST ${server.url}hooks/ingress/events`);
 console.log(`  live stream  GET ${server.url}api/stream`);

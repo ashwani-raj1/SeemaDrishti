@@ -103,6 +103,12 @@ export function crossingOf(zone: Zone, from: Point, to: Point): Direction | null
 
   const before = sideForZone(zone, from);
   const after = sideForZone(zone, to);
+  // Standing ON the line. `sign` is tri-state, so 0 means "no side established
+  // yet" -- not a side, and not a crossing. Falling through would report every
+  // on-line landing as OUTBOUND regardless of travel direction. Nothing is
+  // lost: the crossing fires on the next step, from the side actually reached.
+  // Ported from core/geometry.py -- change one, change the other.
+  if (after === 0) return null;
   if (before === after) return null; // grazed a vertex without changing side
   return after === 1 ? "inbound" : "outbound";
 }

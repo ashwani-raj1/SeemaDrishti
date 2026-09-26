@@ -21,7 +21,8 @@
 import type { LucideIcon } from "lucide-react";
 import {
   CarFrontIcon, CctvIcon, FileClockIcon, HistoryIcon, LayersIcon,
-  LayoutDashboardIcon, MapIcon, ScanEyeIcon, ScanFaceIcon, SirenIcon, UsersIcon,
+  LayoutDashboardIcon, MapIcon, ScanEyeIcon, SettingsIcon, SirenIcon, UsersIcon,
+//   LayoutDashboardIcon, MapIcon, ScanEyeIcon, ScanFaceIcon, SirenIcon, UsersIcon,
 } from "lucide-react";
 import { canUse, GROUP_ORDER, selectEnabled, type SectionGroup, type SectionMeta } from "./sections";
 
@@ -39,6 +40,7 @@ import { FenceScreen } from "./services/fence";
 import { PeopleScreen } from "./services/people";
 import { FaceScreen } from "./services/face";
 import { CameraHealthScreen } from "./services/camera-health";
+import { SettingsScreen } from "./settings/screen";
 
 export type { SectionGroup };
 export { GROUP_ORDER, canUse };
@@ -182,6 +184,32 @@ export const SECTIONS: Section[] = [
     path: "/zones",
     minRole: "supervisor",
     element: <ZonesScreen />,
+  },
+  {
+    id: "watchlist",
+    group: "Configure",
+    label: "Plate watchlist",
+    icon: CarFrontIcon,
+    path: "/watchlist",
+    minRole: "supervisor",
+    element: <WatchlistScreen />,
+  },
+  // Reachable by every role: most of the page is what an operator has to be
+  // able to read off -- who they are acting as, where the node and the hub
+  // are, and how events are grouped into the incidents on their screen. The
+  // controls that change anything check the role themselves.
+  {
+    id: "settings",
+    group: "Configure",
+    label: "Settings",
+    icon: SettingsIcon,
+    path: "/settings",
+    minRole: "operator",
+    // Pinned to the bottom of the sidebar rather than listed under Configure.
+    // It is about the console and this node, not about what is watched -- and
+    // the footer is where the sidebar was already reaching for it.
+    footer: true,
+    element: <SettingsScreen />,
   },
 ];
 

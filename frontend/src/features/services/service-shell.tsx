@@ -12,6 +12,8 @@ import { SeverityBadge } from "@/components/ibvap/badges";
 import { ReasonDialog } from "@/components/ibvap/reason-dialog";
 import { LoadingRows, NothingHere } from "@/components/ibvap/states";
 import { useClient } from "@/client/context";
+import { rememberedCamera, useConsoleStore } from "@/client/console-store";
+import { HistoryLink } from "@/components/ibvap/history-link";
 import { ATTARI_SECTOR, formatLatLon, gridRef } from "@/client/geography";
 import { api } from "@/lib/api";
 import { onStream } from "@/lib/stream";
@@ -77,17 +79,41 @@ export function ServiceShell({
 }: ServiceShellProps) {
   const { cameras: known, media } = useClient();
   const hub = useResource(() => api.mediaCameras(), []);
-  const [cameraId, setCameraId] = useState<string | null>(null);
+
+  // Which camera this page is on survives a refresh and a walk to another
+  // page -- see `client/console-store.ts`. It is per module, so the fence page
+  // and the ANPR page each keep their own.
+  const cameraByModule = useConsoleStore((state) => state.cameraByModule);
+  const setCameraFor = useConsoleStore((state) => state.setCameraFor);
+  const [cameraId, setLocalCameraId] = useState<string | null>(null);
+
+  const setCameraId = useCallback(
+    (next: string) => {
+      setLocalCameraId(next);
+      setCameraFor(module, next);
+    },
+    [module, setCameraFor],
+  );
 
   const cameras = hub.data?.cameras ?? [];
-  // Pick the first camera actually serving frames. Defaulting to one that is
-  // down would open every service page on a black rectangle and read as a
-  // broken console rather than a stopped feed.
+  // Restore what this seat was last watching; otherwise pick the first camera
+  // actually serving frames. Defaulting to one that is down would open every
+  // service page on a black rectangle and read as a broken console rather than
+  // a stopped feed.
+  //
+  // The remembered id is checked against what the hub is serving now, because
+  // a camera that has stopped publishing would otherwise leave the dropdown
+  // blank with nothing on screen and nothing saying why.
   useEffect(() => {
     if (cameraId || cameras.length === 0) return;
+    const remembered = rememberedCamera(cameraByModule, module, cameras);
+    if (remembered) {
+      setLocalCameraId(remembered);
+      return;
+    }
     const first = cameras.find((camera) => camera.ready) ?? cameras[0];
     if (first) setCameraId(first.id);
-  }, [cameras, cameraId]);
+  }, [cameras, cameraId, cameraByModule, module, setCameraId]);
 
   const camera = cameras.find((entry) => entry.id === cameraId) ?? null;
 
@@ -288,9 +314,12 @@ export function ServiceShell({
                 <CardTitle className="text-sm font-medium">
                   Incidents on this camera
                 </CardTitle>
-                <Badge variant={open.length ? "destructive" : "secondary"}>
-                  {open.length} open
-                </Badge>
+                <div className="flex items-center gap-3">
+                  <HistoryLink cameraId={cameraId} label="Search all events" />
+                  <Badge variant={open.length ? "destructive" : "secondary"}>
+                    {open.length} open
+                  </Badge>
+                </div>
               </CardHeader>
               <CardContent className="flex-1">
                 {loadingIncidents && <LoadingRows rows={3} />}
