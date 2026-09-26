@@ -195,9 +195,8 @@ class CameraConfig:
     id: str
     label: str
     rtsp_url: str
-    #: Whether detections are training/test observations. The manifest can
-    #: explicitly mark an approved replay feed operational; source transport
-    #: alone must not silently discard its ANPR records.
+    #: A looping clip is not a camera and the record says so. Set once, here,
+    #: from the manifest's source kind, so no call site has to remember.
     simulated: bool
     modules: dict[str, dict] = field(default_factory=dict)
 
@@ -269,7 +268,7 @@ def load_cameras(settings: Settings | None = None) -> list[CameraConfig]:
             id=merged["id"],
             label=merged.get("label", merged["id"]),
             rtsp_url=settings.rtsp_url(merged["id"]),
-            simulated=bool(merged.get("simulated", kind == "file")),
+            simulated=kind == "file",
             modules=_modules_for(merged.get("modules", defaults.get("modules"))),
         ))
     return out

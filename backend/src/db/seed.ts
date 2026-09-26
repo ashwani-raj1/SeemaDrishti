@@ -164,7 +164,7 @@ export function seed(): void {
 
   run(
     `INSERT INTO organisation (id, name, code, retention_days, created_at)
-     VALUES ($id, 'Border Security Force', 'BSF', 15, $at)`,
+     VALUES ($id, 'Border Security Force', 'BSF', 30, $at)`,
     { $id: ORG, $at: at },
   );
 
@@ -329,6 +329,105 @@ export function seed(): void {
         $notes: wl.notes,
         $active: wl.active,
         $added_by: wl.added_by,
+        $at: at,
+      },
+    );
+  }
+
+  const DETECTIONS_SEED = [
+    {
+      id: "pd_seed_01",
+      camera_id: "cam_fence_north",
+      zone_id: "zone_fence_line",
+      plate_number: "PB 02 AK 4821",
+      vehicle_type: "suv",
+      confidence: 0.94,
+      plate_confidence: 0.96,
+      matched_watchlist_id: "wl_scorpio_4821",
+      match_status: "MATCHED",
+      severity: "CRITICAL",
+      bbox: JSON.stringify([0.22, 0.45, 0.78, 0.88]),
+      plate_bbox: JSON.stringify([0.44, 0.74, 0.58, 0.81]),
+      image_snapshot: "preset_scorpio_black",
+      simulated: 1,
+      occurred_at: new Date(Date.now() - 1000 * 60 * 18).toISOString(),
+    },
+    {
+      id: "pd_seed_02",
+      camera_id: "cam_farm_gate",
+      zone_id: "zone_farm_gate",
+      plate_number: "PB 02 T 9182",
+      vehicle_type: "tractor",
+      confidence: 0.91,
+      plate_confidence: 0.89,
+      matched_watchlist_id: "wl_tractor_9182",
+      match_status: "MATCHED",
+      severity: "WARNING",
+      bbox: JSON.stringify([0.28, 0.38, 0.72, 0.84]),
+      plate_bbox: JSON.stringify([0.46, 0.68, 0.56, 0.74]),
+      image_snapshot: "preset_tractor_blue",
+      simulated: 1,
+      occurred_at: new Date(Date.now() - 1000 * 60 * 45).toISOString(),
+    },
+    {
+      id: "pd_seed_03",
+      camera_id: "cam_patrol_road",
+      zone_id: "zone_patrol_road",
+      plate_number: "PB 02 E 3391",
+      vehicle_type: "car",
+      confidence: 0.96,
+      plate_confidence: 0.95,
+      matched_watchlist_id: null,
+      match_status: "CLEAR",
+      severity: "INFO",
+      bbox: JSON.stringify([0.18, 0.52, 0.68, 0.91]),
+      plate_bbox: JSON.stringify([0.38, 0.78, 0.50, 0.84]),
+      image_snapshot: "preset_bolero_white",
+      simulated: 1,
+      occurred_at: new Date(Date.now() - 1000 * 60 * 92).toISOString(),
+    },
+    {
+      id: "pd_seed_04",
+      camera_id: "cam_farm_gate",
+      zone_id: "zone_farm_gate",
+      plate_number: "PB 02 AB 1042",
+      vehicle_type: "tractor",
+      confidence: 0.88,
+      plate_confidence: 0.92,
+      matched_watchlist_id: null,
+      match_status: "CLEAR",
+      severity: "INFO",
+      bbox: JSON.stringify([0.31, 0.40, 0.69, 0.85]),
+      plate_bbox: JSON.stringify([0.47, 0.70, 0.55, 0.76]),
+      image_snapshot: "preset_sonalika_red",
+      simulated: 1,
+      occurred_at: new Date(Date.now() - 1000 * 60 * 140).toISOString(),
+    },
+  ];
+
+  for (const det of DETECTIONS_SEED) {
+    run(
+      `INSERT OR IGNORE INTO plate_detection
+         (id, org_id, camera_id, zone_id, plate_number, vehicle_type, confidence, plate_confidence,
+          matched_watchlist_id, match_status, severity, bbox, plate_bbox, image_snapshot, simulated, occurred_at, created_at)
+       VALUES ($id, $org, $cam, $zone, $plate, $type, $conf, $pconf, $matched, $status, $sev, $bbox, $pbbox, $snap, $sim, $occ, $at)`,
+      {
+        $id: det.id,
+        $org: ORG,
+        $cam: det.camera_id,
+        $zone: det.zone_id,
+        $plate: det.plate_number,
+        $type: det.vehicle_type,
+        $conf: det.confidence,
+        $pconf: det.plate_confidence,
+        $matched: det.matched_watchlist_id,
+        $status: det.match_status,
+        $sev: det.severity,
+        $bbox: det.bbox,
+        $pbbox: det.plate_bbox,
+        $snap: det.image_snapshot,
+        $sim: det.simulated,
+        $occ: det.occurred_at,
         $at: at,
       },
     );

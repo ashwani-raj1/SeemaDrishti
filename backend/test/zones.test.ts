@@ -366,12 +366,7 @@ describe("cameras", () => {
   });
 
   test("an incident cross-references the other cameras on its zone", () => {
-    const incident = events.listIncidents(ORG, {
-      cameraId: "cam_fence_north",
-      zoneId: "zone_fence_line",
-      limit: 1,
-      includeSimulated: true,
-    })[0]!;
+    const incident = events.listIncidents(ORG, { cameraId: "cam_fence_north", limit: 1 })[0]!;
     const cross = events.crossReference(incident.id);
 
     expect(cross.zone?.name).toBe("Fence line north");

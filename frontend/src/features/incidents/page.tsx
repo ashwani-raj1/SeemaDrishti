@@ -1,30 +1,18 @@
 import { Link, useParams } from "react-router-dom";
-import {
-  ArrowRightIcon,
-  CalendarClockIcon,
-  CameraIcon,
-  CarFrontIcon,
-  CctvIcon,
-  ImageIcon,
-  MapPinIcon,
-  ShieldAlertIcon,
-} from "lucide-react";
+import { CctvIcon } from "lucide-react";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Badge } from "@/components/ui/badge";
-import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Separator } from "@/components/ui/separator";
 import { SeverityBadge, SimulatedBadge, SuppressedBadge } from "@/components/ibvap/badges";
 import { EvidenceMap } from "@/components/ibvap/evidence-map";
 import { ErrorState, LoadingRows } from "@/components/ibvap/states";
 import { PageShell } from "@/components/ibvap/page-shell";
 import { ShareLink } from "@/components/ibvap/share-link";
-import { ATTARI_SECTOR, gridRef } from "@/client/geography";
 import { api } from "@/lib/api";
 import { useResource } from "@/lib/use-resource";
 import { clockTime, dateTime, humanise, percent } from "@/lib/format";
 import { cn } from "@/lib/utils";
-import type { Action, CrossReference, IbvapEvent, Incident, PlateDetection } from "@/lib/types";
+import type { Action, CrossReference, IbvapEvent } from "@/lib/types";
 
 /**
  * One incident, at its own address.
@@ -43,32 +31,6 @@ export function IncidentPage() {
   );
 
   const incident = data?.incident;
-  // The custom evidence workspace belongs only to Plate Watchlist incidents.
-  // Other incident modules retain their generic investigation tabs.
-  const watchlistEvent = data?.events.find((event) => event.evidence.type === "watchlist_hit");
-  const watchlistPlate = typeof watchlistEvent?.evidence.plateNumber === "string"
-    ? watchlistEvent.evidence.plateNumber
-    : "";
-  const sourceCameraId = watchlistEvent?.cameraId ?? incident?.cameraId ?? "";
-  const sourceOccurredAt = watchlistEvent?.occurredAt ?? incident?.openedAt ?? "";
-
-  // Event rows remain append-only. Resolve the linked detection separately so
-  // the incident page can show the retained frame without duplicating a large
-  // base64 image inside the event/audit record.
-  const { data: relatedDetections } = useResource(
-    () => watchlistPlate
-      ? api.plateDetections({ plate: watchlistPlate, camera_id: sourceCameraId || undefined, limit: 25 })
-      : Promise.resolve([] as PlateDetection[]),
-    [watchlistPlate, sourceCameraId],
-  );
-  const closestDetection = (relatedDetections ?? [])
-    .slice()
-    .sort((a, b) => Math.abs(Date.parse(a.occurred_at) - Date.parse(sourceOccurredAt)) - Math.abs(Date.parse(b.occurred_at) - Date.parse(sourceOccurredAt)))[0];
-  const persistedProof = (relatedDetections ?? [])
-    .filter((detection) => displayableSnapshot(detection.image_snapshot))
-    .sort((a, b) => Math.abs(Date.parse(a.occurred_at) - Date.parse(sourceOccurredAt)) - Math.abs(Date.parse(b.occurred_at) - Date.parse(sourceOccurredAt)))[0];
-  const sessionProof = findSessionProof(sourceCameraId, watchlistPlate, sourceOccurredAt);
-  const proofDetection = persistedProof ?? sessionProof ?? closestDetection;
 
   return (
     <PageShell
@@ -100,14 +62,7 @@ export function IncidentPage() {
       {data && (
         <>
           <Separator />
-          {watchlistEvent && incident && (
-            <WatchlistHitCase
-              incident={incident}
-              event={watchlistEvent}
-              detection={proofDetection}
-            />
-          )}
-          {!watchlistEvent && <Tabs defaultValue="events">
+          <Tabs defaultValue="events">
             <TabsList>
               <TabsTrigger value="events">Why it fired ({data.events.length})</TabsTrigger>
               <TabsTrigger value="actions">Decisions ({data.actions.length})</TabsTrigger>
@@ -136,200 +91,10 @@ export function IncidentPage() {
             <TabsContent value="cross" className="flex max-w-3xl flex-col gap-4 pt-4">
               <CrossReferencePanel cross={data.crossReference} />
             </TabsContent>
-          </Tabs>}
+          </Tabs>
         </>
       )}
     </PageShell>
-  );
-}
-
-function evidenceText(event: IbvapEvent, key: string): string | null {
-  const value = event.evidence[key];
-  return typeof value === "string" && value.trim() ? value : null;
-}
-
-function evidenceNumber(event: IbvapEvent, key: string): number | null {
-  const value = event.evidence[key];
-  return typeof value === "number" && Number.isFinite(value) ? value : null;
-}
-
-function displayableSnapshot(value: string | null | undefined): value is string {
-  return Boolean(value && (
-    value.startsWith("data:image/") || value.startsWith("blob:") ||
-    value.startsWith("http://") || value.startsWith("https://") || value.startsWith("/")
-  ));
-}
-
-function normalisePlate(value: string | null | undefined): string {
-  return (value ?? "").replace(/[^A-Z0-9]/gi, "").toUpperCase();
-}
-
-function findSessionProof(cameraId: string, plateNumber: string, occurredAt: string): PlateDetection | undefined {
-  if (typeof window === "undefined" || !cameraId || !plateNumber) return undefined;
-  try {
-    const raw = window.localStorage.getItem("ibvap:anpr-camera-sessions:v3");
-    if (!raw) return undefined;
-    const sessions = JSON.parse(raw) as Record<string, { vehicles?: PlateDetection[] }>;
-    const target = normalisePlate(plateNumber);
-    const targetTime = Date.parse(occurredAt);
-    return (sessions[cameraId]?.vehicles ?? [])
-      .filter((detection) =>
-        normalisePlate(detection.plate_number) === target && displayableSnapshot(detection.image_snapshot))
-      .sort((a, b) => {
-        if (!Number.isFinite(targetTime)) return Date.parse(b.occurred_at) - Date.parse(a.occurred_at);
-        return Math.abs(Date.parse(a.occurred_at) - targetTime) - Math.abs(Date.parse(b.occurred_at) - targetTime);
-      })[0];
-  } catch {
-    return undefined;
-  }
-}
-
-function WatchlistHitCase({
-  incident,
-  event,
-  detection,
-}: {
-  incident: Incident;
-  event: IbvapEvent;
-  detection?: PlateDetection;
-}) {
-  const plateNumber = evidenceText(event, "plateNumber") ?? detection?.plate_number ?? "Unread plate";
-  const vehicleType = evidenceText(event, "vehicleType") ?? detection?.vehicle_type ?? "Vehicle";
-  const makeModel = evidenceText(event, "makeModel");
-  const color = evidenceText(event, "color");
-  const reason = evidenceText(event, "flagReason") ?? event.rule ?? "Active watchlist match";
-  const notes = evidenceText(event, "notes");
-  const cameraId = event.cameraId ?? incident.cameraId;
-  const cameraName = evidenceText(event, "cameraName") ?? detection?.camera_name ?? cameraId ?? "Unknown camera";
-  const zoneName = evidenceText(event, "zoneName") ?? detection?.zone_name ?? event.evidence.zone?.name ?? "Camera coverage area";
-  const placement = cameraId ? ATTARI_SECTOR.cameras[cameraId] : undefined;
-  const grid = placement ? gridRef(placement.at, ATTARI_SECTOR) : "—";
-  const plateConfidence = evidenceNumber(event, "plateConfidence") ?? detection?.plate_confidence ?? event.confidence;
-  const matchConfidence = evidenceNumber(event, "matchConfidence");
-  const exactMatch = event.evidence.exactMatch === true;
-  const snapshot = displayableSnapshot(detection?.image_snapshot) ? detection.image_snapshot : null;
-  const watchlistUrl = `/watchlist?camera=${encodeURIComponent(cameraId ?? "")}&plate=${encodeURIComponent(plateNumber)}&at=${encodeURIComponent(event.occurredAt)}`;
-
-  return (
-    <section className="space-y-4" aria-label="Watchlist hit case details">
-      <div className="overflow-hidden rounded-xl border border-red-500/35 bg-red-500/[0.045] shadow-sm">
-        <div className="flex flex-col gap-3 bg-red-600 px-4 py-3 text-white sm:flex-row sm:items-center sm:justify-between">
-          <div className="flex min-w-0 items-center gap-3">
-            <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-white/15">
-              <ShieldAlertIcon className="h-5 w-5" />
-            </span>
-            <div className="min-w-0">
-              <div className="text-[10px] font-semibold uppercase tracking-[0.16em] text-red-100">Watchlist hit confirmed</div>
-              <div className="truncate font-mono text-lg font-black tracking-[0.12em] sm:text-xl">{plateNumber}</div>
-            </div>
-          </div>
-          <div className="flex flex-wrap gap-2">
-            <Button asChild size="sm" variant="secondary" className="font-semibold text-red-700">
-              <Link to={watchlistUrl}>
-                Open focused ANPR <ArrowRightIcon data-icon="inline-end" />
-              </Link>
-            </Button>
-            {cameraId && (
-              <Button asChild size="sm" variant="outline" className="border-white/40 bg-white/10 text-white hover:bg-white/20 hover:text-white">
-                <Link to={`/cameras/${cameraId}`}>Camera record</Link>
-              </Button>
-            )}
-          </div>
-        </div>
-
-        <div className="grid gap-3 p-4 sm:grid-cols-2 xl:grid-cols-4">
-          <CaseFact icon={CalendarClockIcon} label="When" value={dateTime(event.occurredAt)} detail={clockTime(event.occurredAt)} />
-          <CaseFact icon={MapPinIcon} label="Where" value={zoneName} detail={`Grid ${grid}`} />
-          <CaseFact icon={CameraIcon} label="Camera" value={cameraName} detail={cameraId ?? "Source unavailable"} />
-          <CaseFact icon={CarFrontIcon} label="Vehicle" value={[color, makeModel].filter(Boolean).join(" · ") || humanise(vehicleType)} detail={humanise(vehicleType)} />
-        </div>
-      </div>
-
-      <div className="grid min-w-0 gap-4 xl:grid-cols-[minmax(0,1.15fr)_minmax(20rem,0.85fr)]">
-        <Card className="min-w-0 overflow-hidden py-0">
-          <CardHeader className="border-b px-4 py-3">
-            <CardTitle className="flex items-center gap-2 text-sm">
-              <ImageIcon className="h-4 w-4 text-blue-600" /> Captured proof
-            </CardTitle>
-          </CardHeader>
-          <CardContent className="p-4">
-            {snapshot ? (
-              <div className="overflow-hidden rounded-lg border bg-slate-950">
-                <img src={snapshot} alt={`ANPR evidence for ${plateNumber}`} className="max-h-[28rem] w-full object-contain" />
-              </div>
-            ) : (
-              <div className="flex aspect-video min-h-52 flex-col items-center justify-center gap-2 rounded-lg border border-dashed bg-muted/25 px-6 text-center">
-                <ImageIcon className="h-8 w-8 text-muted-foreground/60" />
-                <div className="text-sm font-semibold">Captured frame is not available</div>
-                <div className="max-w-md text-xs leading-5 text-muted-foreground">
-                  This retained or simulated record did not include source pixels. Real Watchlist hits show the captured plate or vehicle crop here when the camera supplies a frame.
-                </div>
-              </div>
-            )}
-            <div className="mt-3 flex flex-wrap items-center justify-between gap-2 text-[11px] text-muted-foreground">
-              <span>Evidence ID: <strong className="font-mono text-foreground">{evidenceText(event, "detectionId") ?? detection?.id ?? event.id}</strong></span>
-              <span className="font-mono">Captured {dateTime(event.occurredAt)}</span>
-            </div>
-          </CardContent>
-        </Card>
-
-        <Card className="min-w-0 py-0">
-          <CardHeader className="border-b px-4 py-3">
-            <CardTitle className="text-sm">Incident explanation & response</CardTitle>
-          </CardHeader>
-          <CardContent className="space-y-4 p-4">
-            <div className="rounded-lg border border-red-500/25 bg-red-500/[0.05] p-3">
-              <div className="text-[10px] font-semibold uppercase tracking-wide text-red-600">Watchlist reason</div>
-              <p className="mt-1 text-sm font-semibold leading-5 text-red-800 dark:text-red-200">{reason}</p>
-            </div>
-            <div className="rounded-lg border bg-muted/25 p-3 text-xs leading-5 text-muted-foreground">
-              <div className="font-semibold text-foreground">What happened</div>
-              <p className="mt-1">
-                ANPR read <strong className="font-mono text-foreground">{plateNumber}</strong> at {cameraName} on {dateTime(event.occurredAt)}.
-                {exactMatch
-                  ? " After removing spaces and separators, it exactly matched an active Plate Watchlist record."
-                  : " The normalized OCR reading matched an active Plate Watchlist record using the configured OCR-confusion rules."}
-              </p>
-            </div>
-            <div className="rounded-lg border border-blue-500/20 bg-blue-500/[0.04] p-3 text-xs leading-5 text-muted-foreground">
-              <div className="font-semibold text-foreground">Recommended supervisor action</div>
-              <p className="mt-1">
-                Open the focused ANPR view, confirm the plate against the captured proof, then follow the watchlist reason and supervisor instruction. Confidence values describe the OCR read, not the identity of the driver.
-              </p>
-            </div>
-            {notes && (
-              <div className="rounded-lg border border-amber-500/25 bg-amber-500/[0.06] p-3">
-                <div className="text-[10px] font-semibold uppercase tracking-wide text-amber-700">Supervisor instruction</div>
-                <p className="mt-1 text-xs leading-5">{notes}</p>
-              </div>
-            )}
-            <dl className="grid grid-cols-2 gap-3 text-xs">
-              <Fact label="Detected plate" value={plateNumber} mono />
-              <Fact label="Listed plate" value={evidenceText(event, "watchlistPlate") ?? plateNumber} mono />
-              <Fact label="OCR confidence" value={percent(plateConfidence)} mono />
-              <Fact label="Match confidence" value={percent(matchConfidence)} mono />
-              <Fact label="Match method" value={exactMatch ? "Exact plate match" : "OCR-tolerant match"} />
-              <Fact label="Severity" value={incident.severity} mono />
-            </dl>
-          </CardContent>
-        </Card>
-      </div>
-    </section>
-  );
-}
-
-function CaseFact({ icon: Icon, label, value, detail }: { icon: typeof CameraIcon; label: string; value: string; detail: string }) {
-  return (
-    <div className="flex min-w-0 items-start gap-3 rounded-lg border bg-background/80 p-3">
-      <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-muted text-muted-foreground">
-        <Icon className="h-4 w-4" />
-      </span>
-      <div className="min-w-0">
-        <div className="text-[9px] font-semibold uppercase tracking-wide text-muted-foreground">{label}</div>
-        <div className="truncate text-sm font-semibold" title={value}>{value}</div>
-        <div className="mt-0.5 truncate font-mono text-[10px] text-muted-foreground" title={detail}>{detail}</div>
-      </div>
-    </div>
   );
 }
 

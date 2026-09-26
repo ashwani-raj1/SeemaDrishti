@@ -387,22 +387,7 @@ async def amain(args) -> None:
             # handler still fires, and KeyboardInterrupt is caught below.
             signal.signal(sig, lambda *_: request_stop())
 
-    live_task = asyncio.create_task(live.serve_forever(stop), name="live")
-    tasks = [live_task]
-
-    # Do not start detection until the live channel owns its port.  Previously
-    # a duplicate process could fail here in a background task but carry on
-    # posting durable vehicle/plate events, so one physical vehicle was counted
-    # twice while the UI still appeared connected to just one service.
-    ready_task = asyncio.create_task(live.ready.wait(), name="live-ready")
-    done, _ = await asyncio.wait(
-        {live_task, ready_task}, return_when=asyncio.FIRST_COMPLETED)
-    if live_task in done:
-        ready_task.cancel()
-        await live_task  # surface bind errors and terminate this process
-        raise RuntimeError("live channel stopped during startup")
-    ready_task.cancel()
-    await asyncio.gather(ready_task, return_exceptions=True)
+    tasks = [asyncio.create_task(live.serve_forever(stop), name="live")]
     if durable:
         tasks.append(asyncio.create_task(durable.run_forever(stop), name="durable"))
 

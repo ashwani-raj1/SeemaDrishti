@@ -58,11 +58,6 @@
 
 defaults:
   detect: true
-  # These configured feeds are the operator's active monitoring sources even
-  # when MediaMTX is currently replaying a file. Set true only for a deliberate
-  # training/test feed; simulated events are excluded from operational ANPR
-  # logs and cannot create incidents.
-  simulated: false
   # Downscale on publish. Detection runs at --imgsz anyway, so pushing
   # 1080p into the hub buys nothing and costs decode on every worker.
   # null = publish at the source's own resolution.

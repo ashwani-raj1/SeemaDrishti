@@ -413,8 +413,6 @@ export interface VehicleTrafficSummary {
   days: number;
   total: number;
   points: VehicleTrafficPoint[];
-  byCamera: Record<string, number>;
-  byType: Record<string, number>;
 }
 
 export interface CreateWatchlistInput {
@@ -451,6 +449,11 @@ export interface DetectVehicleInput {
   plateBbox?: [number, number, number, number];
   imageSnapshot?: string | null;
   simulated?: boolean;
+}
+
+export interface FrameAnalysisResult {
+  detections: PlateDetection[];
+  totalInView: number;
 }
 
 // ---------------------------------------------------------------- media hub

@@ -102,9 +102,6 @@ def gemini_settings() -> tuple[str, str]:
 
 class Frame(BaseModel):
     image: str
-    # Cache/tracking scope. Without this, switching shared cameras can reuse a
-    # previous camera's geometric track and therefore its cached OCR result.
-    source_id: str = "local-camera"
 
 
 @lru_cache(maxsize=1)
@@ -120,13 +117,10 @@ def models() -> tuple[SharedDetector, PlateReader]:
             classes=[2, 3, 5, 7],
             run_id="scan",
             imgsz=640,
-            # 0.20 treated lane markings and headlight glare as cars on the
-            # night gate feed. The browser also requires repeated frames, but
-            # weak boxes should not enter OCR/tracking in the first place.
-            conf=0.45,
+            conf=0.20,
         ),
         PlateReader(
-            ocr_confidence=0.32,
+            ocr_confidence=0.20,
             read_interval=OCR_INTERVAL_SECONDS,
         ),
     )
@@ -142,8 +136,7 @@ def iou(a, b) -> float:
     return inter / union if union else 0.0
 
 
-def stable_track_key(vehicle: dict, width: int, height: int,
-                     assigned: set[str], source_id: str) -> str:
+def stable_track_key(vehicle: dict, width: int, height: int, assigned: set[str]) -> str:
     """
     Keep one browser-facing id when ByteTrack briefly drops and reissues one.
 
@@ -163,15 +156,10 @@ def stable_track_key(vehicle: dict, width: int, height: int,
     best_key, best_score = None, float("-inf")
     for key, previous in STABLE_TRACKS.items():
         age = now - previous["seen"]
-        previous_raw_id = previous.get("raw_track_id")
-        same_raw_track = raw_track_id is not None and previous_raw_id == raw_track_id
         # CPU EasyOCR can make the next browser request arrive more than three
-        # seconds later. A confirmed same ByteTrack id gets a longer window so
-        # the asynchronous body-style result can return without creating a new
-        # browser identity. Geometry-only recovery remains deliberately short.
-        max_age = 45.0 if same_raw_track else 8.0
-        if (key in assigned or previous.get("source_id") != source_id
-                or previous["kind"] != kind or age > max_age):
+        # seconds later. Keep the geometric track alive long enough for that
+        # response and for the asynchronous Gemini hint to be collected.
+        if key in assigned or previous["kind"] != kind or age > 8.0:
             continue
         px1, py1, px2, py2 = previous["bbox"]
         previous_centre = ((px1 + px2) / 2, (py1 + py2) / 2)
@@ -180,6 +168,8 @@ def stable_track_key(vehicle: dict, width: int, height: int,
             (centre[1] - previous_centre[1]) / max(1, height),
         )
         overlap = iou(bbox, previous["bbox"])
+        previous_raw_id = previous.get("raw_track_id")
+        same_raw_track = raw_track_id is not None and previous_raw_id == raw_track_id
         # A different ByteTrack id is normally a different vehicle. Permit a
         # merge only across a very brief detector dropout and only when the
         # boxes are still almost in the same place. The old eight-second pure
@@ -199,7 +189,7 @@ def stable_track_key(vehicle: dict, width: int, height: int,
             best_key, best_score = key, score
 
     if best_key is None:
-        best_key = f"{source_id}:v{NEXT_STABLE_TRACK}"
+        best_key = f"v{NEXT_STABLE_TRACK}"
         NEXT_STABLE_TRACK += 1
 
     STABLE_TRACKS[best_key] = {
@@ -207,7 +197,6 @@ def stable_track_key(vehicle: dict, width: int, height: int,
         "bbox": bbox,
         "seen": now,
         "raw_track_id": raw_track_id,
-        "source_id": source_id,
     }
     assigned.add(best_key)
     for key in [k for k, v in STABLE_TRACKS.items() if now - v["seen"] > 15.0]:
@@ -240,7 +229,7 @@ def _response_text(payload: dict) -> str:
 
 
 def _parse_vision_answer(answer: str) -> tuple[str, str]:
-    """Return a conservative (plate, vehicle body type) pair from model output."""
+    """Return a conservative (plate, vehicle type) pair from model output."""
     cleaned = answer.strip().replace("```json", "").replace("```", "").strip()
     plate = ""
     vehicle_type = ""
@@ -254,20 +243,18 @@ def _parse_vision_answer(answer: str) -> tuple[str, str]:
 
     plate = re.sub(r"[^A-Z0-9]", "", plate.upper())
     vehicle_type = re.sub(r"[^a-z]", "", vehicle_type.lower())
-    if vehicle_type not in {
-            "sedan", "hatchback", "suv", "jeep", "pickup", "van", "minivan",
-            "motorcycle", "scooter", "auto_rickshaw", "bus", "truck", "tractor"}:
+    if vehicle_type not in {"car", "motorcycle", "bus", "truck"}:
         vehicle_type = ""
     return plate, vehicle_type
 
 
 def llm_plate_fallback(image: np.ndarray, vehicle_bbox, track_key: str,
                        reader: PlateReader) -> dict | None:
-    """Ask a vision model when local OCR cannot read a tracked plate.
+    """Ask a vision model once when local OCR cannot read a tracked plate.
 
-    The first answer is an unverified operator hint. Two independent matching
-    answers verify the fallback for durable watchlist processing. Only the
-    lower-centre plate region and detected vehicle crop are uploaded.
+    This is deliberately an UNVERIFIED operator hint. It must not create a
+    watchlist hit or durable detection without local OCR/operator confirmation.
+    Only the lower-centre plate region is uploaded, never the video/frame.
     """
     openai_key, openai_model, enabled = llm_settings()
     gemini_key, gemini_model = gemini_settings()
@@ -293,8 +280,8 @@ def llm_plate_fallback(image: np.ndarray, vehicle_bbox, track_key: str,
     scale = max(4.0, min(8.0, 200.0 / max(1, crop.shape[0])))
     enlarged = cv2.resize(crop, None, fx=scale, fy=scale,
                           interpolation=cv2.INTER_CUBIC)
-    # Recover dark characters around headlight glare before the vision
-    # fallback sees the crop.
+    # Recover dark characters around headlight glare before the free vision
+    # fallback sees the crop. It still returns an explicitly unverified hint.
     luminance = cv2.cvtColor(enlarged, cv2.COLOR_BGR2LAB)
     l_channel, a_channel, b_channel = cv2.split(luminance)
     l_channel = cv2.createCLAHE(clipLimit=3.0,
@@ -325,10 +312,8 @@ def llm_plate_fallback(image: np.ndarray, vehicle_bbox, track_key: str,
         "The first image is an enhanced probable registration-plate crop and "
         "the second image is the complete detected vehicle for context. Read "
         "the plate and classify the vehicle. Return ONLY compact JSON exactly "
-        "like {\"plate\":\"AB12CD3456\",\"vehicle_type\":\"sedan\"}. "
-        "vehicle_type must be exactly one of sedan, hatchback, suv, jeep, "
-        "pickup, van, minivan, motorcycle, scooter, auto_rickshaw, bus, "
-        "truck, tractor, or unknown. Classify only visible body shape; use "
+        "like {\"plate\":\"AB12CD3456\",\"vehicle_type\":\"car\"}. "
+        "vehicle_type must be car, motorcycle, bus, truck, or unknown. Use "
         "UNKNOWN for plate when characters are not sufficiently visible. "
         "Never invent hidden characters."
     )
@@ -449,20 +434,10 @@ def llm_plate_fallback(image: np.ndarray, vehicle_bbox, track_key: str,
                 "vehicle_type": vehicle_type,
             }
 
-    previous_result = cached.get("result") if cached else None
-    confirmations = (
-        int(cached.get("confirmations", 0)) + 1
-        if result and previous_result and
-        previous_result.get("text") == result.get("text")
-        else 1 if result and result.get("text") else 0
-    )
-    if result and result.get("text"):
-        result["verified"] = confirmations >= 2
     LLM_READS[track_key] = {
         "attempted": now,
         "vehicle_area": vehicle_area,
         "result": result,
-        "confirmations": confirmations,
     }
     if len(LLM_READS) > 512:
         oldest = min(LLM_READS, key=lambda key: LLM_READS[key]["attempted"])
@@ -526,19 +501,14 @@ def detect(frame: Frame):
     assigned: set[str] = set()
 
     for vehicle in detector.detect(image):
-        stable_key = stable_track_key(
-            vehicle, width, height, assigned, frame.source_id)
+        stable_key = stable_track_key(vehicle, width, height, assigned)
         plate = plates.read(image, vehicle["bbox_px"], cache_key=stable_key)
-        # The remote model refines COCO's broad car class and can become a
-        # durable fallback only after two independent calls agree on the plate.
-        ai_hint = llm_plate_hint_nonblocking(
-            image, vehicle["bbox_px"], stable_key, plates)
-
-        # Local OCR is authoritative. A remote answer stays an unverified hint
-        # until two independent calls agree; the verified fallback may then be
-        # submitted to the same watchlist pipeline as OCR.
-        visible_plate = plate or (
-            ai_hint if ai_hint and ai_hint.get("text") else None)
+        ai_hint = None
+        if not plate:
+            ai_hint = llm_plate_hint_nonblocking(
+                image, vehicle["bbox_px"], stable_key, plates)
+            if ai_hint and ai_hint.get("text"):
+                plate = ai_hint
 
         results.append({
             # Browser frames arrive as independent HTTP requests, but ByteTrack
@@ -551,18 +521,18 @@ def detect(frame: Frame):
             ),
             "confidence": round(float(vehicle["confidence"]), 3),
             "bbox": [round(v, 5) for v in vehicle["bbox"]],
-            "plate": None if not visible_plate else {
-                "text": visible_plate["text"],
-                "confidence": round(float(visible_plate["confidence"]), 3),
+            "plate": None if not plate else {
+                "text": plate["text"],
+                "confidence": round(float(plate["confidence"]), 3),
                 "bbox": [
-                    round(visible_plate["bbox"][0] / width, 5),
-                    round(visible_plate["bbox"][1] / height, 5),
-                    round(visible_plate["bbox"][2] / width, 5),
-                    round(visible_plate["bbox"][3] / height, 5),
+                    round(plate["bbox"][0] / width, 5),
+                    round(plate["bbox"][1] / height, 5),
+                    round(plate["bbox"][2] / width, 5),
+                    round(plate["bbox"][3] / height, 5),
                 ],
-                "source": visible_plate.get("source", "ocr"),
-                "verified": visible_plate.get("verified", True),
-                "model": visible_plate.get("model"),
+                "source": plate.get("source", "ocr"),
+                "verified": plate.get("verified", True),
+                "model": plate.get("model"),
             },
         })
 

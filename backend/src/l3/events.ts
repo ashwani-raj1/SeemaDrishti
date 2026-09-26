@@ -270,7 +270,7 @@ export function queryEvents(orgId: string, q: EventQuery) {
 /** The operator's screen: incidents ranked by severity, then recency. */
 export function listIncidents(
   orgId: string,
-  opts: { status?: string; cameraId?: string; zoneId?: string; includeSimulated?: boolean; limit?: number } = {},
+  opts: { status?: string; cameraId?: string; zoneId?: string; limit?: number } = {},
 ) {
   const where = ["org_id = $org"];
   const params: Record<string, unknown> = { $org: orgId };
@@ -280,13 +280,6 @@ export function listIncidents(
   // clicking a camera, which the unfiltered queue is not shaped to answer.
   if (opts.cameraId) (where.push("camera_id = $camera"), (params.$camera = opts.cameraId));
   if (opts.zoneId) (where.push("zone_id = $zone"), (params.$zone = opts.zoneId));
-  if (!opts.includeSimulated) {
-    where.push(`EXISTS (
-      SELECT 1 FROM event operational_event
-       WHERE operational_event.incident_id = incident_state.id
-         AND operational_event.simulated = 0
-    )`);
-  }
   params.$limit = Math.min(opts.limit ?? 100, 500);
 
   return all<any>(
