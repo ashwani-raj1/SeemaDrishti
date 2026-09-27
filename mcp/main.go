@@ -1,9 +1,11 @@
 package main
 
 import (
+	"context"
 	"log"
 	"mcp/internals/backend"
 	"mcp/internals/tools"
+	"net/http"
 	"os"
 
 	"github.com/mark3labs/mcp-go/server"
@@ -14,10 +16,9 @@ func main() {
 	log.Println("Starting MCP server...")
 
 	baseURL := getVar("BACKEND_URL", "http://localhost:8000")
-	authToken := os.Getenv("BACKEND_AUTH_TOKEN")
 	addr := getVar("MCP_ADDR", ":13000")
 
-	api := backend.New(baseURL, authToken)
+	api := backend.New(baseURL)
 
 	mcpServer := server.NewMCPServer(
 		"seemadrishti-mcp",
@@ -26,10 +27,15 @@ func main() {
 	)
 
 	tools.RegisterIncidentTools(api, mcpServer)
+	tools.RegisterEventTools(api, mcpServer)
 
 	httpServer := server.NewStreamableHTTPServer(
 		mcpServer,
 		server.WithStateLess(true),
+		// Pass the caller's actor through to the backend untouched.
+		server.WithHTTPContextFunc(func(ctx context.Context, r *http.Request) context.Context {
+			return backend.WithActor(ctx, r.Header.Get(backend.ActorHeader))
+		}),
 	)
 
 	log.Printf("MCP server listening on %s (backend: %s)", addr, baseURL)
