@@ -18,6 +18,7 @@
     "setup": "cd backend && bun install && cd ../frontend && bun install",
     "dev": "bun scripts/run-app.mjs dev",
     "start": "bun scripts/run-app.mjs start",
+    "vision": "bun scripts/run-vision.mjs",
     "test": "(cd backend && bun test) && (cd frontend && bun test)"
   }
 }
