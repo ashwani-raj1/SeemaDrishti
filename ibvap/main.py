@@ -424,6 +424,7 @@ async def refresh_zones(settings: Settings, workers: list[CameraWorker],
 async def broadcast_status(live: LiveChannel, durable: "DurableSink | None",
                            workers: list[CameraWorker], run_id: str,
                            started: float, stop: asyncio.Event,
+                           clips: "ClipSink | None",
                            every: float = 2.0) -> None:
     """
     Say out loud that this process is alive, and what it is managing.

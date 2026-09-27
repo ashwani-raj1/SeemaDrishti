@@ -423,7 +423,10 @@ function PlaceStage({
             return (
               <div
                 key={camera.id}
-                onClick={() => store.focus(camera.id)}
+                onClick={() => {
+                  store.focus(camera.id);
+                  if (!held) store.toggleCamera(camera.id);
+                }}
                 className={cn(
                   "flex items-center gap-3 rounded-md border p-2.5 transition-colors",
                   held

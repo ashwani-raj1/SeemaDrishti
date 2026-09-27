@@ -134,10 +134,12 @@ cameras:
     # crossings. `clip_pre_seconds` / `clip_post_seconds` default to 4 and 2.
     modules:
       fence: { clips: true }
+      anpr: {}
+      multi_human: {}
     source:
       kind: file
       path: clips/virtual_fence.mp4
-      # url: https://www.youtube.com/watch?v=...
+      url: https://youtu.be/eO19UTm93GQ?si=tPGauaT3Cj4EhpCG
  
 
   - id: cam_border_gate
