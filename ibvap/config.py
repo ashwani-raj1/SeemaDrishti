@@ -25,14 +25,23 @@ edit that never took effect. So this service polls the node's own
 detector judging it within one refresh interval, by itself.
 
 Until the node is reachable, a camera with a fence module simply has no zones
-and says so at startup. It does not guess, and it does not cache a stale shape
-from a previous run.
+and says so at startup. It never guesses a shape.
+
+ONE EXCEPTION, ADDED DELIBERATELY: a last-good cache, used only at startup and
+only when the node is unreachable. Every zone it returns is marked `stale`,
+that mark travels with the event, and the node records those crossings without
+alerting on them. The guarantee the original rule protected is intact — nothing
+is ever judged against geometry whose currency cannot be vouched for, silently.
+What changed is the fallback: a detector that goes blind on a node restart
+records nothing at all, and nothing is the one outcome nobody can review later.
+See "the last-good zone cache" at the bottom of this file.
 
 STATUS: prototype.
 """
 
 import json
 import os
+import time
 import urllib.error
 import urllib.request
 from dataclasses import dataclass, field
@@ -155,6 +164,22 @@ class Settings:
         return str(local) if local.exists() else configured
 
     @property
+    def face_model(self) -> str:
+        """
+        Resolved against THIS directory, not the current one -- the identical
+        bug `weights` documents: a bare relative path resolves differently
+        depending on whether `main.py` was launched from the repo root or
+        from inside `ibvap/`, and a "missing" model on one launch and not the
+        other looks like a broken model rather than a path bug.
+        """
+        configured = self.get("IBVAP_FACE_MODEL",
+                              "data/face_detection_yunet_2023mar.onnx")
+        if Path(configured).is_absolute():
+            return configured
+        local = HERE / configured
+        return str(local) if local.exists() else configured
+
+    @property
     def target_fps(self) -> float:
         """
         Processed frames per second, per camera. NOT the camera's frame rate.
@@ -179,8 +204,9 @@ class CameraConfig:
     id: str
     label: str
     rtsp_url: str
-    #: A looping clip is not a camera and the record says so. Set once, here,
-    #: from the manifest's source kind, so no call site has to remember.
+    #: Whether detections are training/test observations. The manifest can
+    #: explicitly mark an approved replay feed operational; source transport
+    #: alone must not silently discard its ANPR records.
     simulated: bool
     modules: dict[str, dict] = field(default_factory=dict)
 
@@ -252,7 +278,7 @@ def load_cameras(settings: Settings | None = None) -> list[CameraConfig]:
             id=merged["id"],
             label=merged.get("label", merged["id"]),
             rtsp_url=settings.rtsp_url(merged["id"]),
-            simulated=kind == "file",
+            simulated=bool(merged.get("simulated", kind == "file")),
             modules=_modules_for(merged.get("modules", defaults.get("modules"))),
         ))
     return out
@@ -268,6 +294,13 @@ def fetch_zones(settings: Settings, timeout=3.0) -> dict[str, list[dict]]:
     this function never invents a zone or returns a stale one, because a fence
     judging against geometry nobody drew is worse than a fence that says out
     loud it has none.
+
+    The node may hand out a shape IT knows nobody drew — the placeholder a
+    camera gets when it joins a zone — and labels it `provisional`. That is
+    still the node's geometry, not a guess made here, so the promise above
+    holds unchanged. This service's job is to carry the label through to the
+    event as a fact; deciding what it MEANS is the node's, which is why nothing
+    downstream of here acts on it.
     """
     request = urllib.request.Request(f"{settings.backend_url}/api/config",
                                      headers={"accept": "application/json"})
@@ -293,6 +326,85 @@ def fetch_zones(settings: Settings, timeout=3.0) -> dict[str, list[dict]]:
                 # how loudly to say so, because severity follows the zone's
                 # operator-editable targets and must not be duplicated here.
                 "classes": [t["class"] for t in (zone.get("targets") or [])],
+                # True when nobody has drawn this shape against this camera's
+                # view — it is the node's stock placeholder. Defaults FALSE
+                # when the key is absent: a node too old to send it has the
+                # unlabelled-placeholder behaviour anyway, and defaulting true
+                # would mark every operator-drawn zone provisional, which is a
+                # warning that fires on everything and so is read by nobody.
+                "provisional": bool(zone.get("provisional", False)),
             })
         out[camera["id"]] = zones
     return out
+
+
+# ── the last-good zone cache ─────────────────────────────────────────────
+#
+# A DELIBERATE REVERSAL of the rule stated at the top of this file, and it is
+# written down here rather than left as a surprise in the diff.
+#
+# The old rule was absolute: never cache a shape from a previous run. The
+# reason was sound — an operator's edit must not be outvoted by a stale copy,
+# and an event judged against geometry that has since moved is a lie the audit
+# log cannot correct. What the rule got wrong was the alternative. A detector
+# that goes completely blind when the node restarts is not safer than one that
+# keeps watching and says its geometry is unverified; it simply records nothing
+# at all, which is the one outcome nobody can review afterwards.
+#
+# So the cache is allowed, and fenced in hard:
+#
+#   * used ONLY at startup, ONLY when the node is unreachable. A mid-run outage
+#     changes nothing, because the modules already hold live zones, which are
+#     by definition fresher than anything on disk.
+#   * every zone it returns is marked `stale`, carried into the event, and the
+#     node records those crossings WITHOUT alerting — the same treatment a
+#     provisional shape gets, for the same reason: the geometry may have been
+#     edited during the outage and nobody can know.
+#   * keyed by backend URL, so pointing a worker at a different node cannot
+#     resurrect the wrong post's zones.
+#   * `fetch_zones` above is untouched and still raises. It still never invents
+#     or returns a stale zone. Caching is the CALLER's decision, made once, at
+#     startup, where it can be seen.
+#
+# Worth knowing before relying on it: if the node is down the events cannot be
+# delivered either. DurableSink banks 512 and sheds the newest beyond that, so
+# a long outage judges correctly and still loses the tail. The run summary says
+# how many.
+
+CACHE_PATH = HERE / ".zone-cache.json"
+
+
+def cache_zones(settings: Settings, zones: dict[str, list[dict]]) -> None:
+    """Remember the last good answer. Best effort — a failure here is not one
+    worth taking the detector down for."""
+    try:
+        CACHE_PATH.write_text(json.dumps({
+            "backend": settings.backend_url,
+            "cached_at": time.time(),
+            "zones": zones,
+        }), encoding="utf-8")
+    except OSError as error:
+        print(f"[zones] could not write the zone cache: {error}")
+
+
+def cached_zones(settings: Settings) -> tuple[dict[str, list[dict]], float] | None:
+    """
+    The last good answer, or None.
+
+    Every zone comes back marked `stale` with the time it was written, so
+    nothing downstream can mistake it for something an operator has confirmed.
+    """
+    try:
+        stored = json.loads(CACHE_PATH.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return None
+
+    # A cache written against a different node describes a different post.
+    if stored.get("backend") != settings.backend_url:
+        return None
+
+    cached_at = float(stored.get("cached_at") or 0.0)
+    out: dict[str, list[dict]] = {}
+    for camera_id, zones in (stored.get("zones") or {}).items():
+        out[camera_id] = [dict(zone, stale=True, cached_at=cached_at) for zone in zones]
+    return out, cached_at

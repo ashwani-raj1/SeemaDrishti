@@ -30,7 +30,7 @@
 import { useEffect, useRef, useState } from "react";
 import { Badge } from "@/components/ui/badge";
 import { cn } from "@/lib/utils";
-import { onLive, type AnprExtra, type LiveTrack } from "@/lib/live";
+import { onLive, type AnprExtra, type FaceExtra, type LiveTrack, type PeopleExtra } from "@/lib/live";
 import { playWhep, whepUrl, type FeedState } from "@/lib/whep";
 import type { Point, Severity, ZoneGeometry } from "@/lib/types";
 
@@ -47,13 +47,17 @@ const TRAIL_STALE_SECONDS = 3;
 /**
  * A stable key for one tracked subject.
  *
- * Prefers the run-scoped `track_ref` the vision service already computes,
- * because a bare integer id is reused once a track dies -- two different people
- * would share a trail and a colour. Falls back only when a module omits it.
+ * Prefers multi_human's own `person_id` ("P1", "P2", ...) when a module
+ * supplies one: it names one appearance-matched span of tracks, not one
+ * ByteTrack id, so the SAME person keeps the same key -- and so the same
+ * colour and the same trail -- across a short occlusion or a re-entry the
+ * reid provider matched. Falls back to the run-scoped `track_ref` (a bare
+ * integer id is reused once a track dies -- two different people would share
+ * a trail and a colour), and to the track id only when a module omits both.
  */
 const keyOf = (track: LiveTrack): string => {
-  const ref = (track.extra as { track_ref?: string } | undefined)?.track_ref;
-  return ref ?? `id:${track.track_id ?? "?"}`;
+  const extra = track.extra as { track_ref?: string; person_id?: string } | undefined;
+  return extra?.person_id ?? extra?.track_ref ?? `id:${track.track_id ?? "?"}`;
 };
 
 /** Deterministic per-track colour so two overlapping trails stay readable
@@ -85,6 +89,8 @@ export interface CameraFeedProps {
   module?: string | null;
   /** Off for a wall of tiles where the boxes would be too small to read. */
   showBoxes?: boolean;
+  /** `cover` removes letterboxing in compact camera-wall tiles. */
+  fit?: "contain" | "cover";
   className?: string;
 }
 
@@ -95,6 +101,7 @@ export function CameraFeed({
   zones = [],
   module = null,
   showBoxes = true,
+  fit = "contain",
   className,
 }: CameraFeedProps) {
   const videoRef = useRef<HTMLVideoElement | null>(null);
@@ -218,9 +225,34 @@ export function CameraFeed({
 
       // Trails under boxes: the current position is what matters most and
       // should never be occluded by where a track has already been.
-      for (const [trackRef, trail] of trailsRef.current) {
-        if (trail.pts.length < 2) continue;
-        context.strokeStyle = colourFor(trackRef);
+      //
+      // A module's OWN trail (multi_human's `person_id`-keyed span, or
+      // fence's) wins over the client-accumulated one below: it is the
+      // continuous line across the whole appearance-matched identity,
+      // including straight across an occlusion gap, while the client-side
+      // trail is pruned after TRAIL_STALE_SECONDS and would show a fresh,
+      // disconnected line for the same person after any real gap.
+      const drawnByModule = new Set<string>();
+      for (const track of tracksRef.current) {
+        const moduleTrail = (track.extra as PeopleExtra | undefined)?.trail;
+        if (!moduleTrail || moduleTrail.length < 2) continue;
+        const key = keyOf(track);
+        drawnByModule.add(key);
+        context.strokeStyle = colourFor(key);
+        context.lineWidth = 2;
+        context.lineJoin = "round";
+        context.beginPath();
+        moduleTrail.forEach(([x, y], index) => {
+          const px = x * width;
+          const py = y * height;
+          if (index === 0) context.moveTo(px, py);
+          else context.lineTo(px, py);
+        });
+        context.stroke();
+      }
+      for (const [key, trail] of trailsRef.current) {
+        if (drawnByModule.has(key) || trail.pts.length < 2) continue;
+        context.strokeStyle = colourFor(key);
         context.lineWidth = 2;
         context.lineJoin = "round";
         context.beginPath();
@@ -249,7 +281,8 @@ export function CameraFeed({
         context.lineWidth = 2;
         context.strokeRect(px, py, pw, ph);
 
-        const label = `${track.class} ${(track.confidence * 100).toFixed(0)}%`;
+        const personId = (track.extra as PeopleExtra | undefined)?.person_id;
+        const label = `${personId ?? track.class} ${(track.confidence * 100).toFixed(0)}%`;
         context.font = "11px ui-monospace, monospace";
         const textWidth = context.measureText(label).width;
         context.fillStyle = "#38bdf8";
@@ -277,6 +310,27 @@ export function CameraFeed({
           context.fillStyle = "#1c1917";
           context.fillText(plate.text, bx1 * width + 4, Math.max(12, by1 * height - 4));
         }
+
+        // A face, when the face module found one inside this person's box.
+        // Detection only -- drawn the same neutral way a person box is, never
+        // styled as a match or a name, because it is neither.
+        const face = (track.extra as FaceExtra | undefined)?.face;
+        if (face) {
+          const [gx1, gy1, gx2, gy2] = face.bbox;
+          context.strokeStyle = "#a3e635";
+          context.lineWidth = 2;
+          context.strokeRect(
+            gx1 * width, gy1 * height,
+            (gx2 - gx1) * width, (gy2 - gy1) * height,
+          );
+          const label = `face ${(face.score * 100).toFixed(0)}%`;
+          context.font = "11px ui-monospace, monospace";
+          const faceLabelWidth = context.measureText(label).width;
+          context.fillStyle = "#a3e635";
+          context.fillRect(gx1 * width, Math.max(0, gy1 * height - 15), faceLabelWidth + 8, 15);
+          context.fillStyle = "#052e16";
+          context.fillText(label, gx1 * width + 4, Math.max(11, gy1 * height - 4));
+        }
       }
     };
 
@@ -296,7 +350,7 @@ export function CameraFeed({
         autoPlay
         muted
         playsInline
-        className="h-full w-full object-contain"
+        className={cn("h-full w-full", fit === "cover" ? "object-cover" : "object-contain")}
       />
       <canvas
         ref={canvasRef}

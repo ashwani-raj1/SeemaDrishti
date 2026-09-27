@@ -7,9 +7,10 @@
  */
 import type {
   Action, CameraDetail, CameraIncidents, ChainVerdict, CreateWatchlistInput,
-  Decision, DetectVehicleInput, FrameAnalysisResult, Health, HubCameraList, IbvapEvent, Incident,
+  Decision, DetectVehicleInput, Health, HubCameraList, IbvapEvent, Incident,
   IncidentDetail, MonitoringZone, PlateDetection, Point, ServerConfig, SimStatus,
   UpdateWatchlistInput, WatchlistEntry, WatchlistStats,
+  VehicleTrafficSummary,
 } from "./types";
 
 /**
@@ -32,6 +33,12 @@ export const needsReason = (error: unknown): error is ApiError =>
 
 export const isForbidden = (error: unknown): error is ApiError =>
   error instanceof ApiError && error.status === 403;
+
+export const isConflict = (error: unknown): error is ApiError =>
+  error instanceof ApiError && error.status === 409;
+
+export const isNotFound = (error: unknown): error is ApiError =>
+  error instanceof ApiError && error.status === 404;
 
 let apiBase = "";
 let actorId = "usr_operator";
@@ -159,18 +166,51 @@ export const api = {
   zones: () => request<MonitoringZone[]>("/api/zones"),
   zone: (id: string) => request<MonitoringZone>(`/api/zones/${id}`),
 
+  zoneAreas: () =>
+    request<{ areas: string[] }>("/api/zones/areas").then((body) => body.areas),
+
   createZone: (body: {
     name: string;
     kind: string;
-    sector?: string | null;
-    cameraIds: string[];
+    area?: string | null;
+    cameras: Array<{
+      cameraId: string;
+      geometry?: string;
+      points?: Point[];
+      direction?: string;
+      confirmSeconds?: number;
+      targets?: Array<{ class: string; severity: string; action: string }>;
+    }>;
     targets: Array<{ class: string; severity: string; action: string }>;
     reason?: string;
   }) => post<MonitoringZone>("/api/zones", body),
 
+  replaceZone: (
+    id: string,
+    body: {
+      name: string;
+      kind: string;
+      area?: string | null;
+      cameras: Array<{
+        cameraId: string;
+        geometry?: string;
+        points?: Point[];
+        direction?: string;
+        confirmSeconds?: number;
+        targets?: Array<{ class: string; severity: string; action: string }>;
+      }>;
+      targets: Array<{ class: string; severity: string; action: string }>;
+      reason?: string;
+    },
+  ) =>
+    request<MonitoringZone>(`/api/zones/${id}`, {
+      method: "PUT",
+      body: JSON.stringify(body),
+    }),
+
   updateZone: (
     id: string,
-    patch: { name?: string; kind?: string; sector?: string | null; active?: boolean; reason?: string },
+    patch: { name?: string; kind?: string; area?: string | null; active?: boolean; reason?: string },
   ) => request<MonitoringZone>(`/api/zones/${id}`, { method: "PATCH", body: JSON.stringify(patch) }),
 
   deleteZone: (id: string, reason: string) =>
@@ -242,12 +282,13 @@ export const api = {
   deleteWatchlistEntry: (id: string, reason: string) =>
     request<{ ok: true }>(`/api/watchlist/${id}`, { method: "DELETE", body: JSON.stringify({ reason }) }),
   watchlistStats: () => request<WatchlistStats>("/api/watchlist/stats"),
+  vehicleTraffic: (params: { days?: number; camera_id?: string } = {}) =>
+    request<VehicleTrafficSummary>(`/api/watchlist/traffic${qs(params)}`),
+  recordVehicleTraffic: (body: { sourceKey: string; cameraId: string; vehicleType: string; occurredAt?: string }) =>
+    post<{ recorded: boolean }>("/api/watchlist/traffic", body),
   plateDetections: (params: { match_status?: string; camera_id?: string; plate?: string; limit?: number } = {}) =>
     request<PlateDetection[]>(`/api/watchlist/detections${qs(params)}`),
   detectVehicleAndPlate: (body: DetectVehicleInput) => post<PlateDetection>("/api/watchlist/detect", body),
-  simulatePlateDetection: (preset?: string) => post<PlateDetection>("/api/watchlist/simulate", { preset }),
-  analyzeFrame: (body: { cameraId?: string; zoneId?: string | null; timeOffset?: number; simulated?: boolean } = {}) =>
-    post<FrameAnalysisResult>("/api/watchlist/analyze-frame", body),
 };
 
 

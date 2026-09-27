@@ -21,9 +21,21 @@ module ever has to know that a bus is COCO id 5.
 STATUS: prototype.
 """
 
+import os
 import time
+from pathlib import Path
 
 from ultralytics import YOLO
+
+#: IBVAP's own tracker tuning (a longer track_buffer than ultralytics' bundled
+#: default -- see bytetrack.yaml's own docstring for why). Resolved against
+#: THIS directory, not the current one, for the identical reason
+#: config.py Settings.weights is: a bare relative name resolves differently
+#: depending on where the process was launched from. Falls back to
+#: ultralytics' own bundled "bytetrack.yaml" if this repo-local one is ever
+#: missing, rather than failing to start.
+_LOCAL_TRACKER_CFG = str(Path(__file__).resolve().parent.parent / "bytetrack.yaml")
+DEFAULT_TRACKER_CFG = _LOCAL_TRACKER_CFG if os.path.exists(_LOCAL_TRACKER_CFG) else "bytetrack.yaml"
 
 # COCO id -> (operator class, subtype). The coarse class is what a zone target
 # matches on; the subtype is detail carried alongside for ANPR and display.
@@ -52,13 +64,13 @@ class SharedDetector:
     """
 
     def __init__(self, weights="yolo11n.pt", imgsz=480, conf=0.35, iou=0.5,
-                 tracker_cfg="bytetrack.yaml", device="cpu", run_id="r0",
+                 tracker_cfg=None, device="cpu", run_id="r0",
                  classes=None):
         self.model = YOLO(weights)
         self.imgsz = imgsz
         self.conf = conf
         self.iou = iou
-        self.tracker_cfg = tracker_cfg
+        self.tracker_cfg = tracker_cfg or DEFAULT_TRACKER_CFG
         self.device = device
         self.run_id = run_id
         self.classes = sorted(classes if classes is not None else COCO_CLASSES.keys())

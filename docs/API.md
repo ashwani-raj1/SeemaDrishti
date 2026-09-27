@@ -69,10 +69,18 @@ CORS is `*` on every route; headers `content-type, x-ibvap-actor`.
 | GET | `/api/health` | Liveness, live track count, SSE subscriber count, simulator state |
 | GET | `/api/config` | **The console's boot call.** Org, site, users, media addresses, every camera with its resolved zones |
 | GET | `/api/stream` | SSE. See [Live push](#live-push--apistream) |
+| GET | `/api/settings` | Node behaviour in force: `{ groupingWindowSeconds }` |
+| PATCH | `/api/settings` | `{ groupingWindowSeconds?, reason? }` — supervisor+, audited |
 
 `/api/config` is also what the **vision service** polls for zones, every
 `IBVAP_ZONE_REFRESH_SECONDS`. It returns addresses only — a real camera's RTSP
-URL carries credentials and never leaves the hub.
+URL carries credentials and never leaves the hub. It carries the same
+`settings` object as `/api/settings`, so the console gets it on the boot call.
+
+`groupingWindowSeconds` is how long an incident stays open to new events
+sharing its group key — see [Incidents](#incidents). `0`–`3600`, default
+`300`; anything outside that range is a `400`. A `PATCH` that submits the value
+already in force changes nothing and writes no audit row.
 
 ## Incidents
 
@@ -87,6 +95,22 @@ need `reason` (`422` without).
 
 **Recording the decision IS the state change** — there is no status column, so
 an incident cannot change state without an audit row.
+
+### How events become one incident
+
+An event joins an existing incident when **all three** hold: same `groupKey`,
+the incident's `last_event_at` is within `groupingWindowSeconds` of the new
+event's `occurredAt`, and the incident is not `DISMISSED`. Otherwise a new
+incident opens.
+
+- Group keys are built by the producer: `camera:zone` for fence crossings and
+  sensor contacts, `camera:health`, `camera:reid`, and
+  `camera:zone:plate:PLATE` for plate reads.
+- The window **slides** — it is measured off the last event, not off
+  `opened_at`, so continuous activity keeps one incident alive.
+- Severity and title are **worst-wins**: a later, more serious event rewrites
+  both.
+- A dismissed incident is **never** reopened.
 
 ## Investigate
 
@@ -147,9 +171,11 @@ node rejects every detection, and no incident can ever open.
 | Verb | Path | Body |
 |---|---|---|
 | GET | `/api/zones` | — |
-| POST | `/api/zones` | **S+** `{ name, kind, sector?, cameraIds[], targets[], reason? }` |
+| GET | `/api/zones/areas` | — the area labels in use, derived from live zones |
+| POST | `/api/zones` | **S+** `{ name, kind, area?, cameras[] \| cameraIds[], targets[], reason? }` |
 | GET | `/api/zones/:zoneId` | — |
-| PATCH | `/api/zones/:zoneId` | **S+** `{ name?, kind?, sector?, active?, reason? }` |
+| PUT | `/api/zones/:zoneId` | **S+** `{ name, kind, area?, cameras[], targets[], reason? }` — replaces the whole zone |
+| PATCH | `/api/zones/:zoneId` | **S+** `{ name?, kind?, area?, active?, reason? }` |
 | DELETE | `/api/zones/:zoneId` | **S+** `{ reason }` — **required** |
 | PUT | `/api/zones/:zoneId/targets` | **S+** `{ targets[], reason? }` — replaces the list |
 | POST | `/api/zones/:zoneId/cameras` | **S+** `{ cameraId, reason? }` |
@@ -164,8 +190,40 @@ camera's frame is meaningless in another's, so geometry lives on the binding.
 `ibvap/modules/fence.py` judges against. `PATCH …/cameras/:cameraId` with
 `points` is what the console's shape editor calls.
 
+**`geometry` is not cosmetic, and the two values do not behave alike.** A
+`polygon` is judged by `point_in_polygon` — inbound is entering it, outbound is
+leaving, and the shape that fires is the shape that was drawn. A `line` is
+judged by two different rules at once: `side_for_zone` takes the **infinite**
+line through the first and last vertex, while a crossing additionally requires
+the subject's movement to intersect a **drawn segment**. So a kinked line
+reports side changes all over the frame while only ever firing where it was
+actually drawn, and the vertices between the ends affect nothing but where a
+crossing may occur. Draw a region as a polygon.
+
+**`cameras[]` carries each camera's shape**, so a zone and the geometry it is
+judged by are written in one transaction: `{ cameraId, geometry?, points?,
+direction?, confirmSeconds?, targets? }`. Omit `points` and the camera joins on
+the placeholder with `placed: false` — on `PUT` it instead keeps the shape it
+already had, so renaming a zone never un-draws it. `cameraIds[]` remains
+accepted on `POST` for "add these cameras, undrawn". On `PUT`, a camera's
+`targets: []` **clears** its overrides and restores the zone policy, while
+omitting the key on `POST` leaves it with none.
+
+**An area is a free-text label**, not a shape and not an id. `GET
+/api/zones/areas` returns the `DISTINCT` labels the live zones carry, so an area
+exists exactly as long as a zone uses it and there is no second list to keep in
+step. It was `sector` until it collided with `camera.sector` (the post a camera
+belongs to); the migration in `db/migrate.ts` carries old values across.
+
 Target order **is** priority — position in the array decides which target wins.
 `action: "log_only"` is the animal filter: written down, never alerted.
+
+**`confirmSeconds` is only half the rule.** `modules/fence.py` also enforces
+`confirm_frames`, and a crossing must satisfy both. At a typical 6 fps worker,
+`2.0` means roughly twelve processed frames on the far side — longer than a
+vehicle's track usually survives, so a plausible-looking value can mean nothing
+ever confirms. The console shows the frame count beside the field for this
+reason.
 
 ## Watchlist and plate reads
 

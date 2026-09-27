@@ -22,6 +22,10 @@ export const CORS: CorsOptions = {
 
 export class Forbidden extends Error {}
 export class NotFound extends Error {}
+/** A well-formed request that collides with current state. 409, not 400: the
+ *  caller made no syntax mistake, the world is just not in the shape they
+ *  assumed -- e.g. a camera that already belongs to another zone. */
+export class Conflict extends Error {}
 
 /** The shape every refusal takes on the wire. */
 export interface ErrorBody {
@@ -118,6 +122,7 @@ function statusOf(error: unknown): number {
   if (error instanceof BadRequest) return 400;
   if (error instanceof Forbidden) return 403;
   if (error instanceof NotFound) return 404;
+  if (error instanceof Conflict) return 409;
   if (isBodyParseError(error)) return 400;
   if (isObject(error) && "status" in error && typeof error.status === "number") {
     return error.status;

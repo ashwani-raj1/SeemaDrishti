@@ -4,15 +4,15 @@ import type { Severity } from "../core/types";
 import { actorOf, NotFound, num, optionalJson, query, readJson, requireRole } from "../http";
 import { BadRequest } from "../l4/hooks";
 import {
-  analyzeFrame,
   createWatchlistEntry,
   deleteWatchlistEntry,
   getWatchlistEntry,
   getWatchlistStats,
+  getVehicleTraffic,
   listWatchlist,
   processVehicleAndPlateDetection,
   queryPlateDetections,
-  simulatePresetPlateDetection,
+  recordVehicleTraffic,
   updateWatchlistEntry,
 } from "../l3/watchlist";
 
@@ -54,17 +54,12 @@ export interface DetectBody {
   simulated?: boolean;
 }
 
-/** POST /api/watchlist/simulate */
-export interface SimulateBody {
-  preset?: string;
-}
-
-/** POST /api/watchlist/analyze-frame */
-export interface AnalyzeFrameBody {
+/** POST /api/watchlist/traffic */
+export interface TrafficBody {
+  sourceKey?: string;
   cameraId?: string;
-  zoneId?: string | null;
-  timeOffset?: number;
-  simulated?: boolean;
+  vehicleType?: string;
+  occurredAt?: string;
 }
 
 export const watchlistRoutes = Router();
@@ -116,6 +111,35 @@ watchlistRoutes.get("/api/watchlist/stats", (_req, res) => {
   res.json(getWatchlistStats(DEFAULT_ORG));
 });
 
+watchlistRoutes.get("/api/watchlist/traffic", (req, res) => {
+  const params = query<"days" | "camera_id">(req);
+  res.json(
+    getVehicleTraffic(DEFAULT_ORG, {
+      days: num(params.days, 14),
+      cameraId: params.camera_id,
+    }),
+  );
+});
+
+watchlistRoutes.post("/api/watchlist/traffic", (req, res) => {
+  const body = readJson<TrafficBody>(req);
+  if (!body.sourceKey || typeof body.sourceKey !== "string") {
+    throw new BadRequest("sourceKey is required");
+  }
+  if (!body.cameraId || typeof body.cameraId !== "string") {
+    throw new BadRequest("cameraId is required");
+  }
+  res.status(201).json(
+    recordVehicleTraffic({
+      orgId: DEFAULT_ORG,
+      cameraId: body.cameraId ?? "cam_fence_north",
+      sourceKey: body.sourceKey,
+      vehicleType: body.vehicleType ?? "vehicle",
+      occurredAt: body.occurredAt,
+    }),
+  );
+});
+
 watchlistRoutes.get("/api/watchlist/detections", (req, res) => {
   const params = query<"match_status" | "camera_id" | "plate" | "limit" | "offset">(req);
   res.json(
@@ -123,7 +147,7 @@ watchlistRoutes.get("/api/watchlist/detections", (req, res) => {
       matchStatus: params.match_status,
       cameraId: params.camera_id,
       plateNumber: params.plate,
-      limit: num(params.limit, 50),
+      limit: num(params.limit),
       offset: num(params.offset),
     }),
   );
@@ -132,6 +156,9 @@ watchlistRoutes.get("/api/watchlist/detections", (req, res) => {
 watchlistRoutes.post("/api/watchlist/detect", (req, res) => {
   const body = readJson<DetectBody>(req);
   const cameraId = body.cameraId ?? "cam_fence_north";
+  if (!body.plateNumber || typeof body.plateNumber !== "string" || !body.plateNumber.trim()) {
+    throw new BadRequest("plateNumber is required; no ANPR record was created");
+  }
 
   const detection = processVehicleAndPlateDetection({
     orgId: DEFAULT_ORG,
@@ -144,28 +171,10 @@ watchlistRoutes.post("/api/watchlist/detect", (req, res) => {
     bbox: body.bbox,
     plateBbox: body.plateBbox,
     imageSnapshot: body.imageSnapshot ?? null,
-    simulated: body.simulated !== false,
+    simulated: body.simulated === true,
   });
 
   res.status(201).json(detection);
-});
-
-watchlistRoutes.post("/api/watchlist/simulate", (req, res) => {
-  const body = optionalJson<SimulateBody>(req);
-  const preset = body.preset ?? "flagged_scorpio";
-  res.status(201).json(simulatePresetPlateDetection(preset, DEFAULT_ORG));
-});
-
-watchlistRoutes.post("/api/watchlist/analyze-frame", (req, res) => {
-  const body = optionalJson<AnalyzeFrameBody>(req);
-  res.json(
-    analyzeFrame(DEFAULT_ORG, {
-      cameraId: body.cameraId,
-      zoneId: body.zoneId,
-      timeOffset: body.timeOffset,
-      simulated: body.simulated !== false,
-    }),
-  );
 });
 
 watchlistRoutes.get("/api/watchlist/:id", (req, res) => {

@@ -2,9 +2,9 @@ import { one, run } from "../db";
 import { id, nowIso } from "../core/ids";
 import type { CameraStatus, Severity, Zone } from "../core/types";
 import { recordEvent, shapeEvent } from "../l3/events";
-import { zonesForCamera } from "../l3/zones";
+import { zonesForCamera, isProvisional, PROVISIONAL_SUPPRESSION } from "../l3/zones";
 import { setCameraStatus } from "../l3/cameras";
-import { processVehicleAndPlateDetection } from "../l3/watchlist";
+import { processVehicleAndPlateDetection, recordVehicleTraffic } from "../l3/watchlist";
 import { BadRequest } from "./hooks";
 
 /**
@@ -44,7 +44,7 @@ export interface VisionEvent {
   simulated: boolean;
 }
 
-const KNOWN_EVENTS = new Set(["intrusion", "plate_read", "camera_health", "reidentification"]);
+const KNOWN_EVENTS = new Set(["intrusion", "vehicle_detection", "plate_read", "camera_health", "reidentification"]);
 
 function requireString(value: unknown, field: string): string {
   if (typeof value !== "string" || !value.trim()) throw new BadRequest(`${field} is required`);
@@ -188,6 +188,13 @@ type Routing =
  * `log_only` is how they are written down and never shouted about.
  */
 function routeClass(zone: Zone, className: string): Routing {
+  // Before the targets are consulted at all: the targets are real -- a
+  // supervisor typed them -- but on an unplaced shape the GEOMETRY is a guess,
+  // and severity without geometry claims a specific place was crossed when
+  // nobody chose the place. Recorded, never alerted. l2/fence.ts does the same
+  // thing at the same point; both doors or neither, or the simulator and the
+  // detector disagree about the same walk.
+  if (isProvisional(zone)) return { kind: "log_only", reason: PROVISIONAL_SUPPRESSION };
   const target = zone.targets.find((t) => t.class === className);
   if (!target) return { kind: "ignore" };
   if (target.action === "log_only") return { kind: "log_only", reason: "target_is_log_only" };
@@ -213,6 +220,14 @@ function ingestIntrusion(event: VisionEvent, context: CameraContext) {
     // against the camera rather than discarded -- but nothing is woken up for
     // geometry that no longer exists.
     routing = { kind: "log_only", reason: "zone_no_longer_bound" };
+  } else if (data.stale === true) {
+    // The worker judged this against zones it restored from its own cache
+    // because this node was unreachable when it started. The crossing is real
+    // and belongs in the record, but the shape it was judged against may have
+    // been edited during the outage and neither side can know. Recorded, not
+    // alerted -- the same treatment an undrawn shape gets, for the same
+    // reason: geometry whose currency cannot be vouched for.
+    routing = { kind: "log_only", reason: "zone_cache_stale" };
   } else {
     routing = routeClass(zone, className);
     if (routing.kind === "ignore") {
@@ -254,6 +269,15 @@ function ingestIntrusion(event: VisionEvent, context: CameraContext) {
     severity,
     alertable,
     suppressedReason,
+    // The frame this was judged on, already cropped and JPEG-encoded by the
+    // worker (`ibvap/core/thumbnail.py`). Taken as-is and never re-encoded:
+    // the node's job is to keep what it was sent, not to reinterpret it.
+    //
+    // Kept for SUPPRESSED events too. A crossing the system chose not to shout
+    // about is exactly the one somebody later asks to see, and "we recorded it
+    // but threw the picture away because we were not alarmed" is the worst
+    // possible answer.
+    thumbnail: typeof data.thumbnail === "string" ? data.thumbnail : null,
     occurredAt: event.occurredAt,
     // The bundle the screen draws its "why did this fire" overlay from. Cheap
     // to store, and it is what makes the alert explainable at 3 a.m.
@@ -274,10 +298,40 @@ function ingestIntrusion(event: VisionEvent, context: CameraContext) {
       heldFrames: typeof data.held_frames === "number" ? data.held_frames : null,
       camera: context.cameraName,
       detector: event.module,
+      // The evidence clip this crossing belongs to, when the worker was
+      // recording. Carried so the console can ask for the frames directly
+      // rather than searching for a clip by camera and time -- the id is
+      // minted by the worker BEFORE the event is sent (`ibvap/core/clip.py`),
+      // so it is here even when the clip itself never arrives. An incident
+      // whose clip was shed still says which clip it was waiting for.
+      clipId: typeof data.clip_id === "string" ? data.clip_id : null,
+      // Whether the shape this was judged against had ever been drawn. The
+      // console has rendered a ProvisionalBadge from this key since the
+      // evidence table was written, and nothing has ever set it -- so the
+      // "nobody positioned this zone" warning has been dead on the evidence
+      // path. The flag itself arrives from the worker on every crossing.
+      provisional: data.provisional === true,
     },
     // Same zone, same camera: related crossings become one piece of work.
     groupKey: `${event.cameraId}:${zone?.id ?? zoneId ?? "unbound"}`,
     title: `${subject} ${direction} at ${zoneName} · ${context.cameraName}`,
+  });
+}
+
+// ------------------------------------------------------------------ plate read
+
+function ingestVehicleDetection(event: VisionEvent, context: CameraContext) {
+  const trackRef = requireString(event.data.track_ref, "data.track_ref");
+  return recordVehicleTraffic({
+    orgId: context.orgId,
+    cameraId: event.cameraId,
+    // sourceId contains the Vision run id, and trackRef is stable for the
+    // physical track. Retries therefore cannot count the vehicle twice.
+    sourceKey: `${event.sourceId}:${event.cameraId}:${trackRef}`,
+    vehicleType: typeof event.data.vehicle_type === "string"
+      ? event.data.vehicle_type
+      : "vehicle",
+    occurredAt: event.occurredAt,
   });
 }
 
@@ -290,15 +344,30 @@ function ingestPlateRead(event: VisionEvent, context: CameraContext) {
   // vision service simply would not have sent this event.
   if (!plate) throw new BadRequest("plate_read requires data.plate");
 
+  // Where the read happened. The column, the input field and the join have
+  // existed all along -- only this caller was missing, so every genuine plate
+  // read stored zone_id = NULL while the seeded demo rows all had one.
+  //
+  // A zone_id from the worker is honoured only if it still matches a live
+  // binding: its config may be up to one refresh interval stale, which is the
+  // same defensive rule ingestIntrusion uses a few lines above.
+  const bound = zonesForCamera(event.cameraId);
+  const readZoneId =
+    typeof data.zone_id === "string" && bound.some((z) => z.id === data.zone_id)
+      ? data.zone_id
+      : bound[0]?.id ?? null;
+
   return processVehicleAndPlateDetection({
     orgId: context.orgId,
     cameraId: event.cameraId,
+    zoneId: readZoneId,
     plateNumber: plate,
     vehicleType: typeof data.vehicle_type === "string" ? data.vehicle_type : "vehicle",
     confidence: typeof data.confidence === "number" ? data.confidence : undefined,
     plateConfidence: typeof data.plate_confidence === "number" ? data.plate_confidence : undefined,
     bbox: bboxOf(data.bbox),
     plateBbox: bboxOf(data.plate_bbox),
+    imageSnapshot: typeof data.image_snapshot === "string" ? data.image_snapshot : null,
     simulated: event.simulated,
     occurredAt: event.occurredAt,
   });
@@ -411,6 +480,8 @@ export function ingestVisionEvent(event: VisionEvent) {
       return { event: shapeEvent(ingestIntrusion(event, context)) };
     case "plate_read":
       return { plateDetection: ingestPlateRead(event, context) };
+    case "vehicle_detection":
+      return { vehicleTraffic: ingestVehicleDetection(event, context) };
     case "camera_health":
       return { event: shapeEvent(ingestCameraHealth(event, context)) };
     case "reidentification":

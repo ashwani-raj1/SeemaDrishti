@@ -8,6 +8,7 @@ import { CameraStatusPill, SeverityBadge, SeverityDot } from "@/components/ibvap
 import { CameraMap } from "@/components/ibvap/camera-map";
 import { CameraFeed } from "@/components/ibvap/camera-feed";
 import { useClient } from "@/client/context";
+import { HistoryLink } from "@/components/ibvap/history-link";
 import { ErrorState, LoadingRows } from "@/components/ibvap/states";
 import { PageShell } from "@/components/ibvap/page-shell";
 import { ShareLink } from "@/components/ibvap/share-link";
@@ -144,7 +145,9 @@ export function CameraPage() {
                 cameraId={camera.id}
                 streamPath={camera.streamPath}
                 whepBase={media.whepBase}
-                zones={camera.zones}
+                // `placed` is this endpoint's word for the same bit the
+                // detector calls `provisional` -- see Zone in lib/types.ts.
+                zones={camera.zones.map((zone) => ({ ...zone, provisional: !zone.placed }))}
                 className="w-full"
               />
             )}
@@ -183,7 +186,7 @@ export function CameraPage() {
                         </span>
                         {!zone.placed && (
                           <span className="text-xs text-amber-600 dark:text-amber-500">
-                            shape not positioned
+                            default shape - recorded, never alerted
                           </span>
                         )}
                       </li>
@@ -242,6 +245,7 @@ export function CameraPage() {
               <Section
                 title="Recent activity"
                 hint="Everything this feed recorded, including what was deliberately not raised."
+                action={<HistoryLink cameraId={camera.id} label="Search further back" />}
               >
                 {data.recentEvents.length === 0 ? (
                   <p className="text-sm text-muted-foreground">Nothing recorded yet.</p>
@@ -292,12 +296,15 @@ function Section({
   count,
   primary,
   hint,
+  action,
   children,
 }: {
   title: string;
   count?: number;
   primary?: boolean;
   hint?: string;
+  /** Optional trailing control, e.g. a link out to the history search. */
+  action?: React.ReactNode;
   children: React.ReactNode;
 }) {
   return (
@@ -315,6 +322,7 @@ function Section({
         {count !== undefined && (
           <span className="font-mono text-xs tabular-nums text-muted-foreground">{count}</span>
         )}
+        {action && <div className="ml-auto">{action}</div>}
       </div>
       {hint && <p className="mb-2 text-xs text-muted-foreground">{hint}</p>}
       {children}

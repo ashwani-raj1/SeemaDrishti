@@ -106,6 +106,7 @@ cost that actually matters, for the same boxes three times over.
 | `fence` | zone polygon intrusion + line crossing, debounce, cooldown | `intrusion` |
 | `anpr` | plate crop → OCR inside a tracked vehicle box | `plate_read` |
 | `multi_human` | within-camera person tracking; re-ID is interface-only (§6) | `reidentification` |
+| `face` | cascaded YuNet inside a tracked person's box; detection only | none — live-only |
 
 Which modules run is per camera, in `media/cameras.yml`. Adding a capability is
 a new file in `modules/` plus a name in that manifest — **the dispatcher, the
@@ -113,9 +114,13 @@ WebSocket server and the HTTP sink do not change.** That is the test of whether
 this layer is actually pluggable.
 
 The person-tracking and YuNet face-detection modules that predated this
-refactor were deleted; they are in git history (`core/person.py`,
-`core/face.py`) and face detection would return as a module, not as a
-special case.
+refactor were deleted; the pre-refactor standalone files (`core/person.py`,
+`core/face.py`, and the `people_run.py`/`people_service.py` harnesses that
+imported them) are in git history. Face detection has returned as
+`modules/face.py` — a module, not a special case, exactly as this section
+said it would. It is detection only: a box and a score, never a match against
+anybody, and it emits nothing on the durable path (§14) — "a face was seen"
+with no watchlist to check it against is not evidence.
 
 **5 reliable features beat 15 half-working ones.** If asked for loitering
 detection, night mode or "suspicious activity", push back and ask what evidence
@@ -131,6 +136,7 @@ in a new module reading the same shared pass.
 | One shared pass per frame | modules are consumers of detections, not producers | per-module detectors |
 | `classes` = person, vehicles, boat, dog, cow | exactly the vocabulary a zone's targets are written in (`backend/src/db/seed.ts`); animals ride the same pass for free and are what `log_only` exists for | all-class inference |
 | ByteTrack | IoU + Kalman only, near-zero CPU cost | DeepSORT — runs a re-ID CNN per box per frame, fatal on CPU |
+| `bytetrack.yaml` (repo-local, `track_buffer: 90`) | ultralytics' bundled default (30) is 5s of occlusion tolerance at `IBVAP_TARGET_FPS=6`; short enough that a subject behind a pillar routinely gets a new id. 90 = 15s, still free (motion/IoU only, no appearance model) | editing ultralytics' own bundled copy |
 | `persist=True` | tracker must know frames form a sequence | omitting it resets IDs every call |
 | One tracker **per camera** | ByteTrack state lives on the model object; one shared tracker interleaves N unrelated scenes into one association problem and produces constant id switches | a single global detector |
 | EasyOCR on a cropped plate region | plate text read after the vehicle is localised, so a vehicle with no readable plate is still a valid detection | full-frame OCR, or a second plate-detection model |
@@ -158,11 +164,29 @@ one frozen image. A crossing confirms only when it survives **both**. Cooldown
 is per `(track, zone, direction)` — walking in and walking back out are two
 facts, and collapsing them loses the exit an investigator went looking for.
 
+**A side is tri-state, and 0 is not a side.** `side_for_zone` returns +1, -1 or
+**0** — the last meaning "on the line, within EPSILON", i.e. no side established
+yet. Both `crossing_of` and the pending-crossing machine in `modules/fence.py`
+must treat 0 as undetermined: no crossing is reported *onto* side 0, and a
+pending crossing seeing 0 holds rather than counting it as a reversal. Getting
+this wrong is not theoretical — it shipped. The old code ended
+`return "inbound" if after == 1 else "outbound"`, so a subject landing exactly on
+a horizontal line was reported **outbound regardless of travel**, and the next
+frame's genuine crossing was then discarded as flicker. The subject walked
+through and **nothing was emitted**, while the run summary showed a rejected
+flicker — a missed intrusion wearing the costume of the debounce working.
+Ground points are pixel-quantised (`ny1 + nh`), so on a 480-row frame exactly one
+row in 480 triggers it. `tests/test_geometry.py` and `tests/test_fence.py` both
+pin the regression.
+
 `core/geometry.py` is a deliberate port of `backend/src/l2/geometry.ts`. Same
 conventions, same epsilon, same inbound/outbound definition. **Change a rule in
 one and change it in the other**, or a zone means one thing to the console's
 preview and another to the detector judging it. The node keeps its copy because
-the simulator still posts raw detections through `/hooks/ingress/detections`.
+the simulator still posts raw detections through `/hooks/ingress/detections` —
+and note its rejection path *emits a durable event*, so a bug like the one above
+writes a false "did not persist" record into the permanent log rather than just
+dropping a crossing.
 
 ### Frame policy in `core/capture.py` — understand before editing
 - Live source (RTSP / webcam) → `drop=True`, latest-frame-wins, bounded latency.
@@ -189,20 +213,34 @@ losing them quietly.
 
 ## 6. KNOWN LIMITATIONS — state honestly, never hide
 
-- **No re-identification, today.** `modules/reid.py` ships the interface and
-  `NullReID`, which returns "I don't know" for every crop. ByteTrack has no
-  appearance model, so a long occlusion produces a NEW track id and a subject
-  walking between cameras has no relationship to themselves. **Never claim
-  persistent re-ID, and never describe a tracker id as an identity** — the
-  naming rule is written into the bottom of `modules/reid.py`.
-  `ai_service.py::stable_track_key` stitches ids across HTTP frames using IoU +
-  normalised centre distance; that is a geometric heuristic scoped to one
-  browser session, not re-ID.
+- **Re-identification is real but weak, within one camera.** `modules/reid.py`
+  ships `NullReID` (always "I don't know") and `HistogramReID` — an HSV
+  colour-histogram signature, cosine-matched via `Gallery`. `multi_human`
+  defaults to `histogram` and uses it to fold a reappearing track back into
+  the same `person_id` ("P1", "P2", ...) instead of minting a new one,
+  bridging a gap `bytetrack.yaml`'s own `track_buffer` (§5) did not cover.
+  This is colour-based re-association, not learned appearance matching and
+  not recognition: two people in similar clothing can be folded together, and
+  the SAME person under a large lighting change can be missed. It has never
+  been tried across cameras and should not be assumed to work there. **Never
+  call it recognition, and never call a bare `track_ref` an identity** — a
+  `person_id` is the only label allowed to mean "this is probably the same
+  subject", and even that comes with the caveat above every time it is
+  written about. The naming rule is at the bottom of `modules/reid.py`.
+  `ai_service.py::stable_track_key` is a separate, older thing: it stitches
+  ids across HTTP frames using IoU + normalised centre distance, a geometric
+  heuristic scoped to one browser session, not re-ID.
 - **Plate OCR is resolution-bound.** A plate occupying a few pixels cannot be
   read reliably. It works at a **gate or checkpoint** where plates face the
   camera, not across a wide open scene — which is why `anpr` is enabled per
   camera in the manifest rather than everywhere. The working range must be
   measured in **metres** on the installed camera and reported.
+- **Face detection is resolution-bound the same way.** A 60 px-tall person has
+  a face a few pixels tall; no CPU-sized detector finds that reliably. It
+  works at **choke points** (a gate, checkpost or doorway), not across open
+  terrain — the working range needs measuring in metres, same as ANPR's. YuNet
+  outputs a box and a score, never an identity; the word "recognition" must
+  never describe `modules/face.py`.
 - **Threads, not processes.** One asyncio task per camera with CPU work pushed
   through `asyncio.to_thread`. That works while the GIL is released inside
   ultralytics/OpenCV native code, which is where nearly all the time goes. It is
@@ -280,6 +318,8 @@ where every box says "AI Engine" · the word "recognition" for detection-only co
 ```
 main.py                entrypoint: capture → shared pass → modules → both sinks
 config.py              .env + cameras.yml + zones pulled from the node
+debug_view.py          one-command local-file test harness, no hub/node needed
+bytetrack.yaml         IBVAP's tracker tuning (longer track_buffer -- see §5)
 ai_service.py          FastAPI /detect for the browser plate scanner (port 8001)
 run-anpr.ps1           installs requirements, launches ai_service under uvicorn
 
@@ -292,8 +332,9 @@ core/dispatcher.py     LiveChannel (WS fanout) + DurableSink (HTTP, retry)
 modules/base.py        VisionModule interface + REGISTRY
 modules/fence.py       zone + line crossing, debounce, per-direction cooldown
 modules/anpr.py        PlateReader + AnprModule
-modules/multi_human.py within-camera person tracking, re-ID hook
-modules/reid.py        ReIDProvider interface, NullReID, Gallery
+modules/multi_human.py within-camera person tracking; person_id + reid fold-in (§6)
+modules/reid.py        ReIDProvider interface, NullReID, HistogramReID, Gallery
+modules/face.py        cascaded YuNet inside a person box; detection only, live-only
 
 data/                  videos + weights (git-ignored and claude-ignored)
 yolo11n.pt             detector weights; downloads itself on first run
@@ -306,7 +347,7 @@ Outside this directory, same repo, one layer up:
 ../.env                     WHERE modules run + what THIS box does — per-machine, ignored
 ../backend/src/l4/vision.ts the durable ingress this service posts to
 ../backend/src/l2/fence.ts  the node's own fence, still used by the simulator
-../frontend/src/lib/boxes.ts the console's live overlay client
+../frontend/src/lib/live.ts  the console's live overlay client
 ```
 
 `config.py` resolves `ROOT` as the **repo root**, one level up — so
@@ -363,15 +404,21 @@ on small distant subjects and plates — state that trade out loud rather than
 discover it on stage.
 
 ### Tests
-There is **no Python test suite** and no runner configured. Verification is
-running `main.py` against a short clip and reading the run summary it prints at
-exit. The backend has one (`cd backend && bun test`, 79 tests) and it must stay
-green — the vision refactor did not change the detection ingress the simulator
-uses. If you add Python tests, use `pytest` under `tests/` as `test_<module>.py`
-and mock the network, RTSP and model downloads; a test that downloads weights is
-a test that fails on a demo laptop. `core/geometry.py` and `modules/fence.py`
-are the two worth testing first — both are pure functions over numbers and need
-no camera.
+```powershell
+python -m pip install -r requirements-dev.txt   # pytest, and nothing else
+python -m pytest tests/                          # 36 tests, under a second
+```
+
+`tests/test_geometry.py` and `tests/test_fence.py` cover `core/geometry.py` and
+`modules/fence.py` — the two worth testing first, because both are pure
+functions over numbers and need no camera. No model, no network, no weights — a
+test that downloads a checkpoint is a test that fails on a demo laptop, which is
+also why pytest lives in `requirements-dev.txt` and not in `requirements.txt`.
+Anything new goes under `tests/` as `test_<module>.py` and keeps that property.
+
+Beyond the unit tests, verification is still running `main.py` against a short
+clip and reading the run summary it prints at exit. The backend has its own
+suite (`cd backend && bun test`, 99 tests) and it must stay green.
 
 ## 12. NEXT TASKS (in order)
 
@@ -379,8 +426,11 @@ no camera.
    whether a demo video is mandatory, and the official PPT template
    (download **only** from sih.gov.in — third-party "SIH templates" online are
    SEO junk and a disqualification risk).
-2. Migrate `frontend/src/lib/boxes.ts` to the `LiveObservation` contract and
-   delete `core/payload.legacy_box_frame` with it (§14).
+2. ~~Migrate `frontend/src/lib/boxes.ts` to the `LiveObservation` contract and
+   delete `core/payload.legacy_box_frame` with it (§14).~~ **DONE.** `boxes.ts`
+   was replaced by `frontend/src/lib/live.ts` and `legacy_box_frame` is gone;
+   neither name appears anywhere in the code. Kept in place rather than
+   renumbered, because the section numbers are cited from code comments.
 3. Measure baseline FPS and detector ms/call on **every** team laptop with
    `main.py --seconds N`. Identify the strongest machine — that one records the
    demo video.
@@ -446,11 +496,10 @@ without parsing ANPR's guesses. `extra` is the module-specific transient slot: a
 live plate guess, a trajectory tail, a pending-crossing flag. Nothing in `extra`
 may reach the durable path.
 
-**Migration shim:** the console still speaks the old `{"t": "boxes"}` shape
-(`frontend/src/lib/boxes.ts`), so the dispatcher sends both on the same socket —
-boxes.ts ignores what it does not recognise. `core/payload.legacy_box_frame`
-carries the raw shared pass, never a module's opinion, so it can never become a
-second contract. **Delete it with §12.2.**
+**The migration shim is gone** (§12.2). The console speaks `LiveObservation`
+only, through `frontend/src/lib/live.ts`; the old `{"t": "boxes"}` shape and
+`core/payload.legacy_box_frame` were deleted together, so there is once again
+exactly one live contract.
 
 ### 2. DurableEvent → `POST /hooks/ingress/events`
 
@@ -513,8 +562,34 @@ this directory, an operator editing one would change nothing until someone SSH'd
 into every worker laptop — and the audit trail would describe an edit that never
 took effect. `config.py` polls `/api/config` every
 `IBVAP_ZONE_REFRESH_SECONDS`; an edit reaches the detector judging it within one
-interval, by itself. Until the node is reachable a fence module simply has no
-zones and says so. It does not guess, and it does not cache a stale shape.
+interval, by itself. This service never synthesises a shape of its own.
+
+**Two shapes it will nonetheless judge against, both labelled.** The rule that
+matters is not "only ever judge against a confirmed shape" — it is **never judge
+silently against geometry whose currency cannot be vouched for.** Two cases
+qualify, and each one travels with its own flag so the node can record the
+crossing and refuse to alert on it:
+
+- **`provisional`** — a camera added to a zone gets a stock placeholder shape
+  (`l3/zones.ts:placeholderShape`) and `placed = 0` until a supervisor draws it.
+  The node now sends that as `provisional: true` on `/api/config`, this service
+  carries it into the event, and `l4/vision.ts` records the crossing with
+  `alertable = 0` and `suppressed_reason = "zone_not_placed"`. Before this was
+  labelled, undrawn placeholders produced **fully alertable** intrusions against
+  geometry nobody had positioned — the exact thing this section forbids, and it
+  had been happening quietly.
+- **`stale`** — a last-good zone cache, read **only at startup** and **only when
+  the node is unreachable**, keyed by backend URL. Every zone from it is marked
+  `stale` with the time it was written, and the node suppresses with
+  `suppressed_reason = "zone_cache_stale"`. This **reverses** the old absolute
+  "it does not cache a stale shape". The reason for the reversal: a detector
+  that goes blind on a node restart records nothing at all, and nothing is the
+  one outcome nobody can review afterwards. Note the ceiling — if the node is
+  down the events cannot be delivered either, so `DurableSink` banks 512 and
+  sheds the newest beyond that. The run summary says how many.
+
+In both cases **severity stays on the node**. This service reports a fact and a
+label; it never decides that a crossing is not worth alerting on (§1, §14).
 
 | Variable | Default | Meaning |
 |---|---|---|

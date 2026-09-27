@@ -96,6 +96,11 @@ class LiveChannel:
     def __init__(self, bind="0.0.0.0", port=8100):
         self.bind = bind
         self.port = port
+        # Startup is not complete until the websocket has actually bound its
+        # port.  The supervisor waits on this flag before it starts camera
+        # workers; otherwise a second process can fail to bind yet continue
+        # posting durable detections, double-counting every vehicle.
+        self.ready = asyncio.Event()
         self.sent = 0
         self._dropped_total = 0
         self._clients: set[_Client] = set()
@@ -128,6 +133,7 @@ class LiveChannel:
         async with serve(self._handle, self.bind, self.port,
                          ping_interval=20, ping_timeout=20) as server:
             self._server = server
+            self.ready.set()
             print(f"[live] ws://{self.bind}:{self.port} - live observation channel")
             await stop.wait()
             # MUST close before leaving the block. `serve()`'s __aexit__ awaits
@@ -311,6 +317,49 @@ class DurableSink:
     def stats(self) -> dict:
         return {"sent": self.sent, "failed": self.failed,
                 "shed": self.shed, "queued": self.queue.qsize()}
+
+
+class ClipSink(DurableSink):
+    """
+    Evidence frames to the node, on their own queue.
+
+    WHY NOT JUST USE `DurableSink`. Because the two carry different promises and
+    sharing a queue would let the weaker one break the stronger. A confirmed
+    intrusion is a fact the system must not lose; a clip is the picture that
+    goes with it and is a nice-to-have. They differ by three orders of magnitude
+    in size — an event is a few hundred bytes, a clip is about a megabyte — so a
+    single queue 512 deep could bank over half a gigabyte of clips and start
+    shedding INTRUSIONS to make room for them. That trade is exactly backwards.
+
+    So: a shallow queue that sheds early and often. Losing a clip costs a
+    picture. Losing an event costs the record.
+
+    `shed` is therefore not an alarm here the way it is on the durable sink. It
+    is reported separately in the run summary for that reason.
+    """
+
+    def __init__(self, base_url: str, source_id: str, timeout=10.0,
+                 queue_size=6, attempts=2):
+        # A longer timeout and fewer attempts than events: a megabyte takes
+        # longer to put on the wire, and there is no point spending four
+        # retries on a picture while newer clips queue behind it.
+        super().__init__(base_url, source_id, timeout=timeout,
+                         queue_size=queue_size, attempts=attempts)
+        self.url = base_url.rstrip("/") + "/hooks/ingress/clip"
+
+    def submit_clip(self, camera_id: str, clip: dict, simulated: bool) -> None:
+        """
+        Non-blocking, and drops rather than waits. Called from the detection
+        loop like everything else on this path.
+        """
+        payload = dict(clip)
+        payload["camera_id"] = camera_id
+        payload["source_id"] = self.source_id
+        payload["simulated"] = simulated
+        try:
+            self.queue.put_nowait(payload)
+        except asyncio.QueueFull:
+            self.shed += 1
 
 
 class Dispatcher:

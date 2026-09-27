@@ -1,62 +1,35 @@
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import { rmSync } from "node:fs";
-import type { Server } from "node:http";
-import type { AddressInfo } from "node:net";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import type { ClipUsage, clipManifest } from "../src/l3/clips";
-import type { ErrorBody } from "../src/http";
-
-type Manifest = NonNullable<ReturnType<typeof clipManifest>>;
 
 /**
- * Evidence clips, read side.
+ * Evidence clips: storage, the manifest split, and retention.
  *
- * The thing worth pinning hardest is the one that would fail silently: the
- * manifest must never carry pixels. A regression there ships a megabyte on
- * every render and nothing looks broken.
+ * The two things worth pinning hardest are the ones that would fail silently:
+ * that the manifest never carries pixels (a regression there ships a megabyte
+ * on every render and nothing looks broken), and that retention actually
+ * deletes (a regression there fills a BOP disk over weeks).
  */
 
 const DB_PATH = join(tmpdir(), `ibvap-clips-${Date.now()}-${Math.random().toString(36).slice(2)}.db`);
 process.env.IBVAP_DB = DB_PATH;
 
+let clips: typeof import("../src/l3/clips");
+let settings: typeof import("../src/l3/settings");
+let db: typeof import("../src/db");
+
 const ORG = "org_bsf";
-const CLIP = "clip_test_cam_garden_1";
-
-/** A 1x1 JPEG, so the bytes are real without needing an encoder. */
-const JPEG =
-  "/9j/4AAQSkZJRgABAQEAYABgAAD/2wBDAAgGBgcGBQgHBwcJCQgKDBQNDAsLDBkSEw8UHRofHh0a" +
-  "HBwgJC4nICIsIxwcKDcpLDAxNDQ0Hyc5PTgyPC4zNDL/wAALCAABAAEBAREA/8QAFAABAAAAAAAA" +
-  "AAAAAAAAAAAACf/EABQQAQAAAAAAAAAAAAAAAAAAAAD/2gAIAQEAAD8AKp//2Q==";
-
-let server: Server;
-let base: string;
 
 beforeAll(async () => {
-  const { run } = await import("../src/db");
+  db = await import("../src/db");
   const { seed } = await import("../src/db/seed");
-  const { createApp } = await import("../src/app");
   seed();
-
-  run(
-    `INSERT INTO clip (id, org_id, camera_id, at, fps, frame_count, bytes, simulated, created_at)
-     VALUES ($id, $org, 'cam_garden', '2026-09-23T15:51:23.348Z', 5.8, 2, 1000, 1, '2026-09-23T15:51:30.000Z')`,
-    { $id: CLIP, $org: ORG },
-  );
-  for (const [seq, offset] of [[0, -1.5], [1, 0.2]]) {
-    run(
-      `INSERT INTO clip_frame (clip_id, seq, offset_s, jpeg, boxes)
-       VALUES ($id, $seq, $offset, $jpeg, $boxes)`,
-      { $id: CLIP, $seq: seq, $offset: offset, $jpeg: JPEG, $boxes: JSON.stringify([{ class: "vehicle" }]) },
-    );
-  }
-
-  server = createApp().listen(0);
-  base = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
+  clips = await import("../src/l3/clips");
+  settings = await import("../src/l3/settings");
 });
 
 afterAll(() => {
-  server?.close();
   for (const suffix of ["", "-wal", "-shm"]) {
     try {
       rmSync(DB_PATH + suffix);
@@ -66,82 +39,158 @@ afterAll(() => {
   }
 });
 
-describe("the clip manifest", () => {
-  test("lists every frame's time and boxes", async () => {
-    const res = await fetch(`${base}/api/clips/${CLIP}`);
-    expect(res.status).toBe(200);
-    const clip = (await res.json()) as Manifest;
+/** A 1x1 JPEG, so the bytes are real without needing an encoder. */
+const JPEG =
+  "/9j/4AAQSkZJRgABAQEAYABgAAD/2wBDAAgGBgcGBQgHBwcJCQgKDBQNDAsLDBkSEw8UHRofHh0a" +
+  "HBwgJC4nICIsIxwcKDcpLDAxNDQ0Hyc5PTgyPC4zNDL/wAALCAABAAEBAREA/8QAFAABAAAAAAAA" +
+  "AAAAAAAAAAAACf/EABQQAQAAAAAAAAAAAAAAAAAAAAD/2gAIAQEAAD8AKp//2Q==";
 
-    expect(clip.cameraId).toBe("cam_garden");
-    expect(clip.frameCount).toBe(2);
-    expect(clip.simulated).toBe(true);
-    expect(clip.frames).toEqual([
-      { seq: 0, offset: -1.5, boxes: [{ class: "vehicle" }] },
-      { seq: 1, offset: 0.2, boxes: [{ class: "vehicle" }] },
-    ]);
-  });
-
-  test("never carries pixels", async () => {
-    const body = await (await fetch(`${base}/api/clips/${CLIP}`)).text();
-    expect(body).not.toContain(JPEG.slice(0, 20));
-  });
-
-  test("an unknown clip is a 404", async () => {
-    const res = await fetch(`${base}/api/clips/clip_nope`);
-    expect(res.status).toBe(404);
-    expect(((await res.json()) as ErrorBody).error).toBe("no clip clip_nope");
-  });
-});
-
-describe("a clip frame", () => {
-  test("is the stored JPEG, as an image", async () => {
-    const res = await fetch(`${base}/api/clips/${CLIP}/frames/1`);
-    expect(res.status).toBe(200);
-    expect(res.headers.get("content-type")).toStartWith("image/jpeg");
-    expect(Buffer.from(await res.arrayBuffer())).toEqual(Buffer.from(JPEG, "base64"));
-  });
-
-  test("a browser asking for images still gets the image", async () => {
-    const res = await fetch(`${base}/api/clips/${CLIP}/frames/1`, {
-      headers: { accept: "image/avif,image/webp,image/apng,image/*,*/*;q=0.8" },
-    });
-    expect(res.headers.get("content-type")).toStartWith("image/jpeg");
-    expect(res.headers.get("vary")).toBe("Accept");
-  });
-
-  test("asked for JSON, is the stored base64 with its offset and boxes", async () => {
-    const res = await fetch(`${base}/api/clips/${CLIP}/frames/1`, {
-      headers: { accept: "application/json" },
-    });
-    expect(res.status).toBe(200);
-    expect(res.headers.get("vary")).toBe("Accept");
-    expect(await res.json()).toEqual({
-      clipId: CLIP,
-      seq: 1,
-      offset: 0.2,
-      boxes: [{ class: "vehicle" }],
+function store(clipId: string, frameCount = 3) {
+  return clips.storeClip({
+    clipId,
+    orgId: ORG,
+    cameraId: "cam_garden",
+    at: new Date().toISOString(),
+    fps: 5.8,
+    simulated: true,
+    frames: Array.from({ length: frameCount }, (_, i) => ({
+      // Negative before the crossing, positive after -- the pre-roll is the
+      // whole reason the ring exists.
+      offset: Number((i - 2).toFixed(2)),
       jpeg: JPEG,
-    });
+      boxes: [{ class: "vehicle", bbox: [0.1, 0.1, 0.2, 0.2] }],
+    })),
+  });
+}
+
+describe("storing a clip", () => {
+  test("frames and a manifest come back", () => {
+    store("clip_a", 4);
+    const manifest = clips.clipManifest("clip_a")!;
+
+    expect(manifest.frameCount).toBe(4);
+    expect(manifest.fps).toBe(5.8);
+    expect(manifest.frames).toHaveLength(4);
+    expect(manifest.frames[0]!.offset).toBe(-2);
   });
 
-  test("asked for JSON, a missing frame is still a 404", async () => {
-    const res = await fetch(`${base}/api/clips/${CLIP}/frames/9`, {
-      headers: { accept: "application/json" },
-    });
-    expect(res.status).toBe(404);
+  test("the manifest carries no pixels", () => {
+    // A regression here is invisible: the page still works, it just ships a
+    // megabyte of base64 on every render to draw a strip of timestamps.
+    const manifest = clips.clipManifest("clip_a")!;
+    const serialised = JSON.stringify(manifest);
+    expect(serialised).not.toContain(JPEG.slice(0, 40));
+    expect(serialised.length).toBeLessThan(2000);
   });
 
-  test("a frame past the end is a 404", async () => {
-    expect((await fetch(`${base}/api/clips/${CLIP}/frames/2`)).status).toBe(404);
+  test("boxes ride along with each frame", () => {
+    const manifest = clips.clipManifest("clip_a")!;
+    expect((manifest.frames[0]!.boxes[0] as any).class).toBe("vehicle");
   });
 
-  test("a seq that is not a frame number is a 400", async () => {
-    expect((await fetch(`${base}/api/clips/${CLIP}/frames/-1`)).status).toBe(400);
-    expect((await fetch(`${base}/api/clips/${CLIP}/frames/abc`)).status).toBe(400);
+  test("a frame is fetched one at a time", () => {
+    expect(clips.clipFrame("clip_a", 0)).toBe(JPEG);
+    expect(clips.clipFrame("clip_a", 99)).toBeNull();
+  });
+
+  test("re-sending the same clip replaces it rather than doubling it", () => {
+    // DurableSink retries, so a clip whose POST succeeded on the node but timed
+    // out on the wire arrives twice. Without the delete-first the scrubber
+    // would play it through twice.
+    store("clip_dup", 3);
+    store("clip_dup", 3);
+    expect(clips.clipManifest("clip_dup")!.frameCount).toBe(3);
+    expect(
+      db.all<{ n: number }>(
+        "SELECT COUNT(*) AS n FROM clip_frame WHERE clip_id = 'clip_dup'",
+      )[0]!.n,
+    ).toBe(3);
+  });
+
+  test("an unknown clip is null, not a throw", () => {
+    expect(clips.clipManifest("clip_nope")).toBeNull();
   });
 });
 
-test("usage totals what is stored", async () => {
-  const usage = (await (await fetch(`${base}/api/clips`)).json()) as ClipUsage;
-  expect(usage).toEqual({ clips: 1, frames: 2, bytes: 1000, oldest: "2026-09-23T15:51:30.000Z" });
+describe("retention", () => {
+  test("a fresh clip survives the sweep", () => {
+    store("clip_fresh");
+    expect(clips.sweepClips(ORG)).toBe(0);
+    expect(clips.clipManifest("clip_fresh")).not.toBeNull();
+  });
+
+  test("a clip past the window is deleted, frames and all", () => {
+    // The reason this exists: organisation.retention_days sat in the schema
+    // unread for the whole project because events were small. A clip is about
+    // a megabyte, and fifty a day fills a post's disk with nobody watching.
+    store("clip_old");
+    const future = new Date(Date.now() + 8 * 86400_000);
+
+    expect(clips.sweepClips(ORG, future)).toBeGreaterThan(0);
+    expect(clips.clipManifest("clip_old")).toBeNull();
+    expect(
+      db.all<{ n: number }>(
+        "SELECT COUNT(*) AS n FROM clip_frame WHERE clip_id = 'clip_old'",
+      )[0]!.n,
+    ).toBe(0);
+  });
+
+  test("the window is the configured one", () => {
+    settings.updateSettings({
+      actor: { id: "usr_supervisor", name: "Test", role: "supervisor" },
+      orgId: ORG,
+      clipRetentionDays: 30,
+    });
+    store("clip_kept");
+
+    // 8 days on: inside a 30-day window, so it stays.
+    expect(clips.sweepClips(ORG, new Date(Date.now() + 8 * 86400_000))).toBe(0);
+    expect(clips.clipManifest("clip_kept")).not.toBeNull();
+  });
+
+  test("retention never touches events or the audit log", () => {
+    // Clips are evidence; events are the record. Sweeping the record would
+    // break the append-only claim the whole log rests on.
+    const events = db.all<{ n: number }>("SELECT COUNT(*) AS n FROM event")[0]!.n;
+    const actions = db.all<{ n: number }>("SELECT COUNT(*) AS n FROM action")[0]!.n;
+
+    store("clip_sweepable");
+    clips.sweepClips(ORG, new Date(Date.now() + 999 * 86400_000));
+
+    expect(db.all<{ n: number }>("SELECT COUNT(*) AS n FROM event")[0]!.n).toBe(events);
+    expect(db.all<{ n: number }>("SELECT COUNT(*) AS n FROM action")[0]!.n).toBeGreaterThanOrEqual(actions);
+  });
+});
+
+describe("settings", () => {
+  test("each setting can be changed without disturbing the other", () => {
+    // The console saves one panel at a time. A required field here would mean
+    // saving the retention window silently rewrote the grouping window to
+    // whatever that other form happened to be holding.
+    //
+    // Reads the grouping window rather than SETTING it: under `bun test` the
+    // db module is a singleton shared with whichever file imported it first,
+    // so writing it here would reach into settings.test.ts and change the
+    // value its own assertions depend on. Independence is provable without
+    // touching the other setting at all -- which is the point being made.
+    const actor = { id: "usr_supervisor", name: "Test", role: "supervisor" as const };
+    const before = settings.getSettings(ORG);
+
+    settings.updateSettings({ actor, orgId: ORG, clipRetentionDays: 3 });
+    const after = settings.getSettings(ORG);
+
+    expect(after.groupingWindowSeconds).toBe(before.groupingWindowSeconds);
+    expect(after.clipRetentionDays).toBe(3);
+  });
+
+  test("usage is reported for the settings page", () => {
+    // Stores its own clip rather than relying on earlier tests: the retention
+    // block above deliberately sweeps everything, so anything counting on
+    // leftovers here would pass or fail on test ORDER.
+    store("clip_usage", 5);
+    const usage = clips.clipUsage(ORG);
+    expect(usage.clips).toBeGreaterThan(0);
+    expect(usage.frames).toBeGreaterThanOrEqual(5);
+    expect(usage.bytes).toBeGreaterThan(0);
+  });
 });

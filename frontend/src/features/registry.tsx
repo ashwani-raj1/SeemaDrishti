@@ -21,7 +21,7 @@
 import type { LucideIcon } from "lucide-react";
 import {
   CarFrontIcon, CctvIcon, FileClockIcon, HistoryIcon, LayersIcon,
-  LayoutDashboardIcon, MapIcon, ScanEyeIcon, SirenIcon, UsersIcon,
+  LayoutDashboardIcon, MapIcon, ScanEyeIcon, ScanFaceIcon, SettingsIcon, SirenIcon, UsersIcon,
 } from "lucide-react";
 import { canUse, GROUP_ORDER, selectEnabled, type SectionGroup, type SectionMeta } from "./sections";
 
@@ -36,9 +36,10 @@ import { CameraPage } from "./cameras/page";
 import { SectorMapScreen } from "./map/screen";
 import { WatchlistScreen } from "./watchlist/screen";
 import { FenceScreen } from "./services/fence";
-import { AnprScreen } from "./services/anpr";
 import { PeopleScreen } from "./services/people";
+import { FaceScreen } from "./services/face";
 import { CameraHealthScreen } from "./services/camera-health";
+import { SettingsScreen } from "./settings/screen";
 
 export type { SectionGroup };
 export { GROUP_ORDER, canUse };
@@ -107,13 +108,13 @@ export const SECTIONS: Section[] = [
     element: <FenceScreen />,
   },
   {
-    id: "anpr",
+    id: "watchlist",
     group: "Services",
-    label: "Number plates",
+    label: "Plate watchlist",
     icon: CarFrontIcon,
-    path: "/services/anpr",
-    minRole: "operator",
-    element: <AnprScreen />,
+    path: "/watchlist",
+    minRole: "supervisor",
+    element: <WatchlistScreen />,
   },
   {
     id: "people",
@@ -123,6 +124,15 @@ export const SECTIONS: Section[] = [
     path: "/services/people",
     minRole: "operator",
     element: <PeopleScreen />,
+  },
+  {
+    id: "face",
+    group: "Services",
+    label: "Face detection",
+    icon: ScanFaceIcon,
+    path: "/services/face",
+    minRole: "operator",
+    element: <FaceScreen />,
   },
   {
     id: "camera-health",
@@ -174,14 +184,22 @@ export const SECTIONS: Section[] = [
     minRole: "supervisor",
     element: <ZonesScreen />,
   },
+  // Reachable by every role: most of the page is what an operator has to be
+  // able to read off -- who they are acting as, where the node and the hub
+  // are, and how events are grouped into the incidents on their screen. The
+  // controls that change anything check the role themselves.
   {
-    id: "watchlist",
+    id: "settings",
     group: "Configure",
-    label: "Plate watchlist",
-    icon: CarFrontIcon,
-    path: "/watchlist",
-    minRole: "supervisor",
-    element: <WatchlistScreen />,
+    label: "Settings",
+    icon: SettingsIcon,
+    path: "/settings",
+    minRole: "operator",
+    // Pinned to the bottom of the sidebar rather than listed under Configure.
+    // It is about the console and this node, not about what is watched -- and
+    // the footer is where the sidebar was already reaching for it.
+    footer: true,
+    element: <SettingsScreen />,
   },
 ];
 
