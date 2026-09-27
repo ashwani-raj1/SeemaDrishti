@@ -1,6 +1,6 @@
 import { Router } from "express";
 import { DEFAULT_ORG } from "../db/seed";
-import { clipFrame, clipManifest, clipUsage, storeClip, sweepClips } from "../l3/clips";
+import { clipFrame, clipFrameRecord, clipManifest, clipUsage, storeClip, sweepClips } from "../l3/clips";
 import { BadRequest } from "../l4/hooks";
 import { NotFound, readJson } from "../http";
 
@@ -110,22 +110,30 @@ clipRoutes.get("/api/clips/:clipId", (req, res) => {
 });
 
 /**
- * One frame, as an image.
+ * One frame, as an image -- or, asked for JSON, as data: its offset, its
+ * boxes and the base64 JPEG as stored. An `<img>`, or anything that accepts
+ * any type, still gets the image, so the console is unaffected.
  *
  * Cached hard for the same reason event thumbnails are: a clip is written
  * once and never edited, so frame N of clip X is the same bytes forever.
  * That is what makes scrubbing back and forth cost one fetch per frame
- * rather than one per scrub.
+ * rather than one per scrub. `Vary` keeps the two forms from being served
+ * in each other's place.
  */
 clipRoutes.get("/api/clips/:clipId/frames/:seq", (req, res) => {
   const seq = Number(req.params.seq);
   if (!Number.isInteger(seq) || seq < 0) throw new BadRequest("seq must be a frame number");
 
+  res.vary("Accept").set("cache-control", "public, max-age=31536000, immutable");
+
+  if (req.accepts(["image/jpeg", "application/json"]) === "application/json") {
+    const frame = clipFrameRecord(req.params.clipId, seq);
+    if (!frame) throw new NotFound("no such frame");
+    res.json(frame);
+    return;
+  }
+
   const encoded = clipFrame(req.params.clipId, seq);
   if (!encoded) throw new NotFound("no such frame");
-
-  res
-    .type("image/jpeg")
-    .set("cache-control", "public, max-age=31536000, immutable")
-    .send(Buffer.from(encoded, "base64"));
+  res.type("image/jpeg").send(Buffer.from(encoded, "base64"));
 });

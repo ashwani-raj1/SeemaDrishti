@@ -156,6 +156,28 @@ export function clipFrame(clipId: string, seq: number): string | null {
   return row?.jpeg ?? null;
 }
 
+/**
+ * One frame whole: where it sits in the clip, what was boxed in it, and the
+ * JPEG exactly as stored. For readers that want the frame as data rather than
+ * as an image -- the MCP server hands the base64 straight to a model, so
+ * decoding it here only for the caller to re-encode would be wasted work.
+ */
+export function clipFrameRecord(clipId: string, seq: number) {
+  const row = one<{ seq: number; offset_s: number; boxes: string; jpeg: string }>(
+    "SELECT seq, offset_s, boxes, jpeg FROM clip_frame WHERE clip_id = $id AND seq = $seq",
+    { $id: clipId, $seq: seq },
+  );
+  if (!row) return null;
+
+  return {
+    clipId,
+    seq: row.seq,
+    offset: row.offset_s,
+    boxes: JSON.parse(row.boxes) as unknown[],
+    jpeg: row.jpeg,
+  };
+}
+
 export interface ClipUsage {
   clips: number;
   frames: number;
