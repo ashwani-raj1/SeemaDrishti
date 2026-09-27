@@ -78,6 +78,15 @@ export interface Zone {
   /** Ordered by priority ascending. */
   targets: ZoneTarget[];
   active: boolean;
+  /**
+   * False until a supervisor has positioned this shape against this camera's
+   * view -- until then it is the stock placeholder handed out when the camera
+   * joined the zone, and nobody chose where it sits.
+   *
+   * A crossing of an unplaced shape is evidence, never an alarm. See
+   * `isProvisional` in l3/zones.ts and ibvap/CLAUDE.md section 15.
+   */
+  placed: boolean;
 }
 
 /** One detection as it arrives at the ingress hook. */

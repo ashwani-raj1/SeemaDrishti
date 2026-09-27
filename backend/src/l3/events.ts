@@ -2,6 +2,7 @@ import { all, db, one, run } from "../db";
 import { id, nowIso } from "../core/ids";
 import { SEVERITY_RANK, type Severity, type SourceType } from "../core/types";
 import { publish } from "../l4/bus";
+import { groupingWindowSeconds } from "./settings";
 
 /**
  * L3 -- where a raw finding becomes a record that lasts.
@@ -14,8 +15,14 @@ import { publish } from "../l4/bus";
  * work is "someone crossed the fence", not "here are forty detections".
  */
 
-/** How long an incident stays open to new related events. */
-const GROUPING_WINDOW_SECONDS = 300;
+/**
+ * How long an incident stays open to new related events.
+ *
+ * Read per event from the org's settings rather than held as a constant here:
+ * the right window is a property of the ground being watched, so a post has to
+ * be able to change it without a deploy. `l3/settings.ts` owns the value, its
+ * bounds and the audit row every change leaves behind.
+ */
 
 export interface EventInput {
   orgId: string;
@@ -34,6 +41,15 @@ export interface EventInput {
   severity: Severity;
   /** false means: write it to the log, never raise it to a human. */
   alertable: boolean;
+  /**
+   * Base64 JPEG of the subject, cut from the frame this was judged on.
+   *
+   * Optional everywhere. The simulator sends none, a lost-track event has no
+   * current frame to cut, and a picture must never be the reason an intrusion
+   * fails to record -- so this is the one field whose absence changes nothing
+   * about how the event is treated.
+   */
+  thumbnail?: string | null;
   suppressedReason?: string | null;
   occurredAt: string;
   evidence?: unknown;
@@ -65,6 +81,42 @@ export interface EventRow {
   received_at: string;
   evidence: string;
   incident_id: string | null;
+  /**
+   * 1 when a thumbnail exists, from `thumbnail IS NOT NULL`.
+   *
+   * The base64 itself is NEVER selected into a row. A list of fifty events
+   * would otherwise carry a megabyte of pictures nobody asked for, over a link
+   * section 8 of ibvap/CLAUDE.md promises to keep small. The image is fetched
+   * one at a time by `/api/events/:id/thumbnail`, which is also what lets the
+   * browser cache it like any other image.
+   */
+  has_thumbnail: number;
+}
+
+/**
+ * Every event column except the picture, plus a flag saying there is one.
+ *
+ * Spelled out rather than `SELECT *` for exactly one reason: `thumbnail` is the
+ * first column in this table that is large, and `SELECT *` would have quietly
+ * put it into every list response the day it was added.
+ */
+const EVENT_COLUMNS = `seq, id, org_id, site_id, kind, source_type, source_id, simulated,
+   camera_id, zone_id, tracked_thing_id, class, direction, rule, confidence,
+   severity, alertable, suppressed_reason, occurred_at, received_at, evidence,
+   incident_id, thumbnail IS NOT NULL AS has_thumbnail`;
+
+/**
+ * The base64 JPEG for one event, or null.
+ *
+ * The only place the column is read. Separate from every other read so that
+ * "fetch the picture" is always a deliberate act with its own query.
+ */
+export function eventThumbnail(eventId: string): string | null {
+  const row = one<{ thumbnail: string | null }>(
+    "SELECT thumbnail FROM event WHERE id = $id",
+    { $id: eventId },
+  );
+  return row?.thumbnail ?? null;
 }
 
 /**
@@ -76,7 +128,8 @@ export interface EventRow {
  * so an operator's decision cannot be silently undone by later activity.
  */
 function attachIncident(input: EventInput): { incidentId: string; opened: boolean } {
-  const cutoff = new Date(Date.parse(input.occurredAt) - GROUPING_WINDOW_SECONDS * 1000).toISOString();
+  const window = groupingWindowSeconds(input.orgId);
+  const cutoff = new Date(Date.parse(input.occurredAt) - window * 1000).toISOString();
 
   const existing = one<{ id: string; severity: Severity }>(
     `SELECT id, severity FROM incident_state
@@ -107,13 +160,30 @@ function attachIncident(input: EventInput): { incidentId: string; opened: boolea
   }
 
   const incidentId = id("inc");
+  // A number a human can say out loud. `inc_mucx1vzbdaq05b` is unambiguous and
+  // unusable over a radio, so an incident also gets a per-org counter -- what a
+  // case file has, and what an operator means by "check 3667".
+  //
+  // MAX + 1 rather than AUTOINCREMENT because `incident.id` is the TEXT primary
+  // key and SQLite only auto-increments an INTEGER one. Safe here: this runs
+  // inside `recordEvent`'s transaction on a single-process node, so no two
+  // incidents can read the same maximum. It is per ORG, so two posts each have
+  // their own #1 -- which is right, because an incident number is only ever
+  // said inside one post.
+  const number =
+    (one<{ n: number }>(
+      "SELECT COALESCE(MAX(number), 0) AS n FROM incident WHERE org_id = $org",
+      { $org: input.orgId },
+    )?.n ?? 0) + 1;
+
   run(
     `INSERT INTO incident
-       (id, org_id, site_id, camera_id, zone_id, title, severity, group_key, opened_at, last_event_at)
+       (id, number, org_id, site_id, camera_id, zone_id, title, severity, group_key, opened_at, last_event_at)
      VALUES
-       ($id, $org, $site, $camera, $zone, $title, $severity, $key, $at, $at)`,
+       ($id, $number, $org, $site, $camera, $zone, $title, $severity, $key, $at, $at)`,
     {
       $id: incidentId,
+      $number: number,
       $org: input.orgId,
       $site: input.siteId,
       $camera: input.cameraId ?? null,
@@ -143,11 +213,11 @@ export function recordEvent(input: EventInput): EventRow {
       `INSERT INTO event
          (id, org_id, site_id, kind, source_type, source_id, simulated, camera_id, zone_id,
           tracked_thing_id, class, direction, rule, confidence, severity, alertable,
-          suppressed_reason, occurred_at, received_at, evidence, incident_id)
+          suppressed_reason, occurred_at, received_at, evidence, thumbnail, incident_id)
        VALUES
          ($id, $org, $site, $kind, $stype, $sid, $sim, $camera, $zone,
           $track, $class, $direction, $rule, $confidence, $severity, $alertable,
-          $suppressed, $occurred, $received, $evidence, $incident)`,
+          $suppressed, $occurred, $received, $evidence, $thumbnail, $incident)`,
       {
         $id: eventId,
         $org: input.orgId,
@@ -169,6 +239,7 @@ export function recordEvent(input: EventInput): EventRow {
         $occurred: input.occurredAt,
         $received: nowIso(),
         $evidence: JSON.stringify(input.evidence ?? {}),
+        $thumbnail: input.thumbnail ?? null,
         $incident: incidentId,
       },
     );
@@ -181,7 +252,7 @@ export function recordEvent(input: EventInput): EventRow {
       );
     }
 
-    const row = one<EventRow>("SELECT * FROM event WHERE id = $id", { $id: eventId })!;
+    const row = one<EventRow>(`SELECT ${EVENT_COLUMNS} FROM event WHERE id = $id`, { $id: eventId })!;
     return Object.assign(row, { __opened: opened }) as EventRow;
   });
 
@@ -210,38 +281,72 @@ export function shapeEvent(row: EventRow) {
     occurredAt: row.occurred_at,
     receivedAt: row.received_at,
     evidence: JSON.parse(row.evidence),
+    // The flag, not the picture. `/api/events/:id/thumbnail` serves the image.
+    hasThumbnail: row.has_thumbnail === 1,
     incidentId: row.incident_id,
   };
 }
 
+/**
+ * One incident, shaped exactly as `listIncidents` shapes them.
+ *
+ * ONE SHAPE, TWO DOORS, and they must not drift. This is what the SSE push
+ * carries (`publish({ type: "incident" })`), and the console merges a pushed
+ * incident straight into the list it got from `listIncidents`. A field present
+ * on one and missing on the other means a live-arriving incident silently
+ * behaves differently from an identical one that came from a fetch -- it would
+ * drop out of a filter, or out of a count, for no reason anybody could see.
+ */
+const shapeIncident = (row: any) => ({
+  id: row.id,
+  // The number an operator says out loud. Null only for a row written before
+  // the column existed and not yet backfilled.
+  number: row.number ?? null,
+  title: row.title,
+  severity: row.severity,
+  status: row.status,
+  cameraId: row.camera_id,
+  zoneId: row.zone_id,
+  openedAt: row.opened_at,
+  lastEventAt: row.last_event_at,
+  eventCount: row.event_count,
+  kind: row.kind ?? null,
+  // Split here rather than leaving the console to parse a comma string --
+  // GROUP_CONCAT is a storage detail and should not reach a screen. Empty for
+  // an incident whose events carry no class, e.g. a camera going quiet.
+  classes: row.classes ? String(row.classes).split(",").filter(Boolean) : [],
+  // MAX over a 0/1 column: true when ANY event in here raised an alert.
+  alertable: row.alertable === 1,
+});
+
 export function getIncident(incidentId: string) {
   const row = one<any>("SELECT * FROM incident_state WHERE id = $id", { $id: incidentId });
-  if (!row) return null;
-  return {
-    id: row.id,
-    title: row.title,
-    severity: row.severity,
-    status: row.status,
-    cameraId: row.camera_id,
-    zoneId: row.zone_id,
-    openedAt: row.opened_at,
-    lastEventAt: row.last_event_at,
-    eventCount: row.event_count,
-  };
+  return row ? shapeIncident(row) : null;
 }
 
 export interface EventQuery {
   cameraId?: string;
   zoneId?: string;
   incidentId?: string;
-  kind?: string;
   severity?: Severity;
   class?: string;
-  alertableOnly?: boolean;
+  /** zone_crossing | camera_health | sensor_contact | reidentification */
+  kind?: string;
+  /**
+   * Tri-state: undefined means both. A plain boolean could only ever ask for
+   * "alertable = 1", and the question worth asking now is the opposite one --
+   * what did we record and deliberately NOT shout about, and why.
+   */
+  alertable?: boolean;
+  /** e.g. `zone_not_placed`, `target_is_log_only`, `zone_no_longer_bound`. */
+  suppressedReason?: string;
+  simulated?: boolean;
   since?: string;
   until?: string;
   afterSeq?: number;
   limit?: number;
+  /** @deprecated superseded by the tri-state `alertable`. */
+  alertableOnly?: boolean;
 }
 
 /** The searchable log. Also what a reconnecting peer replays, via afterSeq. */
@@ -255,7 +360,13 @@ export function queryEvents(orgId: string, q: EventQuery) {
   if (q.kind) (where.push("kind = $kind"), (params.$kind = q.kind));
   if (q.severity) (where.push("severity = $severity"), (params.$severity = q.severity));
   if (q.class) (where.push("class = $class"), (params.$class = q.class));
-  if (q.alertableOnly) where.push("alertable = 1");
+  if (q.alertable !== undefined) where.push(`alertable = ${q.alertable ? 1 : 0}`);
+  else if (q.alertableOnly) where.push("alertable = 1");
+  if (q.suppressedReason) {
+    where.push("suppressed_reason = $suppressed");
+    params.$suppressed = q.suppressedReason;
+  }
+  if (q.simulated !== undefined) where.push(`simulated = ${q.simulated ? 1 : 0}`);
   if (q.since) (where.push("occurred_at >= $since"), (params.$since = q.since));
   if (q.until) (where.push("occurred_at <= $until"), (params.$until = q.until));
   if (q.afterSeq !== undefined) (where.push("seq > $after"), (params.$after = q.afterSeq));
@@ -264,7 +375,7 @@ export function queryEvents(orgId: string, q: EventQuery) {
 
   const order = q.afterSeq !== undefined ? "seq ASC" : "seq DESC";
   return all<EventRow>(
-    `SELECT * FROM event WHERE ${where.join(" AND ")} ORDER BY ${order} LIMIT $limit`,
+    `SELECT ${EVENT_COLUMNS} FROM event WHERE ${where.join(" AND ")} ORDER BY ${order} LIMIT $limit`,
     params,
   ).map(shapeEvent);
 }
@@ -272,7 +383,20 @@ export function queryEvents(orgId: string, q: EventQuery) {
 /** The operator's screen: incidents ranked by severity, then recency. */
 export function listIncidents(
   orgId: string,
-  opts: { status?: string; cameraId?: string; zoneId?: string; includeSimulated?: boolean; limit?: number } = {},
+  opts: {
+    status?: string;
+    cameraId?: string;
+    zoneId?: string;
+    /** Event kind: zone_crossing, camera_health, plate_read, reidentification. */
+    kind?: string;
+    severity?: string;
+    /** One class the incident saw, e.g. "person". Matches if ANY event did. */
+    class?: string;
+    /** Bounds on `last_event_at`, not `opened_at`. */
+    since?: string;
+    until?: string;
+    limit?: number;
+  } = {},
 ) {
   const where = ["org_id = $org"];
   const params: Record<string, unknown> = { $org: orgId };
@@ -282,13 +406,20 @@ export function listIncidents(
   // clicking a camera, which the unfiltered queue is not shaped to answer.
   if (opts.cameraId) (where.push("camera_id = $camera"), (params.$camera = opts.cameraId));
   if (opts.zoneId) (where.push("zone_id = $zone"), (params.$zone = opts.zoneId));
-  if (!opts.includeSimulated) {
-    where.push(`EXISTS (
-      SELECT 1 FROM event operational_event
-       WHERE operational_event.incident_id = incident_state.id
-         AND operational_event.simulated = 0
-    )`);
+  if (opts.kind) (where.push("kind = $kind"), (params.$kind = opts.kind));
+  if (opts.severity) (where.push("severity = $severity"), (params.$severity = opts.severity));
+  // `classes` is a comma-separated list from GROUP_CONCAT, so matching needs
+  // the commas on both ends -- otherwise "cattle" would match "wild_cattle"
+  // and "person" would match nothing when it is second in the list.
+  if (opts.class) {
+    where.push("(',' || COALESCE(classes, '') || ',') LIKE $class");
+    params.$class = `%,${opts.class},%`;
   }
+  // FILTERED ON `last_event_at`, deliberately. An incident opened yesterday
+  // that is still collecting events today is today's problem, and a date
+  // filter that hid it behind its opening time would be the one that loses it.
+  if (opts.since) (where.push("last_event_at >= $since"), (params.$since = opts.since));
+  if (opts.until) (where.push("last_event_at <= $until"), (params.$until = opts.until));
   params.$limit = Math.min(opts.limit ?? 100, 500);
 
   return all<any>(
@@ -298,17 +429,7 @@ export function listIncidents(
                last_event_at DESC
       LIMIT $limit`,
     params,
-  ).map((row) => ({
-    id: row.id,
-    title: row.title,
-    severity: row.severity,
-    status: row.status,
-    cameraId: row.camera_id,
-    zoneId: row.zone_id,
-    openedAt: row.opened_at,
-    lastEventAt: row.last_event_at,
-    eventCount: row.event_count,
-  }));
+  ).map(shapeIncident);
 }
 
 
@@ -324,6 +445,57 @@ const CROSS_REFERENCE_WINDOW_SECONDS = 1800;
  * listed whether or not they caught anything, because "the other camera saw
  * nothing" is itself worth knowing.
  */
+/**
+ * The camera an incident came from, as a first-class field.
+ *
+ * WHY THIS EXISTS SEPARATELY FROM `crossReference`. That function bails the
+ * moment an incident has no `zone_id`, and `ingestCameraHealth` writes its
+ * events with `zoneId: null` -- so the incidents about a camera going dark were
+ * the only ones carrying NO camera information at all. The page could not name
+ * the camera that had stopped.
+ *
+ * Returns null rather than throwing for an incident with no camera: a sensor
+ * contact or an operator-raised incident legitimately has none, and the page
+ * simply omits the panel.
+ */
+export function incidentCamera(incidentId: string) {
+  const incident = one<{ camera_id: string | null }>(
+    "SELECT camera_id FROM incident WHERE id = $id",
+    { $id: incidentId },
+  );
+  if (!incident?.camera_id) return null;
+
+  const camera = one<{
+    id: string;
+    name: string;
+    status: string;
+    enabled: number;
+    created_at: string;
+  }>("SELECT id, name, status, enabled, created_at FROM camera WHERE id = $id", {
+    $id: incident.camera_id,
+  });
+  if (!camera) {
+    // The camera was removed after the incident was recorded. Say so rather
+    // than returning null, which the page would render as "no camera" -- a
+    // different and much less useful statement than "this camera is gone".
+    return {
+      cameraId: incident.camera_id,
+      cameraName: null,
+      status: null,
+      enabled: false,
+      removed: true,
+    };
+  }
+
+  return {
+    cameraId: camera.id,
+    cameraName: camera.name,
+    status: camera.status,
+    enabled: camera.enabled === 1,
+    removed: false,
+  };
+}
+
 export function crossReference(incidentId: string) {
   const incident = one<any>("SELECT * FROM incident_state WHERE id = $id", { $id: incidentId });
   if (!incident || !incident.zone_id) {
@@ -367,16 +539,12 @@ export function crossReference(incidentId: string) {
       ORDER BY last_event_at DESC
       LIMIT 20`,
     { $zone: incident.zone_id, $id: incidentId, $from: from, $until: until },
-  ).map((row) => ({
-    id: row.id,
-    title: row.title,
-    severity: row.severity,
-    status: row.status,
-    cameraId: row.camera_id,
-    openedAt: row.opened_at,
-    lastEventAt: row.last_event_at,
-    eventCount: row.event_count,
-  }));
+    // One shape for an incident, wherever it came from. This used to build a
+    // thinner object by hand -- no zoneId, kind, classes or alertable -- while
+    // the console typed it as a full `Incident`, so four fields were declared
+    // and always undefined. A related incident rendered differently from an
+    // identical one in the queue, for no reason anybody could see.
+  ).map(shapeIncident);
 
   return { zone, cameras, incidents: related, windowSeconds: CROSS_REFERENCE_WINDOW_SECONDS };
 }

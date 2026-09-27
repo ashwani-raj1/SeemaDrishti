@@ -14,3 +14,4 @@ venv/
 # editor / OS
 .idea/
 .DS_Store
+.zone-cache.json

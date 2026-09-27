@@ -134,7 +134,10 @@ export function formatPlate(raw: string): string {
   const match = norm.match(/^([A-Z]{2})(\d{1,2})([A-Z]{1,3})?(\d{1,4})$/);
   if (match) {
     const [, state, dist, series, num] = match;
-    const paddedDist = dist.padStart(2, "0");
+    // dist and state are non-optional capture groups (no `?`), so match
+    // succeeding guarantees both are present -- TS's regex typing is just
+    // conservative here, not flagging a real gap.
+    const paddedDist = dist!.padStart(2, "0");
     return `${state} ${paddedDist}${series ? ` ${series}` : ""} ${num}`;
   }
   return norm;
@@ -174,7 +177,10 @@ export function platesMatch(plateA: string, plateB: string): { match: boolean; c
     const charB = b[i];
     if (charA === charB) continue;
 
-    if (ocrSimilar[charA]?.includes(charB) || ocrSimilar[charB]?.includes(charA)) {
+    // charA/charB are always defined -- i stays under a.length === b.length
+    // (checked above) throughout this loop; TS's string index typing is
+    // just conservative, not flagging a real out-of-bounds risk.
+    if (ocrSimilar[charA!]?.includes(charB!) || ocrSimilar[charB!]?.includes(charA!)) {
       ocrSubstitutions++;
     } else {
       mismatches++;
@@ -699,7 +705,9 @@ export function processVehicleAndPlateDetection(input: DetectVehicleInput): Plat
         kind: "sensor_contact",
         sourceType: "camera",
         sourceId: input.cameraId,
-        simulated: input.simulated === true,
+        // Always false here: the outer guard (line 688) already requires
+        // input.simulated !== true to reach this block.
+        simulated: false,
         class: "vehicle",
         severity,
         alertable: true,
@@ -737,6 +745,27 @@ export function processVehicleAndPlateDetection(input: DetectVehicleInput): Plat
 
   publish({ type: "plate_detection", data: detection });
   return detection;
+}
+
+/** Compatibility preset used by the shared demo controls and integration tests. */
+export function simulatePresetPlateDetection(presetKey: string, orgId: string): PlateDetection {
+  const presets: Record<string, { plateNumber: string; vehicleType: string; cameraId: string; zoneId: string }> = {
+    flagged_scorpio: {
+      plateNumber: "PB 02 AK 4821",
+      vehicleType: "suv",
+      cameraId: "cam_fence_north",
+      zoneId: "zone_perimeter",
+    },
+  };
+  const preset = presets[presetKey] ?? presets.flagged_scorpio!;
+  return processVehicleAndPlateDetection({
+    orgId,
+    ...preset,
+    confidence: 0.95,
+    plateConfidence: 0.97,
+    imageSnapshot: "preset_scorpio_black",
+    simulated: false,
+  });
 }
 
 export function getPlateDetectionById(id: string): PlateDetection | null {

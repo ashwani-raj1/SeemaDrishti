@@ -1,0 +1,11 @@
+# Test-only dependencies. Deliberately NOT in requirements.txt.
+#
+# A demo laptop being set up the night before submission installs
+# requirements.txt and nothing else, and a test runner it will never invoke is
+# one more thing that can fail at the worst moment (claude.md §9). The tests
+# themselves need no model, no camera and no network, so this is the only line
+# that separates running the service from testing it.
+#
+#   python -m pip install -r requirements-dev.txt
+#   python -m pytest tests/
+pytest>=8.0

@@ -1,5 +1,11 @@
 # SeemaDrishti — IBVAP
 
+Chat Interface
+
+<img width="1912" height="912" alt="image" src="https://github.com/user-attachments/assets/9b32d33b-d68a-4050-938f-58f2799e747f" />
+<img width="1912" height="917" alt="image" src="https://github.com/user-attachments/assets/f6aca92d-f510-4bcd-a613-05a06bf43655" />
+
+
 Border video analytics that runs **at the post, not in a cloud**.
 
 Three processes: an **edge node** (`backend/`) that judges detections against zones, turns

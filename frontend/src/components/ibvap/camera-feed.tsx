@@ -91,6 +91,13 @@ export interface CameraFeedProps {
   showBoxes?: boolean;
   /** `cover` removes letterboxing in compact camera-wall tiles. */
   fit?: "contain" | "cover";
+  /**
+   * Handed the underlying <video> element once it mounts (and null on
+   * unmount). The element is otherwise private to this component -- a
+   * caller that needs to draw the live frame itself (video-player.tsx's
+   * still-frame download button) has no other way to reach it.
+   */
+  onVideo?: (element: HTMLVideoElement | null) => void;
   className?: string;
 }
 
@@ -102,6 +109,7 @@ export function CameraFeed({
   module = null,
   showBoxes = true,
   fit = "contain",
+  onVideo,
   className,
 }: CameraFeedProps) {
   const videoRef = useRef<HTMLVideoElement | null>(null);
@@ -401,7 +409,10 @@ export function CameraFeed({
       )}
     >
       <video
-        ref={videoRef}
+        ref={(element) => {
+          videoRef.current = element;
+          onVideo?.(element);
+        }}
         autoPlay
         muted
         playsInline

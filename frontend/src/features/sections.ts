@@ -36,6 +36,17 @@ export interface SectionMeta {
   group: SectionGroup;
   minRole: Role;
   defaultEnabled?: boolean;
+  /**
+   * Pinned to the bottom of the sidebar instead of listed in its group.
+   *
+   * A section, not a special case: it still declares a path, a role and an
+   * element, still goes through `selectEnabled` and `canUse`, and is still the
+   * single place the router learns the route exists. Only where the LINK is
+   * drawn changes -- which is what stops a hand-written footer link drifting
+   * from the page it points at. One did: the footer had a Settings button
+   * pointing at `/profile`, a path with no route anywhere in the app.
+   */
+  footer?: boolean;
 }
 
 const RANK: Record<Role, number> = { operator: 0, supervisor: 1, admin: 2 };

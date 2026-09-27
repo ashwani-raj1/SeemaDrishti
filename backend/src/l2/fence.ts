@@ -3,7 +3,7 @@ import { id, nowIso } from "../core/ids";
 import type { Detection, DetectionFrame, Direction, Point, Severity, Zone } from "../core/types";
 import { crossingOf, directionWanted, groundPoint, sideForZone } from "./geometry";
 import { recordEvent } from "../l3/events";
-import { zonesForCamera } from "../l3/zones";
+import { zonesForCamera, isProvisional, PROVISIONAL_SUPPRESSION } from "../l3/zones";
 import { cameraEnabled } from "../l3/cameras";
 
 /**
@@ -199,6 +199,12 @@ type Routing =
  * is what decides. A class no target names produces nothing at all.
  */
 function routeClass(zone: Zone, className: string): Routing {
+  // A shape nobody drew is a fallback, not a fence: recorded, never alerted.
+  // Mirrored in l4/vision.ts at the same point -- the simulator and the
+  // detector must judge the same walk the same way.
+  if (isProvisional(zone)) {
+    return { kind: "log_only", reason: PROVISIONAL_SUPPRESSION };
+  }
   const target = zone.targets.find((t) => t.class === className);
   if (!target) return { kind: "ignore" };
   if (target.action === "log_only") {
@@ -309,6 +315,14 @@ function evaluateZone(
   // --- an unresolved crossing is waiting to be confirmed
   if (memory.pending) {
     const held = at - memory.pending.since;
+
+    if (currentSide === 0) {
+      // On the line itself: undetermined, not a reversal. Without this guard
+      // the branch below fires and writes a permanent "did not persist" record
+      // about a crossing that is still perfectly alive -- worse than the same
+      // bug in modules/fence.py, which merely drops it. Hold and wait.
+      return;
+    }
 
     if (currentSide !== memory.pending.sideAfter) {
       // Came straight back. This is the flicker that floods control rooms.

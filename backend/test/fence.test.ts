@@ -40,7 +40,7 @@ afterAll(() => {
 
 const ORG = "org_bsf";
 const CAMERA = "cam_fence_north";
-const ZONE = "zone_fence_line";
+const ZONE = "zone_perimeter";
 
 const SIZE: [number, number] = [0.045, 0.16];
 
@@ -107,7 +107,7 @@ describe("virtual fence", () => {
     fence.processFrame(frameAt(14, "person", track, 0.4, 0.92));
 
     const evidence = crossingsFor(track)[0]!.evidence;
-    expect(evidence.zone.name).toBe("Fence line north");
+    expect(evidence.zone.name).toBe("BOP perimeter");
     expect(evidence.path.length).toBeGreaterThan(1);
     expect(evidence.confirmSeconds).toBe(2);
     expect(evidence.heldSeconds).toBeGreaterThanOrEqual(2);
@@ -265,7 +265,7 @@ describe("audit log", () => {
   const supervisor = { id: "usr_supervisor", name: "Shift Supervisor", role: "supervisor" as const };
 
   test("an incident's status comes from the recorded decision, not a column", () => {
-    const incidents = events.listIncidents(ORG, { limit: 1, includeSimulated: true });
+    const incidents = events.listIncidents(ORG, { limit: 1 });
     const target = incidents[0]!;
     expect(target.status).toBe("OPEN");
 
@@ -282,7 +282,7 @@ describe("audit log", () => {
   });
 
   test("escalating without a reason is refused", () => {
-    const target = events.listIncidents(ORG, { limit: 1, includeSimulated: true })[0]!;
+    const target = events.listIncidents(ORG, { limit: 1 })[0]!;
     expect(() =>
       audit.recordAction({
         actor: supervisor,
