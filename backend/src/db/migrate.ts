@@ -44,6 +44,20 @@ function addColumn(db: Database, table: string, column: string, definition: stri
 }
 
 /**
+ * Carry a renamed column's data across to its new name.
+ *
+ * Same gap as `addColumn`: renaming a column in schema.sql never reaches a
+ * database that already has the table, and every query using the new name
+ * then fails outright.
+ */
+function renameColumn(db: Database, table: string, from: string, to: string): void {
+  if (!tableExists(db, table)) return;
+  if (!hasColumn(db, table, from) || hasColumn(db, table, to)) return;
+  db.exec(`ALTER TABLE ${table} RENAME COLUMN ${from} TO ${to}`);
+  console.log(`renamed ${table}.${from} to ${to}`);
+}
+
+/**
  * Before the schema runs: if `zone` is still the old single-camera shape, move
  * it aside so the new definition can be created under the same name.
  */
@@ -90,6 +104,7 @@ export function migrateAfter(db: Database): void {
   // Columns first: these apply whether or not there is a legacy zone table.
   addColumn(db, "camera", "enabled", "INTEGER NOT NULL DEFAULT 1");
   addColumn(db, "camera", "updated_at", "TEXT");
+  renameColumn(db, "zone", "area", "sector");
 
   if (!tableExists(db, LEGACY)) return;
 
