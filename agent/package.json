@@ -1,0 +1,15 @@
+{
+  "name": "agent",
+  "version": "1.0.0",
+  "description": "",
+  "main": "agent.ts",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "keywords": [],
+  "type": "module",
+  "dependencies": {
+    "@google/adk": "^2.1.0",
+    "model-mux": "^1.0.6"
+  }
+}
