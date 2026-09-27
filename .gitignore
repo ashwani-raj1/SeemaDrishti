@@ -7,4 +7,6 @@
 # the working directory is. ~5 MB of binary that every machine fetches itself.
 *.pt
 *.onnx
+
+mcp/learning
 mcp/learning
