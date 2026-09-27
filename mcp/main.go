@@ -30,6 +30,7 @@ func main() {
 	tools.RegisterEventTools(api, mcpServer)
 	tools.RegisterZoneTools(api, mcpServer)
 	tools.RegisterCameraTools(api, mcpServer)
+	tools.RegisterClipTools(api, mcpServer)
 
 	httpServer := server.NewStreamableHTTPServer(
 		mcpServer,

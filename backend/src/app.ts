@@ -9,6 +9,7 @@ import { watchlistRoutes } from "./routes/watchlist";
 import { mediaRoutes } from "./routes/media";
 import { ingressRoutes } from "./routes/ingress";
 import { simRoutes } from "./routes/sim";
+import { clipRoutes } from "./routes/clips";
 
 /**
  * The node's HTTP surface, assembled but not listening.
@@ -43,6 +44,7 @@ export function createApp(): Express {
   app.use(mediaRoutes);
   app.use(ingressRoutes);
   app.use(simRoutes);
+  app.use(clipRoutes);
 
   app.use(notFound);
   app.use(handleErrors);
