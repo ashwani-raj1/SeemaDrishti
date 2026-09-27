@@ -1,7 +1,7 @@
 import { env, envInt, mediaConfig } from "../core/env";
 import { listCameras } from "../l3/cameras";
 import { DEFAULT_SITE } from "../db/seed";
-import { handled, json } from "../http";
+import { Router } from "express";
 
 /**
  * What the media hub is actually serving, right now.
@@ -88,61 +88,67 @@ async function hubPaths(): Promise<{ paths: MediaMtxPath[]; error: string | null
   }
 }
 
-export const mediaRoutes = {
-  "/api/media/cameras": handled(async () => {
-    const { paths, error } = await hubPaths();
-    const { whepBase } = mediaConfig();
-    const seeded = listCameras(DEFAULT_SITE);
-    const seenInHub = new Set<string>();
+/** GET /api/media/cameras */
+export interface MediaCamerasResponse {
+  hub: { url: string; reachable: boolean; error: string | null };
+  cameras: HubCamera[];
+}
 
-    const cameras: HubCamera[] = paths.map((path) => {
-      seenInHub.add(path.name);
-      const row = seeded.find((camera) => camera.id === path.name);
-      const track = path.tracks2?.[0];
-      return {
-        id: path.name,
-        name: row?.name ?? path.name,
-        ready: path.ready === true,
-        readySince: path.readyTime ?? null,
-        readers: Array.isArray(path.readers) ? path.readers.length : 0,
-        width: track?.codecProps?.width ?? null,
-        height: track?.codecProps?.height ?? null,
-        // tracks2 carries structured codec props; `tracks` is the plain list.
-        // Fall back so a hub build that only fills one still shows something.
-        codec: track?.codec ?? path.tracks?.[0] ?? null,
-        whepUrl: `${whepBase}/${path.name}/whep`,
-        seeded: Boolean(row),
-        status: row?.status ?? null,
-        enabled: row ? row.enabled : null,
-      };
+export const mediaRoutes = Router();
+
+mediaRoutes.get("/api/media/cameras", async (_req, res) => {
+  const { paths, error } = await hubPaths();
+  const { whepBase } = mediaConfig();
+  const seeded = listCameras(DEFAULT_SITE);
+  const seenInHub = new Set<string>();
+
+  const cameras: HubCamera[] = paths.map((path) => {
+    seenInHub.add(path.name);
+    const row = seeded.find((camera) => camera.id === path.name);
+    const track = path.tracks2?.[0];
+    return {
+      id: path.name,
+      name: row?.name ?? path.name,
+      ready: path.ready === true,
+      readySince: path.readyTime ?? null,
+      readers: Array.isArray(path.readers) ? path.readers.length : 0,
+      width: track?.codecProps?.width ?? null,
+      height: track?.codecProps?.height ?? null,
+      // tracks2 carries structured codec props; `tracks` is the plain list.
+      // Fall back so a hub build that only fills one still shows something.
+      codec: track?.codec ?? path.tracks?.[0] ?? null,
+      whepUrl: `${whepBase}/${path.name}/whep`,
+      seeded: Boolean(row),
+      status: row?.status ?? null,
+      enabled: row ? row.enabled : null,
+    };
+  });
+
+  // Seeded cameras the hub is not serving. Listed, not hidden: this is what
+  // "the node expects a feed that is not arriving" looks like, and it is a
+  // different problem from a path the hub has that nobody seeded.
+  for (const row of seeded) {
+    if (seenInHub.has(row.id)) continue;
+    cameras.push({
+      id: row.id,
+      name: row.name,
+      ready: false,
+      readySince: null,
+      readers: 0,
+      width: null,
+      height: null,
+      codec: null,
+      whepUrl: `${whepBase}/${row.id}/whep`,
+      seeded: true,
+      status: row.status,
+      enabled: row.enabled,
     });
+  }
 
-    // Seeded cameras the hub is not serving. Listed, not hidden: this is what
-    // "the node expects a feed that is not arriving" looks like, and it is a
-    // different problem from a path the hub has that nobody seeded.
-    for (const row of seeded) {
-      if (seenInHub.has(row.id)) continue;
-      cameras.push({
-        id: row.id,
-        name: row.name,
-        ready: false,
-        readySince: null,
-        readers: 0,
-        width: null,
-        height: null,
-        codec: null,
-        whepUrl: `${whepBase}/${row.id}/whep`,
-        seeded: true,
-        status: row.status,
-        enabled: row.enabled,
-      });
-    }
+  cameras.sort((a, b) => a.name.localeCompare(b.name));
 
-    cameras.sort((a, b) => a.name.localeCompare(b.name));
-
-    return json({
-      hub: { url: apiBase(), reachable: error === null, error },
-      cameras,
-    });
-  }),
-};
+  res.json({
+    hub: { url: apiBase(), reachable: error === null, error },
+    cameras,
+  } satisfies MediaCamerasResponse);
+});

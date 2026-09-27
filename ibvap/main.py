@@ -167,7 +167,7 @@ class CameraWorker:
             run_id=self.run_id,
         )
 
-        interval = 1.0 / max(self.settings.target_fps, 0.1)
+        interval = 1.0 / max(self.settings.target_fps, 30)
         self.started_at = time.monotonic()
         frame_index = 0
         next_tick = time.monotonic()
