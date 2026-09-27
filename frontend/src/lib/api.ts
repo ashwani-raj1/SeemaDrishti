@@ -8,8 +8,12 @@
 import type {
   Action, CameraDetail, CameraIncidents, ChainVerdict, CreateWatchlistInput,
   Decision, DetectVehicleInput, FrameAnalysisResult, Health, HubCameraList, IbvapEvent, Incident,
+  ClipManifest, ClipUsage, IncidentDetail, MonitoringZone, NodeSettings, PlateDetection, Point,
+  ResetCounts, ServerConfig,
+  SimStatus, UpdateWatchlistInput, WatchlistEntry, WatchlistStats,
   IncidentDetail, MonitoringZone, PlateDetection, Point, ServerConfig, SimStatus,
   UpdateWatchlistInput, WatchlistEntry, WatchlistStats,
+  VehicleTrafficSummary,
 } from "./types";
 
 /**
@@ -32,6 +36,20 @@ export const needsReason = (error: unknown): error is ApiError =>
 
 export const isForbidden = (error: unknown): error is ApiError =>
   error instanceof ApiError && error.status === 403;
+
+/** A well-formed request that collides with current state -- e.g. a camera
+ *  that already belongs to another zone. Not the caller's mistake. */
+export const isConflict = (error: unknown): error is ApiError =>
+  error instanceof ApiError && error.status === 409;
+
+/**
+ * Absent rather than broken.
+ *
+ * Some routes exist only on a developer node (`/api/admin/reset`), so a 404 is
+ * the normal answer on a real one and must not be shown as an error.
+ */
+export const isNotFound = (error: unknown): error is ApiError =>
+  error instanceof ApiError && error.status === 404;
 
 let apiBase = "";
 let actorId = "usr_operator";
@@ -90,9 +108,14 @@ const qs = (params: Record<string, unknown>) => {
 export type EventQuery = {
   camera_id?: string;
   zone_id?: string;
+  incident_id?: string;
   severity?: string;
   class?: string;
+  kind?: string;
+  /** Tri-state: leave it out to get both alerted and suppressed events. */
   alertable?: boolean;
+  suppressed_reason?: string;
+  simulated?: boolean;
   since?: string;
   until?: string;
   after_seq?: number;
@@ -104,7 +127,20 @@ export const api = {
   config: () => request<ServerConfig>("/api/config"),
 
   incidents: (
-    params: { status?: string; camera_id?: string; zone_id?: string; limit?: number } = {},
+    params: {
+      status?: string;
+      camera_id?: string;
+      zone_id?: string;
+      /** Event kind: zone_crossing, camera_health, plate_read, reidentification. */
+      kind?: string;
+      severity?: string;
+      /** One class the incident saw. Matches if any of its events did. */
+      class?: string;
+      /** Bounds on last activity, not on when the incident opened. */
+      since?: string;
+      until?: string;
+      limit?: number;
+    } = {},
   ) =>
     request<Incident[]>(`/api/incidents${qs(params)}`),
   incident: (id: string) => request<IncidentDetail>(`/api/incidents/${id}`),
@@ -159,18 +195,68 @@ export const api = {
   zones: () => request<MonitoringZone[]>("/api/zones"),
   zone: (id: string) => request<MonitoringZone>(`/api/zones/${id}`),
 
+  /** The area labels in use, for the new-zone picker. Derived from zones. */
+  zoneAreas: () =>
+    request<{ areas: string[] }>("/api/zones/areas").then((body) => body.areas),
+
+  /**
+   * Create a zone, with every camera's shape and exceptions in the same call.
+   *
+   * `cameras` carries the shapes the wizard drew before the zone existed, so a
+   * zone and the geometry it is judged by are written together or not at all.
+   * A camera sent without `points` joins on the placeholder with `placed`
+   * false, exactly as before.
+   */
   createZone: (body: {
     name: string;
     kind: string;
-    sector?: string | null;
-    cameraIds: string[];
+    area?: string | null;
+    cameras: Array<{
+      cameraId: string;
+      geometry?: string;
+      points?: Point[];
+      direction?: string;
+      confirmSeconds?: number;
+      targets?: Array<{ class: string; severity: string; action: string }>;
+    }>;
     targets: Array<{ class: string; severity: string; action: string }>;
     reason?: string;
   }) => post<MonitoringZone>("/api/zones", body),
 
+  /**
+   * Replace a zone's whole configuration in one call.
+   *
+   * The editing counterpart of `createZone`, and deliberately the same body.
+   * A camera sent WITHOUT `points` keeps whatever shape it already had -- the
+   * wizard sends every camera on every save, so omitting a shape means "not
+   * redrawn", never "un-drawn".
+   */
+  replaceZone: (
+    id: string,
+    body: {
+      name: string;
+      kind: string;
+      area?: string | null;
+      cameras: Array<{
+        cameraId: string;
+        geometry?: string;
+        points?: Point[];
+        direction?: string;
+        confirmSeconds?: number;
+        targets?: Array<{ class: string; severity: string; action: string }>;
+      }>;
+      targets: Array<{ class: string; severity: string; action: string }>;
+      reason?: string;
+    },
+  ) =>
+    request<MonitoringZone>(`/api/zones/${id}`, {
+      method: "PUT",
+      body: JSON.stringify(body),
+    }),
+
   updateZone: (
     id: string,
-    patch: { name?: string; kind?: string; sector?: string | null; active?: boolean; reason?: string },
+    patch: { name?: string; kind?: string; area?: string | null; active?: boolean; reason?: string },
   ) => request<MonitoringZone>(`/api/zones/${id}`, { method: "PATCH", body: JSON.stringify(patch) }),
 
   deleteZone: (id: string, reason: string) =>
@@ -225,6 +311,39 @@ export const api = {
       body: JSON.stringify({ targets, reason }),
     }),
 
+  // ---- developer box only ---------------------------------------------
+  // Absent (404) unless IBVAP_DEBUG is on, which is what a deployed post
+  // gets by saying nothing. The settings page treats the 404 as "this is a
+  // real node" rather than as an error.
+  // ---- node settings ---------------------------------------------------
+  // Reading is open; writing is supervisor-only and leaves an audit row, the
+  // same as a zone edit. The reason is optional but recorded when given.
+
+  settings: () => request<NodeSettings>("/api/settings"),
+
+  updateSettings: (patch: { groupingWindowSeconds?: number; reason?: string }) =>
+    request<NodeSettings>("/api/settings", {
+      method: "PATCH",
+      body: JSON.stringify(patch),
+    }),
+
+  resetPreview: () =>
+    request<{ debug: boolean; counts: ResetCounts }>("/api/admin/reset"),
+
+  reset: (reason: string) =>
+    post<{ ok: true; removed: ResetCounts }>("/api/admin/reset", {
+      confirm: "RESET",
+      reason,
+    }),
+
+  // ---- evidence clips --------------------------------------------------
+  // The manifest is timings and boxes with NO pixels, so a filmstrip costs one
+  // small request; frames are fetched one at a time as images the browser
+  // caches like any other.
+  clip: (id: string) => request<ClipManifest>(`/api/clips/${id}`),
+  clipFrameUrl: (id: string, seq: number) => apiUrl(`/api/clips/${id}/frames/${seq}`),
+  clipUsage: () => request<ClipUsage>("/api/clips"),
+
   sim: () => request<SimStatus>("/api/sim"),
   simStart: (ambient = true) => post<SimStatus>("/api/sim/start", { ambient }),
   simStop: () => post<SimStatus>("/api/sim/stop"),
@@ -242,6 +361,10 @@ export const api = {
   deleteWatchlistEntry: (id: string, reason: string) =>
     request<{ ok: true }>(`/api/watchlist/${id}`, { method: "DELETE", body: JSON.stringify({ reason }) }),
   watchlistStats: () => request<WatchlistStats>("/api/watchlist/stats"),
+  vehicleTraffic: (params: { days?: number; camera_id?: string } = {}) =>
+    request<VehicleTrafficSummary>(`/api/watchlist/traffic${qs(params)}`),
+  recordVehicleTraffic: (body: { sourceKey: string; cameraId: string; vehicleType: string; occurredAt?: string }) =>
+    post<{ recorded: boolean }>("/api/watchlist/traffic", body),
   plateDetections: (params: { match_status?: string; camera_id?: string; plate?: string; limit?: number } = {}) =>
     request<PlateDetection[]>(`/api/watchlist/detections${qs(params)}`),
   detectVehicleAndPlate: (body: DetectVehicleInput) => post<PlateDetection>("/api/watchlist/detect", body),

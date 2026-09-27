@@ -58,10 +58,10 @@ const SERVICES: ServiceTile[] = [
     blurb: "Zone and line crossings",
   },
   {
-    id: "anpr",
-    label: "Number plates",
+    id: "watchlist",
+    label: "Plate watchlist",
     icon: CarFrontIcon,
-    path: "/services/anpr",
+    path: "/watchlist",
     kinds: ["plate_detection"],
     blurb: "Plate reads and watchlist hits",
   },

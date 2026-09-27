@@ -40,7 +40,7 @@ afterAll(() => {
 
 const ORG = "org_bsf";
 const CAMERA = "cam_fence_north";
-const ZONE = "zone_fence_line";
+const ZONE = "zone_perimeter";
 
 const SIZE: [number, number] = [0.045, 0.16];
 
@@ -107,7 +107,7 @@ describe("virtual fence", () => {
     fence.processFrame(frameAt(14, "person", track, 0.4, 0.92));
 
     const evidence = crossingsFor(track)[0]!.evidence;
-    expect(evidence.zone.name).toBe("Fence line north");
+    expect(evidence.zone.name).toBe("BOP perimeter");
     expect(evidence.path.length).toBeGreaterThan(1);
     expect(evidence.confirmSeconds).toBe(2);
     expect(evidence.heldSeconds).toBeGreaterThanOrEqual(2);

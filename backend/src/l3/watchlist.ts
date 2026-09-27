@@ -54,6 +54,17 @@ export interface WatchlistStats {
   readRate: number;
 }
 
+export interface VehicleTrafficPoint {
+  date: string;
+  total: number;
+}
+
+export interface VehicleTrafficSummary {
+  days: number;
+  total: number;
+  points: VehicleTrafficPoint[];
+}
+
 export interface CreateWatchlistInput {
   orgId: string;
   plateNumber: string;
@@ -376,6 +387,69 @@ export function getWatchlistStats(orgId: string): WatchlistStats {
   };
 }
 
+export function recordVehicleTraffic(input: {
+  orgId: string;
+  cameraId: string;
+  sourceKey: string;
+  vehicleType?: string;
+  occurredAt?: string;
+}): { recorded: boolean } {
+  const at = input.occurredAt ?? nowIso();
+  const before = one<{ id: string }>(
+    "SELECT id FROM vehicle_traffic_event WHERE org_id = $org AND source_key = $key",
+    { $org: input.orgId, $key: input.sourceKey },
+  );
+  if (before) return { recorded: false };
+
+  run(
+    `INSERT OR IGNORE INTO vehicle_traffic_event
+       (id, org_id, camera_id, source_key, vehicle_type, occurred_at, created_at)
+     VALUES ($id, $org, $camera, $key, $type, $occurred, $created)`,
+    {
+      $id: id("traffic"),
+      $org: input.orgId,
+      $camera: input.cameraId,
+      $key: input.sourceKey,
+      $type: input.vehicleType ?? "vehicle",
+      $occurred: at,
+      $created: nowIso(),
+    },
+  );
+  return { recorded: true };
+}
+
+export function getVehicleTraffic(
+  orgId: string,
+  options: { days?: number; cameraId?: string } = {},
+): VehicleTrafficSummary {
+  const days = Math.max(1, Math.min(730, Math.floor(options.days ?? 14)));
+  const start = new Date();
+  start.setUTCHours(0, 0, 0, 0);
+  start.setUTCDate(start.getUTCDate() - (days - 1));
+
+  let sql = `SELECT substr(occurred_at, 1, 10) AS date, COUNT(*) AS total
+               FROM vehicle_traffic_event
+              WHERE org_id = $org AND occurred_at >= $since`;
+  const params: Record<string, any> = { $org: orgId, $since: start.toISOString() };
+  if (options.cameraId) {
+    sql += " AND camera_id = $camera";
+    params.$camera = options.cameraId;
+  }
+  sql += " GROUP BY substr(occurred_at, 1, 10) ORDER BY date";
+
+  const counts = new Map(
+    all<{ date: string; total: number }>(sql, params).map((row) => [row.date, Number(row.total)]),
+  );
+  const points: VehicleTrafficPoint[] = [];
+  for (let offset = 0; offset < days; offset++) {
+    const date = new Date(start);
+    date.setUTCDate(start.getUTCDate() + offset);
+    const key = date.toISOString().slice(0, 10);
+    points.push({ date: key, total: counts.get(key) ?? 0 });
+  }
+  return { days, total: points.reduce((sum, point) => sum + point.total, 0), points };
+}
+
 // ------------------------------------------------------------------ Detection & Scanning Engine
 
 export function queryPlateDetections(
@@ -505,7 +579,13 @@ export function processVehicleAndPlateDetection(input: DetectVehicleInput): Plat
         occurredAt: at,
         confidence: plateConfidence,
         rule: `Watchlist hit: ${formattedPlate}`,
-        groupKey: input.zoneId ? `${input.cameraId}:${input.zoneId}` : `${camera.site_id}:plate:${formattedPlate}`,
+        // A flagged vehicle is its own piece of work. This used to fall back
+        // to `${cameraId}:${zoneId}` whenever a zone was known -- which is the
+        // IDENTICAL key ingestIntrusion uses, so once plate reads started
+        // carrying a zone, a watchlist hit and a person crossing the same
+        // camera within the grouping window would silently merge into one
+        // incident and the more severe title would overwrite the other.
+        groupKey: `${input.cameraId}:${input.zoneId ?? "site"}:plate:${formattedPlate}`,
         title: `Flagged vehicle: ${formattedPlate} (${matchResult.entry.flag_reason})`,
         evidence: {
           plateNumber: formattedPlate,
@@ -557,7 +637,7 @@ export const PRESET_DETECTIONS: Record<string, {
     plateNumber: "PB 02 AK 4821",
     vehicleType: "suv",
     cameraId: "cam_fence_north",
-    zoneId: "zone_fence_line",
+    zoneId: "zone_perimeter",
     imageSnapshot: "preset_scorpio_black",
     confidence: 0.95,
     plateConfidence: 0.97,
@@ -568,7 +648,7 @@ export const PRESET_DETECTIONS: Record<string, {
     plateNumber: "PB 02 T 9182",
     vehicleType: "tractor",
     cameraId: "cam_farm_gate",
-    zoneId: "zone_farm_gate",
+    zoneId: "zone_perimeter",
     imageSnapshot: "preset_tractor_blue",
     confidence: 0.91,
     plateConfidence: 0.93,
@@ -579,7 +659,7 @@ export const PRESET_DETECTIONS: Record<string, {
     plateNumber: "DL 1C AA 1111",
     vehicleType: "suv",
     cameraId: "cam_fence_north",
-    zoneId: "zone_fence_line",
+    zoneId: "zone_perimeter",
     imageSnapshot: "preset_fortuner_white",
     confidence: 0.96,
     plateConfidence: 0.98,
@@ -590,7 +670,7 @@ export const PRESET_DETECTIONS: Record<string, {
     plateNumber: "HR 26 DQ 5512",
     vehicleType: "truck",
     cameraId: "cam_patrol_road",
-    zoneId: "zone_patrol_road",
+    zoneId: "zone_perimeter",
     imageSnapshot: "preset_truck_silver",
     confidence: 0.92,
     plateConfidence: 0.94,
@@ -601,7 +681,7 @@ export const PRESET_DETECTIONS: Record<string, {
     plateNumber: "PB 02 AB 1042",
     vehicleType: "tractor",
     cameraId: "cam_farm_gate",
-    zoneId: "zone_farm_gate",
+    zoneId: "zone_perimeter",
     imageSnapshot: "preset_sonalika_red",
     confidence: 0.89,
     plateConfidence: 0.91,
@@ -612,7 +692,7 @@ export const PRESET_DETECTIONS: Record<string, {
     plateNumber: "PB 02 E 3391",
     vehicleType: "car",
     cameraId: "cam_patrol_road",
-    zoneId: "zone_patrol_road",
+    zoneId: "zone_perimeter",
     imageSnapshot: "preset_bolero_white",
     confidence: 0.97,
     plateConfidence: 0.96,
@@ -623,7 +703,7 @@ export const PRESET_DETECTIONS: Record<string, {
     plateNumber: "MH 12 BB 8892",
     vehicleType: "car",
     cameraId: "cam_fence_north",
-    zoneId: "zone_fence_line",
+    zoneId: "zone_perimeter",
     imageSnapshot: "preset_creta_red",
     confidence: 0.96,
     plateConfidence: 0.97,
@@ -634,7 +714,7 @@ export const PRESET_DETECTIONS: Record<string, {
     plateNumber: "PB 08 BX 7744",
     vehicleType: "car",
     cameraId: "cam_patrol_road",
-    zoneId: "zone_patrol_road",
+    zoneId: "zone_perimeter",
     imageSnapshot: "preset_brezza_blue",
     confidence: 0.95,
     plateConfidence: 0.96,
@@ -645,7 +725,7 @@ export const PRESET_DETECTIONS: Record<string, {
     plateNumber: "RJ 14 XY 3319",
     vehicleType: "truck",
     cameraId: "cam_fence_north",
-    zoneId: "zone_fence_line",
+    zoneId: "zone_perimeter",
     imageSnapshot: "preset_eicher_white",
     confidence: 0.93,
     plateConfidence: 0.95,
@@ -656,7 +736,7 @@ export const PRESET_DETECTIONS: Record<string, {
     plateNumber: "UP 16 CZ 9021",
     vehicleType: "car",
     cameraId: "cam_farm_gate",
-    zoneId: "zone_farm_gate",
+    zoneId: "zone_perimeter",
     imageSnapshot: "preset_nexon_silver",
     confidence: 0.94,
     plateConfidence: 0.95,

@@ -73,11 +73,13 @@ function describe(module: string, track: LiveTrack): { detail: string; pending: 
   if (module === "multi_human") {
     const extra = track.extra as PeopleExtra;
     const age = extra.age_seconds ? `${extra.age_seconds.toFixed(0)}s in frame` : "new track";
-    // `matched_ref` says which earlier TRACK this resembles. It is never an
-    // identity, and the wording here must not imply one.
+    // `person_id` is a colour-appearance match (modules/reid.py's
+    // HistogramReID), gated on motion plausibility -- real evidence, never a
+    // name or a face. Unset while a new track is still in its confirmation
+    // window (multi_human.py's PENDING_FRAMES), which is what `pending` says.
     return {
-      detail: extra.matched_ref ? `${age} · resembles ${extra.matched_ref}` : age,
-      pending: false,
+      detail: extra.person_id ? `${age} · ${extra.person_id}` : age,
+      pending: !extra.person_id,
     };
   }
 

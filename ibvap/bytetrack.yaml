@@ -1,0 +1,28 @@
+# IBVAP's own ByteTrack tuning.
+#
+# WHY THIS FILE EXISTS: ultralytics' bundled default sets track_buffer: 30 --
+# the number of model.track() CALLS a lost track is kept alive for, which on
+# this service is 30 PROCESSED frames, not source-video frames. At
+# IBVAP_TARGET_FPS=6 (core/detection.py's cadence) that is 5 seconds of
+# occlusion tolerance before ByteTrack gives up and the next detection starts
+# a brand new track id -- short enough that a subject passing behind a pillar,
+# a passing vehicle, or a few seconds out of frame routinely comes back as a
+# "new person". Bumped to 90 calls (15s at 6fps) so ByteTrack's own
+# motion/IoU re-association -- which costs nothing extra, no appearance model
+# involved -- covers most everyday occlusions by itself.
+#
+# This is the FREE fix and the first line of defense. It only works within its
+# buffer window and only while ByteTrack can still plausibly associate the
+# reappearing box by position -- a longer gap, or the subject leaving the
+# frame and re-entering somewhere else, needs appearance matching instead,
+# which is modules/reid.py's job (multi_human's `reid: histogram` provider by
+# default -- see its docstring for what it can and cannot do).
+#
+# Docs: https://docs.ultralytics.com/modes/track/
+tracker_type: bytetrack
+track_high_thresh: 0.25
+track_low_thresh: 0.1
+new_track_thresh: 0.25
+track_buffer: 90
+match_thresh: 0.8
+fuse_score: true

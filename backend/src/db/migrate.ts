@@ -43,11 +43,153 @@ function addColumn(db: Database, table: string, column: string, definition: stri
   console.log(`added ${table}.${column}`);
 }
 
+
+/**
+ * One camera, one zone: retire the duplicate bindings an older database has.
+ *
+ * MUST RUN BEFORE `schema.sql`. That file is applied whole on every boot, and
+ * its `CREATE UNIQUE INDEX zone_camera_one_zone` THROWS if duplicates already
+ * exist -- at module-import time, so the node would not boot and every test
+ * file that imports `../db` would die with it. The seeded data itself has a
+ * camera in two zones, so this is not a hypothetical.
+ *
+ * Rows are retired (`active = 0`), never deleted: past events point at them,
+ * and their target overrides come back if the camera rejoins that zone.
+ *
+ * Which binding survives, in order: the one somebody actually DREW, then the
+ * most recently touched, then the lowest id. Deterministic on purpose -- a
+ * developer's laptop and a fresh checkout must agree, and so must two runs of
+ * this function.
+ */
+function enforceOneZonePerCamera(db: Database): void {
+  // migrateBefore also runs against a :memory: database with no tables at all.
+  if (!tableExists(db, "zone_camera")) return;
+
+  const losers = db
+    .query(
+      `SELECT id, zone_id, camera_id FROM zone_camera zc
+        WHERE active = 1
+          AND id != (SELECT k.id FROM zone_camera k
+                      WHERE k.camera_id = zc.camera_id AND k.active = 1
+                      ORDER BY k.placed DESC, k.updated_at DESC, k.id ASC
+                      LIMIT 1)`,
+    )
+    .all() as Array<{ id: string; zone_id: string; camera_id: string }>;
+
+  for (const row of losers) {
+    db.query("UPDATE zone_camera SET active = 0, updated_at = $at WHERE id = $id").run({
+      $at: nowIso(),
+      $id: row.id,
+    });
+    detachments.push({ zoneId: row.zone_id, cameraId: row.camera_id, bindingId: row.id });
+    console.log(`[migrate] detached ${row.camera_id} from ${row.zone_id}: one camera, one zone`);
+  }
+}
+
+/**
+ * Bindings this migration retired, for the audit row `server.ts` writes.
+ *
+ * Not recorded here: `l3/audit.ts` imports `../db`, which is the module
+ * currently being constructed, so calling recordAction from inside a migration
+ * is an import cycle. A change to what is being watched belongs in the hash
+ * chain, so it is emitted from server.ts instead, immediately after seed().
+ */
+export interface Detachment {
+  zoneId: string;
+  cameraId: string;
+  bindingId: string;
+}
+export const detachments: Detachment[] = [];
+
+/**
+ * `zone.sector` became `zone.area`.
+ *
+ * Two unrelated things were called "sector": the post a camera belongs to
+ * (`camera.sector` = "bop_attari") and the stretch of ground a zone was cut
+ * from. Same word, same console, different meaning -- and the zone one also
+ * used to be an id into a hardcoded polygon list that no longer exists, so its
+ * old values are labels now whether they were meant to be or not.
+ *
+ * `CREATE TABLE IF NOT EXISTS` never touches a database that already has
+ * `zone`, so a running post would otherwise come back with `area` missing and
+ * every zone's label stranded in a column nothing reads. Copy, then drop.
+ *
+ * The drop is guarded: on a SQLite too old for `DROP COLUMN` the spare column
+ * is dead weight, which is a much better outcome than a node that will not
+ * boot. Nothing reads `sector` after this.
+ */
+function renameZoneSectorToArea(db: Database): void {
+  if (!tableExists(db, "zone")) return;
+  if (!hasColumn(db, "zone", "sector")) return;
+
+  addColumn(db, "zone", "area", "TEXT");
+  // `area IS NULL` so re-running cannot overwrite a label somebody has since
+  // edited with the stale value the old column still holds.
+  const moved = db.run("UPDATE zone SET area = sector WHERE area IS NULL AND sector IS NOT NULL");
+  console.log(`zone.sector -> zone.area (${moved.changes} carried across)`);
+
+  try {
+    db.exec("ALTER TABLE zone DROP COLUMN sector");
+  } catch (cause) {
+    console.warn(`zone.sector left in place, unused: ${(cause as Error).message}`);
+  }
+}
+
+/**
+ * Give incidents that predate the column a number.
+ *
+ * Oldest first, so the numbering matches the order they actually happened in.
+ * An operator reading a handover note expects #12 to have opened before #40,
+ * and numbering by insertion order of a backfill query would make that false
+ * for every incident recorded before this shipped.
+ *
+ * Only rows with no number, so this is a no-op on every boot after the first
+ * and cannot renumber an incident somebody has already written down.
+ */
+function backfillIncidentNumbers(db: Database): void {
+  if (!tableExists(db, "incident")) return;
+  if (!hasColumn(db, "incident", "number")) return;
+
+  const rows = db
+    .query("SELECT id, org_id FROM incident WHERE number IS NULL ORDER BY opened_at ASC, rowid ASC")
+    .all() as Array<{ id: string; org_id: string }>;
+  if (rows.length === 0) return;
+
+  const next = new Map<string, number>();
+  const update = db.query("UPDATE incident SET number = $number WHERE id = $id");
+
+  for (const row of rows) {
+    if (!next.has(row.org_id)) {
+      const top = db
+        .query("SELECT COALESCE(MAX(number), 0) AS n FROM incident WHERE org_id = $org")
+        .get({ $org: row.org_id }) as { n: number } | null;
+      next.set(row.org_id, (top?.n ?? 0) + 1);
+    }
+    const number = next.get(row.org_id)!;
+    update.run({ $number: number, $id: row.id });
+    next.set(row.org_id, number + 1);
+  }
+  console.log(`numbered ${rows.length} existing incident(s)`);
+}
+
 /**
  * Before the schema runs: if `zone` is still the old single-camera shape, move
  * it aside so the new definition can be created under the same name.
  */
 export function migrateBefore(db: Database): boolean {
+  // Before both early returns below: they fire for any database that is
+  // already on the new shape, which is every database that needs this.
+  enforceOneZonePerCamera(db);
+
+  // Views are definitions, not data, so the cheapest correct thing is to throw
+  // them away and let schema.sql rebuild them from the current source on every
+  // boot. `CREATE VIEW IF NOT EXISTS` does the opposite: it silently keeps
+  // whatever an older build created, so a column added to `incident_state`
+  // would appear on a fresh checkout and be missing on the machine that has
+  // been running all week -- with the only symptom a filter that returns
+  // nothing.
+  db.exec("DROP VIEW IF EXISTS incident_state");
+
   if (!tableExists(db, "zone")) return false;
   if (!hasColumn(db, "zone", "camera_id")) return false; // already migrated
 
@@ -90,6 +232,22 @@ export function migrateAfter(db: Database): void {
   // Columns first: these apply whether or not there is a legacy zone table.
   addColumn(db, "camera", "enabled", "INTEGER NOT NULL DEFAULT 1");
   addColumn(db, "camera", "updated_at", "TEXT");
+  // The frame a crossing was judged on. Nullable with no default, so every
+  // event already on disk keeps its meaning: "no picture was ever taken",
+  // which is exactly what was true before the vision service started sending
+  // one.
+  addColumn(db, "event", "thumbnail", "TEXT");
+  // The incident grouping window, which used to be a constant in l3/events.ts.
+  // The default is the value that constant held, so a node that upgrades keeps
+  // grouping exactly as it did until somebody deliberately changes it.
+  addColumn(db, "organisation", "grouping_window_seconds", "INTEGER NOT NULL DEFAULT 300");
+  // Clips are the first thing this node stores that is large enough for
+  // retention to matter. 7 days, not the 30 of  above -- see
+  // DEFAULT_CLIP_RETENTION_DAYS in l3/settings.ts for why they differ.
+  addColumn(db, "organisation", "clip_retention_days", "INTEGER NOT NULL DEFAULT 7");
+  addColumn(db, "incident", "number", "INTEGER");
+  backfillIncidentNumbers(db);
+  renameZoneSectorToArea(db);
 
   if (!tableExists(db, LEGACY)) return;
 
@@ -106,7 +264,7 @@ export function migrateAfter(db: Database): void {
       if (!site) continue;
 
       db.query(
-        `INSERT INTO zone (id, org_id, site_id, name, kind, sector, active, created_at, updated_at)
+        `INSERT INTO zone (id, org_id, site_id, name, kind, area, active, created_at, updated_at)
          VALUES ($id, $org, $site, $name, $kind, NULL, $active, $created, $updated)`,
       ).run({
         $id: old.id,

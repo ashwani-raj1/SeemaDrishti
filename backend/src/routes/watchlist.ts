@@ -9,9 +9,11 @@ import {
   deleteWatchlistEntry,
   getWatchlistEntry,
   getWatchlistStats,
+  getVehicleTraffic,
   listWatchlist,
   processVehicleAndPlateDetection,
   queryPlateDetections,
+  recordVehicleTraffic,
   simulatePresetPlateDetection,
   updateWatchlistEntry,
 } from "../l3/watchlist";
@@ -52,6 +54,14 @@ export interface DetectBody {
   plateBbox?: Box;
   imageSnapshot?: string | null;
   simulated?: boolean;
+}
+
+/** POST /api/watchlist/traffic */
+export interface TrafficBody {
+  sourceKey?: string;
+  cameraId?: string;
+  vehicleType?: string;
+  occurredAt?: string;
 }
 
 /** POST /api/watchlist/simulate */
@@ -114,6 +124,32 @@ watchlistRoutes.post("/api/watchlist", (req, res) => {
 
 watchlistRoutes.get("/api/watchlist/stats", (_req, res) => {
   res.json(getWatchlistStats(DEFAULT_ORG));
+});
+
+watchlistRoutes.get("/api/watchlist/traffic", (req, res) => {
+  const params = query<"days" | "camera_id">(req);
+  res.json(
+    getVehicleTraffic(DEFAULT_ORG, {
+      days: num(params.days, 14),
+      cameraId: params.camera_id,
+    }),
+  );
+});
+
+watchlistRoutes.post("/api/watchlist/traffic", (req, res) => {
+  const body = readJson<TrafficBody>(req);
+  if (!body.sourceKey || typeof body.sourceKey !== "string") {
+    throw new BadRequest("sourceKey is required");
+  }
+  res.status(201).json(
+    recordVehicleTraffic({
+      orgId: DEFAULT_ORG,
+      cameraId: body.cameraId ?? "cam_fence_north",
+      sourceKey: body.sourceKey,
+      vehicleType: body.vehicleType ?? "vehicle",
+      occurredAt: body.occurredAt,
+    }),
+  );
 });
 
 watchlistRoutes.get("/api/watchlist/detections", (req, res) => {

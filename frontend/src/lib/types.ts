@@ -86,6 +86,17 @@ export interface Zone {
   logOnlyClasses: string[];
   severity: Severity;
   active: boolean;
+  /**
+   * True when nobody has drawn this shape against this camera's view -- it is
+   * the stock placeholder handed out when the camera joined the zone. The node
+   * records crossings of it and never alerts on them.
+   *
+   * `provisional === !placed` on ZoneCamera. Two words for one bit, kept apart
+   * on purpose: `placed` is the editor's question ("has a supervisor
+   * positioned this?"), `provisional` is the detector's ("is this a shape
+   * nobody chose?"). Same answer, different reader.
+   */
+  provisional: boolean;
 }
 
 /** One camera's membership of a zone, as the zone screen sees it. */
@@ -111,7 +122,8 @@ export interface MonitoringZone {
   siteId: string;
   name: string;
   kind: ZoneKind;
-  sector: string | null;
+  /** Free-text label grouping zones on the same stretch of ground. */
+  area: string | null;
   active: boolean;
   createdAt: string;
   updatedAt: string;
@@ -167,12 +179,78 @@ export interface MediaConfig {
   boxesUrl: string;
 }
 
+/**
+ * Node behaviour an operator can change, and the console has to be able to
+ * explain. Kept apart from `Organisation` because these are settings somebody
+ * tunes during a shift, not facts about who is running the post.
+ */
+export interface NodeSettings {
+  /**
+   * How long an incident stays open to new events sharing its group key.
+   *
+   * This is the answer to "why are these two crossings one incident". The
+   * console shows it next to the incident list for that reason.
+   */
+  groupingWindowSeconds: number;
+  /**
+   * How many days of evidence clips to keep before the sweep takes them.
+   *
+   * Shorter than the record's own retention on purpose: an event is a few
+   * hundred bytes, a clip about a megabyte. See `l3/settings.ts`.
+   */
+  clipRetentionDays: number;
+}
+
+/** The camera an incident came from, as its own field on the detail response. */
+export interface IncidentCamera {
+  cameraId: string;
+  cameraName: string | null;
+  status: CameraStatus | null;
+  enabled: boolean;
+  /** The camera was deleted after this incident was recorded. */
+  removed: boolean;
+}
+
+/** A clip's filmstrip: every frame's timing and boxes, and no pixels. */
+export interface ClipManifest {
+  id: string;
+  cameraId: string | null;
+  at: string;
+  /** The rate these frames were ACTUALLY captured at, not the configured target. */
+  fps: number;
+  frameCount: number;
+  bytes: number;
+  simulated: boolean;
+  createdAt: string;
+  frames: Array<{
+    seq: number;
+    /** Seconds relative to the crossing: negative before, positive after. */
+    offset: number;
+    boxes: Array<{
+      class?: string;
+      confidence?: number;
+      /** Normalised [x1, y1, x2, y2], as the live overlay draws them. */
+      bbox?: [number, number, number, number];
+      track_ref?: string;
+    }>;
+  }>;
+}
+
+/** What clips are costing this node, for the settings page. */
+export interface ClipUsage {
+  clips: number;
+  frames: number;
+  bytes: number;
+  oldest: string | null;
+}
+
 export interface ServerConfig {
   org: Organisation;
   site: Site;
   users: AppUser[];
   cameras: Camera[];
   media?: MediaConfig;
+  settings: NodeSettings;
 }
 
 /** What the explain overlay (#21) draws from. All coordinates normalised 0..1. */
@@ -193,6 +271,19 @@ export interface Evidence {
   confirmSeconds?: number;
   /** What the track actually held for. Shown side by side with the above. */
   heldSeconds?: number;
+  /** The crossing was judged against a shape nobody drew (see Zone). */
+  provisional?: boolean;
+  /** The evidence clip cut around this crossing, when one was recorded. */
+  clipId?: string | null;
+  /**
+   * The frame half of the two-clock confirm rule; `confirmSeconds` is the
+   * other. A crossing must satisfy both, so quoting one without the other
+   * hides which of the two actually held it back.
+   */
+  confirmFrames?: number;
+  heldFrames?: number;
+  /** Which module judged it. */
+  detector?: string;
   [key: string]: unknown;
 }
 
@@ -215,10 +306,27 @@ export interface IbvapEvent {
   occurredAt: string;
   receivedAt: string;
   evidence: Evidence;
+  /**
+   * True when the vision service sent a frame with this event.
+   *
+   * A flag rather than the image: the picture is fetched one at a time from
+   * `/api/events/:id/thumbnail`, so a list of fifty events stays a list of
+   * fifty rows rather than a megabyte of JPEG. False is normal and common --
+   * the simulator sends none and a lost-track event has no frame to cut.
+   */
+  hasThumbnail?: boolean;
+  /**
+   * The incident this event was grouped into. The node has always sent it --
+   * this mirror simply omitted it, which is the drift this file's docstring
+   * warns about. It is what makes a row in a search clickable.
+   */
+  incidentId: string | null;
 }
 
 export interface Incident {
   id: string;
+  /** The number an operator says out loud. Null only on an un-backfilled row. */
+  number?: number | null;
   title: string;
   severity: Severity;
   status: IncidentStatus;
@@ -227,6 +335,33 @@ export interface Incident {
   openedAt: string;
   lastEventAt: string;
   eventCount: number;
+  /**
+   * What kind of thing this is, from its own events rather than its title.
+   *
+   * `zone_crossing`, `camera_health`, `plate_read`, `reidentification`. Null
+   * only for an incident whose events have somehow gone, which the append-only
+   * log makes close to impossible.
+   */
+  kind?: string | null;
+  /** Every class seen in this incident. Empty for e.g. a camera going quiet. */
+  classes?: string[];
+  /**
+   * True when ANY event in here raised an alert.
+   *
+   * An incident exists for every event, alertable or not, so this is the
+   * difference between "the system recorded it" and "the system asked for a
+   * human" -- and the queue has to be able to show only the second.
+   */
+  alertable?: boolean;
+}
+
+/** What a developer-box reset would remove, or did. */
+export interface ResetCounts {
+  events: number;
+  incidents: number;
+  alerts: number;
+  trackedThings: number;
+  plateDetections: number;
 }
 
 export interface Action {
@@ -276,6 +411,8 @@ export interface CrossReference {
 export interface IncidentDetail {
   incident: Incident;
   events: IbvapEvent[];
+  /** The source camera. Null for an incident with no camera at all. */
+  camera: IncidentCamera | null;
   actions: Action[];
   crossReference: CrossReference;
 }
@@ -285,7 +422,7 @@ export interface CameraZone {
   id: string;
   name: string;
   kind: ZoneKind;
-  sector: string | null;
+  area: string | null;
   geometry: ZoneGeometry;
   points: Point[];
   direction: Direction | "both";
@@ -379,6 +516,9 @@ export interface PlateDetection {
   vehicle_type: string;
   confidence: number;
   plate_confidence: number;
+  /** `llm` is an unverified visual estimate, never an automatic match. */
+  plate_source?: "ocr" | "llm";
+  plate_verified?: boolean;
   matched_watchlist_id: string | null;
   matched_entry?: WatchlistEntry | null;
   match_status: "MATCHED" | "CLEAR" | "UNVERIFIED";
@@ -399,6 +539,17 @@ export interface WatchlistStats {
   scans24h: number;
   matches24h: number;
   readRate: number;
+}
+
+export interface VehicleTrafficPoint {
+  date: string;
+  total: number;
+}
+
+export interface VehicleTrafficSummary {
+  days: number;
+  total: number;
+  points: VehicleTrafficPoint[];
 }
 
 export interface CreateWatchlistInput {

@@ -44,6 +44,25 @@ export const envInt = (key: string, fallback: number): number => {
 };
 
 /**
+ * Is this node running as a developer's box rather than a post?
+ *
+ * OFF UNLESS SOMEBODY TURNED IT ON, and off is the value a deployment gets by
+ * saying nothing. A flag that defaults to "developer" is a flag that ships
+ * enabled, and the thing it gates here is the one operation that empties the
+ * tamper-evident event log.
+ *
+ * Read on every call rather than captured at import, so flipping it in `.env`
+ * takes effect on the next request instead of the next restart -- and so a test
+ * can turn it on for one case without leaking into the rest of the file.
+ *
+ * `IBVAP_DEBUG=1` in the repo-root `.env`.
+ */
+export const debugMode = (): boolean => {
+  const raw = env("IBVAP_DEBUG", "").toLowerCase();
+  return raw === "1" || raw === "true" || raw === "yes";
+};
+
+/**
  * Where the console fetches video and live boxes.
  *
  * Deliberately addresses, never credentials. A real camera's RTSP URL carries

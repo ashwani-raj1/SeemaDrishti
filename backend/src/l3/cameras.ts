@@ -27,7 +27,7 @@ export interface CameraRow {
 /** The zones this camera watches, with its own shape in each. */
 function zonesOf(cameraId: string) {
   return all<any>(
-    `SELECT z.id, z.name, z.kind, z.sector, zc.geometry, zc.points, zc.direction,
+    `SELECT z.id, z.name, z.kind, z.area, zc.geometry, zc.points, zc.direction,
             zc.confirm_seconds, zc.placed
        FROM zone_camera zc
        JOIN zone z ON z.id = zc.zone_id
@@ -40,7 +40,7 @@ function zonesOf(cameraId: string) {
       id: row.id,
       name: row.name,
       kind: row.kind,
-      sector: row.sector,
+      area: row.area,
       geometry: row.geometry,
       points: JSON.parse(row.points),
       direction: row.direction,

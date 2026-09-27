@@ -123,6 +123,23 @@ def crossing_of(
 
     before = side_for_zone(geometry, points, frm)
     after = side_for_zone(geometry, points, to)
+    if after == 0:
+        # Standing ON the line. `_sign` is tri-state, so 0 means "no side
+        # established yet" — NOT a side, and not a crossing. The old code fell
+        # through to `after == 1 ? inbound : outbound` and so called every
+        # on-line landing OUTBOUND regardless of which way the subject walked.
+        #
+        # This is not rare enough to ignore: a ground point is `ny1 + nh`, i.e.
+        # pixel-quantised, so a horizontal zone on a 480-row frame is hit
+        # exactly by 1 row in 480 — and the failure was silent and toward a
+        # MISSED intrusion, which is the one direction this system must not
+        # fail in.
+        #
+        # Nothing is lost by waiting. The crossing fires on the next frame,
+        # from the side the subject actually reached, with the right direction:
+        # `before == 0 -> after == ±1` still reports it, because
+        # `segments_cross` holds there (d1 == 0, d2 == ±1, so d1 != d2).
+        return None
     if before == after:
         return None  # grazed a vertex without changing side
     return "inbound" if after == 1 else "outbound"

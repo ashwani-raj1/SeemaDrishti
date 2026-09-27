@@ -29,6 +29,10 @@ const zone = (over: Partial<Zone>): Zone => ({
     { class: "cattle", severity: "INFO", action: "log_only", priority: 2 },
   ],
   active: true,
+  // These are geometry tests: the shape is given, so it is a drawn one.
+  // Provisional (placed: false) suppression is judgement, and is covered in
+  // zones.test.ts rather than here.
+  placed: true,
   ...over,
 });
 

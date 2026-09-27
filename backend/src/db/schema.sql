@@ -19,6 +19,14 @@ CREATE TABLE IF NOT EXISTS organisation (
   name           TEXT NOT NULL,
   code           TEXT NOT NULL UNIQUE,
   retention_days INTEGER NOT NULL DEFAULT 30,
+  -- How long an incident stays open to new events sharing its group key.
+  -- Post-tunable because the right answer is a property of the ground, not of
+  -- the software: a gate where vehicles queue wants a longer window than a
+  -- fence line in open country, and getting it wrong shows up either as one
+  -- incident swallowing a second genuine intrusion or as forty incidents for
+  -- one person walking a fence. Changed only through `/api/settings`, which
+  -- writes an audit row -- see `l3/settings.ts`.
+  grouping_window_seconds INTEGER NOT NULL DEFAULT 300,
   created_at     TEXT NOT NULL
 );
 
@@ -65,9 +73,17 @@ CREATE TABLE IF NOT EXISTS zone (
   site_id    TEXT NOT NULL REFERENCES site(id),
   name       TEXT NOT NULL,
   kind       TEXT NOT NULL,          -- fence_line|gate|waterline|perimeter|pass|restricted_area
-  -- The named area this zone was cut from, kept so the console can show where
-  -- it came from. Advisory only; nothing in judgement reads it.
-  sector     TEXT,
+  -- A free-text label grouping zones that belong to the same stretch of ground
+  -- ("Fence line north"). Advisory only; nothing in judgement reads it.
+  --
+  -- Called `area` and not `sector` on purpose: `camera.sector` already means
+  -- the POST a camera belongs to ("bop_attari"), and one word meaning two
+  -- things was a standing source of confusion in the console.
+  --
+  -- There is no `area` table. The set of areas is whatever DISTINCT values the
+  -- live zones carry, so an area cannot outlive the last zone that used it and
+  -- there is no second list to keep in step.
+  area       TEXT,
   active     INTEGER NOT NULL DEFAULT 1,
   created_at TEXT NOT NULL,
   updated_at TEXT NOT NULL
@@ -100,6 +116,23 @@ CREATE TABLE IF NOT EXISTS zone_camera (
 );
 
 CREATE INDEX IF NOT EXISTS zone_camera_by_camera ON zone_camera(camera_id, active);
+
+-- A camera belongs to exactly ONE zone at a time.
+--
+-- A zone may still span many cameras -- the fence line seen from two angles is
+-- one place, and siblingCameras()/crossReference() depend on that. What this
+-- forbids is the other direction: one camera carrying several zones, and so
+-- several shapes.
+--
+-- PARTIAL, on `active`, because a binding is retired by setting active = 0 and
+-- never deleted: past events still point at it, and re-adding the camera has
+-- to find its old target overrides waiting. A plain UNIQUE(camera_id) would
+-- make a camera unusable the moment it had ever left a zone.
+--
+-- Enforced at the API too (requireFreeCameras in routes/zones.ts) so the caller
+-- gets a 409 naming the zone that holds it, rather than a raw constraint error.
+CREATE UNIQUE INDEX IF NOT EXISTS zone_camera_one_zone
+  ON zone_camera(camera_id) WHERE active = 1;
 
 -- What must be detected against here, in the order it matters.
 --
@@ -174,6 +207,17 @@ CREATE TABLE IF NOT EXISTS event (
   occurred_at       TEXT NOT NULL,
   received_at       TEXT NOT NULL,          -- differs from occurred_at when a link was down
   evidence          TEXT NOT NULL DEFAULT '{}',
+  -- A base64 JPEG of the subject, cut from the frame this was judged on by
+  -- `ibvap/core/thumbnail.py`. NULL is normal and always survivable: the
+  -- simulator posts no picture, a lost-track event has no current frame, and
+  -- the console falls back to drawing the geometry.
+  --
+  -- Stored inline rather than as a file on disk because a BOP's evidence has
+  -- to move as one thing: a row that references a picture the backup did not
+  -- take is a row that lies. At a few tens of KB on confirmed crossings only,
+  -- the column stays smaller than the video of the same second would be. It is
+  -- never SELECTed by the list queries -- see `EVENT_COLUMNS`.
+  thumbnail         TEXT,
   incident_id       TEXT
 );
 
@@ -190,6 +234,9 @@ BEGIN SELECT RAISE(ABORT, 'event log is append-only'); END;
 -- is no `status` column: see `incident_state` below.
 CREATE TABLE IF NOT EXISTS incident (
   id            TEXT PRIMARY KEY,
+  -- A number a human can say over a radio. Per org, assigned on insert; see
+  -- attachIncident in l3/events.ts for why it is not AUTOINCREMENT.
+  number        INTEGER,
   org_id        TEXT NOT NULL,
   site_id       TEXT NOT NULL,
   camera_id     TEXT,
@@ -276,8 +323,70 @@ SELECT
     ORDER BY a.seq DESC
     LIMIT 1
   ), 'OPEN') AS status,
-  (SELECT COUNT(*) FROM event e WHERE e.incident_id = i.id) AS event_count
+  (SELECT COUNT(*) FROM event e WHERE e.incident_id = i.id) AS event_count,
+  -- What KIND of thing this is: zone_crossing, camera_health, plate_read.
+  -- Taken from the incident's own events rather than parsed out of the title,
+  -- which is prose and changes. Grouping is by `group_key`, which pins the
+  -- camera, zone and rule, so an incident's events share a kind in practice --
+  -- the newest is taken so a shape that changed underneath cannot leave the
+  -- filter pointing at what this used to be.
+  (SELECT e.kind FROM event e WHERE e.incident_id = i.id
+    ORDER BY e.seq DESC LIMIT 1) AS kind,
+  -- Every class seen in this incident, comma-separated. An operator filtering
+  -- the queue thinks "show me the people, not the cattle" long before they
+  -- think about event kinds, and one incident can hold both.
+  (SELECT GROUP_CONCAT(DISTINCT e.class) FROM event e
+    WHERE e.incident_id = i.id AND e.class IS NOT NULL) AS classes,
+  -- Did anything in here actually raise an alert? An incident exists for every
+  -- event, alertable or not, so "recorded" and "shouted about" are different
+  -- questions and the queue has to be able to ask the second one.
+  (SELECT MAX(e.alertable) FROM event e WHERE e.incident_id = i.id) AS alertable
 FROM incident i;
+
+-- ---------------------------------------------------------------- evidence clips
+--
+-- The seconds either side of a confirmed crossing, as the frames the detector
+-- actually judged. Not video: `ibvap/core/clip.py` explains why, and why this
+-- does not contradict the "never video" line in section 8 (that is about what
+-- syncs UPSTREAM over a BOP uplink; these stay on the node and serve the
+-- console over the LAN).
+--
+-- A clip is EVIDENCE, NOT THE RECORD. The event is the record and is
+-- append-only; a clip is the picture attached to it. So there is no
+-- append-only trigger here and there IS a retention sweep: losing a clip to
+-- retention costs a picture, and the event it belonged to is still there
+-- saying what happened.
+CREATE TABLE IF NOT EXISTS clip (
+  id          TEXT PRIMARY KEY,          -- minted by the worker, see core/clip.py
+  org_id      TEXT NOT NULL,
+  camera_id   TEXT,
+  -- The crossing this was cut around, as the worker's wall clock saw it.
+  at          TEXT NOT NULL,
+  -- The rate these frames were ACTUALLY captured at, not the configured target.
+  -- The console shows this to the operator, so a wrong one is a lie about the
+  -- evidence rather than a cosmetic slip.
+  fps         REAL NOT NULL DEFAULT 0,
+  frame_count INTEGER NOT NULL DEFAULT 0,
+  bytes       INTEGER NOT NULL DEFAULT 0,
+  simulated   INTEGER NOT NULL DEFAULT 0,
+  created_at  TEXT NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS clip_by_age ON clip(created_at);
+
+-- One row per frame, which is what makes a scrubber a lookup rather than a
+-- parse: the console asks for frame N and gets exactly that, and the filmstrip
+-- is the manifest without the pixels.
+CREATE TABLE IF NOT EXISTS clip_frame (
+  clip_id     TEXT NOT NULL REFERENCES clip(id),
+  seq         INTEGER NOT NULL,
+  -- Seconds relative to the crossing: negative before, positive after. Lets
+  -- the console place the playhead without knowing the wall clock.
+  offset_s    REAL NOT NULL,
+  jpeg        TEXT NOT NULL,             -- base64, same as event.thumbnail
+  boxes       TEXT NOT NULL DEFAULT '[]',
+  PRIMARY KEY (clip_id, seq)
+);
 
 -- ---------------------------------------------------------------- vehicle & plate watchlist (#36)
 
@@ -323,4 +432,23 @@ CREATE TABLE IF NOT EXISTS plate_detection (
 CREATE INDEX IF NOT EXISTS plate_detection_by_time  ON plate_detection(occurred_at DESC);
 CREATE INDEX IF NOT EXISTS plate_detection_by_plate ON plate_detection(plate_number);
 CREATE INDEX IF NOT EXISTS plate_detection_by_match ON plate_detection(match_status, occurred_at DESC);
+
+-- One row per uniquely tracked vehicle visit. Unlike `plate_detection`, this
+-- also records vehicles whose registration plate was unreadable, so traffic
+-- totals do not silently become OCR-success totals.
+CREATE TABLE IF NOT EXISTS vehicle_traffic_event (
+  id           TEXT PRIMARY KEY,
+  org_id       TEXT NOT NULL,
+  camera_id    TEXT NOT NULL REFERENCES camera(id),
+  source_key   TEXT NOT NULL,
+  vehicle_type TEXT NOT NULL DEFAULT 'vehicle',
+  occurred_at  TEXT NOT NULL,
+  created_at   TEXT NOT NULL,
+  UNIQUE(org_id, source_key)
+);
+
+CREATE INDEX IF NOT EXISTS vehicle_traffic_by_time
+  ON vehicle_traffic_event(org_id, occurred_at DESC);
+CREATE INDEX IF NOT EXISTS vehicle_traffic_by_camera
+  ON vehicle_traffic_event(camera_id, occurred_at DESC);
 

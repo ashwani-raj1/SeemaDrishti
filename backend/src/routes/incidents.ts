@@ -2,7 +2,9 @@ import { Router } from "express";
 import { DEFAULT_ORG } from "../db/seed";
 import {
   crossReference,
+  eventThumbnail,
   getIncident,
+  incidentCamera,
   listIncidents,
   queryEvents,
   type EventQuery,
@@ -67,12 +69,23 @@ export const incidentRoutes = Router();
 // ---------------------------------------------------------------- incidents
 
 incidentRoutes.get("/api/incidents", (req, res) => {
-  const params = query<"status" | "camera_id" | "zone_id" | "limit">(req);
+  const params = query<
+    "status" | "camera_id" | "zone_id" | "kind" | "severity" | "class" | "since" | "until"
+    | "limit"
+  >(req);
   res.json(
     listIncidents(DEFAULT_ORG, {
       status: params.status,
       cameraId: params.camera_id,
       zoneId: params.zone_id,
+      // The queue's own filters. Named to match `/api/events` where they
+      // mean the same thing, so an operator moving between the two screens
+      // does not have to learn two vocabularies for one question.
+      kind: params.kind,
+      severity: params.severity,
+      class: params.class,
+      since: params.since,
+      until: params.until,
       limit: num(params.limit, 100),
     }),
   );
@@ -85,6 +98,11 @@ incidentRoutes.get("/api/incidents/:incidentId", (req, res) => {
   res.json({
     incident,
     events: queryEvents(DEFAULT_ORG, { incidentId, limit: 500 }),
+    // The camera this came from, as its own field. `crossReference` below
+    // knows the camera only through the zone, and bails entirely when an
+    // incident has no zone -- which is exactly the case for a camera that
+    // went dark. Those incidents used to carry no camera information at all.
+    camera: incidentCamera(incidentId),
     // The full chain of accountability for this piece of work.
     actions: actionsFor("incident", incidentId),
     // What else watches this zone, and what it saw around the same time.
@@ -123,22 +141,39 @@ incidentRoutes.post("/api/incidents/:incidentId/decision", (req, res) => {
 // ---------------------------------------------------------------- events and history
 
 incidentRoutes.get("/api/events", (req, res) => {
-  const params = query<
-    "camera_id" | "zone_id" | "severity" | "class" | "alertable" | "since" | "until"
-    | "after_seq" | "limit"
-  >(req);
+  const params = query<EventFilterKey | "after_seq">(req);
   const q: EventQuery = {
-    cameraId: params.camera_id,
-    zoneId: params.zone_id,
-    severity: params.severity as EventQuery["severity"],
-    class: params.class,
-    alertableOnly: params.alertable === "true",
-    since: params.since,
-    until: params.until,
+    ...eventQuery(params),
+    // Replay for a reconnecting peer; history has no use for it.
     afterSeq: num(params.after_seq),
-    limit: num(params.limit, 200),
   };
   res.json(queryEvents(DEFAULT_ORG, q));
+});
+
+/**
+ * The frame one event was judged on.
+ *
+ * Served as an image rather than inside the JSON so the browser can cache it,
+ * render it with a plain `<img src>`, and fetch only the ones actually on
+ * screen. The list endpoint carries `hasThumbnail` and nothing heavier.
+ *
+ * 404 rather than a placeholder when there is no picture. A missing thumbnail
+ * is a real and common state -- the simulator posts none, a lost-track event
+ * has no frame to cut -- and the console draws the geometry instead. Shipping
+ * a grey rectangle here would make "no picture was taken" indistinguishable
+ * from "the picture failed to load".
+ */
+incidentRoutes.get("/api/events/:eventId/thumbnail", (req, res) => {
+  const encoded = eventThumbnail(req.params.eventId);
+  if (!encoded) throw new NotFound("no thumbnail for this event");
+
+  // The event log is append-only and an id is never reused, so this bytes
+  // stream can never change. Cached hard, which is what makes a list of
+  // fifty thumbnails cost fifty requests once rather than on every render.
+  res
+    .type("image/jpeg")
+    .set("cache-control", "public, max-age=31536000, immutable")
+    .send(Buffer.from(encoded, "base64"));
 });
 
 /**
@@ -150,18 +185,8 @@ incidentRoutes.get("/api/history", (req, res) => {
   const actor = actorOf(req);
   requireRole(actor, "supervisor", "admin");
 
-  const params = query<
-    "camera_id" | "zone_id" | "severity" | "class" | "since" | "until" | "limit" | "reason"
-  >(req);
-  const q: EventQuery = {
-    cameraId: params.camera_id,
-    zoneId: params.zone_id,
-    severity: params.severity as EventQuery["severity"],
-    class: params.class,
-    since: params.since,
-    until: params.until,
-    limit: num(params.limit, 200),
-  };
+  const params = query<EventFilterKey | "reason">(req);
+  const q: EventQuery = eventQuery(params);
 
   const results = queryEvents(DEFAULT_ORG, q);
 

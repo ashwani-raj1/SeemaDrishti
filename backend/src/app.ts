@@ -9,6 +9,9 @@ import { watchlistRoutes } from "./routes/watchlist";
 import { mediaRoutes } from "./routes/media";
 import { ingressRoutes } from "./routes/ingress";
 import { simRoutes } from "./routes/sim";
+import { clipRoutes } from "./routes/clips";
+import { settingsRoutes } from "./routes/settings";
+import { requestLog } from "./core/logger";
 
 /**
  * The node's HTTP surface, assembled but not listening.
@@ -24,13 +27,17 @@ export function createApp(): Express {
   // http.ts promises the routes.
   app.set("query parser", flatQuery);
 
+  // First, so it sees everything -- including the 404s and preflights that
+  // never reach a router.
+  app.use(requestLog);
   app.use(cors(CORS));
   app.use(
     express.json({
       // Every JSON body is parsed whatever its content-type says: the vision
       // service and the simulator are not browsers and do not always set one.
       type: () => true,
-      // Plate detections can carry a base64 frame snapshot.
+      // Plate detections can carry a base64 frame snapshot, and an evidence
+      // clip is about a megabyte of them.
       limit: "10mb",
     }),
   );
@@ -38,9 +45,11 @@ export function createApp(): Express {
   app.use(systemRoutes);
   app.use(incidentRoutes);
   app.use(zoneRoutes);
+  app.use(clipRoutes);
   app.use(cameraRoutes);
   app.use(watchlistRoutes);
   app.use(mediaRoutes);
+  app.use(settingsRoutes);
   app.use(ingressRoutes);
   app.use(simRoutes);
 
