@@ -48,8 +48,16 @@ export function createApp(): Express {
   app.use(zoneRoutes);
   app.use(clipRoutes);
   app.use(cameraRoutes);
-  app.use(watchlistRoutes);
+  // personWatchlistRoutes BEFORE watchlistRoutes: the plate watchlist's own
+  // GET/PATCH/DELETE /api/watchlist/:id would otherwise treat "people" as an
+  // id and swallow every /api/watchlist/people* request before this router
+  // ever saw it (Express tries routers in registration order and stops at
+  // the first path match). Registering the more specific /people literal
+  // first fixes it without touching the plate watchlist's own routes; a real
+  // plate id never matches anything in this router, so it still falls
+  // through to watchlistRoutes exactly as before.
   app.use(personWatchlistRoutes);
+  app.use(watchlistRoutes);
   app.use(mediaRoutes);
   app.use(settingsRoutes);
   app.use(ingressRoutes);
