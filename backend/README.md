@@ -29,8 +29,11 @@ L2  judgement   the virtual fence             src/l2/
     storage     sqlite, schema, migrations    src/db/
 ```
 
-`src/http.ts` holds the shared plumbing — who is acting, role gates, error-to-status —
-so route modules can be split by subject without importing the server back into themselves.
+HTTP is Express 5 on Bun. `src/app.ts` assembles the app (CORS, JSON body parsing, the
+routers in `src/routes/`, error handling) without listening; `src/server.ts` seeds and binds
+the port. `src/http.ts` holds the shared plumbing — who is acting, role gates, typed body and
+query helpers, error-to-status — so route modules can be split by subject without importing
+the server back into themselves. Each route module declares the request body types it accepts.
 
 ## The three things this exists to do
 

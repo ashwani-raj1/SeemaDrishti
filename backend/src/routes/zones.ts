@@ -1,7 +1,9 @@
 import { one, run } from "../db";
 import { nowIso } from "../core/ids";
 import { DEFAULT_ORG, DEFAULT_SITE } from "../db/seed";
-import type { Severity, TargetAction, ZoneKind } from "../core/types";
+import type {
+  Direction, Point, Severity, TargetAction, ZoneGeometry, ZoneKind,
+} from "../core/types";
 import { validateZonePoints } from "../l2/geometry";
 import { forgetZone } from "../l2/fence";
 import { recordAction } from "../l3/audit";
@@ -11,7 +13,8 @@ import {
 } from "../l3/zones";
 import { publish } from "../l4/bus";
 import { BadRequest } from "../l4/hooks";
-import { actorOf, handled, json, NotFound, readJson, requireRole } from "../http";
+import { Router } from "express";
+import { actorOf, NotFound, optionalJson, readJson, requireRole } from "../http";
 
 /**
  * Zone routes.
@@ -27,8 +30,59 @@ const ZONE_KINDS: ZoneKind[] = [
   "fence_line", "gate", "waterline", "perimeter", "pass", "restricted_area",
 ];
 const SEVERITIES: Severity[] = ["INFO", "WARNING", "CRITICAL"];
-const DIRECTIONS = ["inbound", "outbound", "both"];
+const DIRECTIONS: ZoneDirection[] = ["inbound", "outbound", "both"];
 const ACTIONS: TargetAction[] = ["alert", "log_only"];
+
+type ZoneDirection = Direction | "both";
+
+/** One entry of a target list, as sent. Position in the array is its priority. */
+export interface TargetBody {
+  class?: string;
+  severity?: Severity;
+  action?: TargetAction;
+}
+
+/** The fields every zone and zone-camera write may carry, checked by `validateZoneFields`. */
+export interface ZoneFieldsBody {
+  kind?: ZoneKind;
+  geometry?: ZoneGeometry;
+  direction?: ZoneDirection;
+  confirmSeconds?: number;
+}
+
+export interface ReasonBody {
+  reason?: string | null;
+}
+
+/** POST /api/zones */
+export interface CreateZoneBody extends ZoneFieldsBody, ReasonBody {
+  name?: string;
+  sector?: string | null;
+  cameraIds?: string[];
+  targets?: TargetBody[];
+}
+
+/** PATCH /api/zones/:zoneId */
+export interface UpdateZoneBody extends ZoneFieldsBody, ReasonBody {
+  name?: string;
+  sector?: string | null;
+  active?: boolean;
+}
+
+/** PUT /api/zones/:zoneId/targets and /api/zones/:zoneId/cameras/:cameraId/targets */
+export interface TargetsBody extends ReasonBody {
+  targets?: TargetBody[];
+}
+
+/** POST /api/zones/:zoneId/cameras */
+export interface AddZoneCameraBody extends ReasonBody {
+  cameraId?: string;
+}
+
+/** PATCH /api/zones/:zoneId/cameras/:cameraId */
+export interface UpdateZoneCameraBody extends ZoneFieldsBody, ReasonBody {
+  points?: Point[];
+}
 
 const requireZone = (zoneId: string) => {
   const zone = zoneDetail(zoneId);
@@ -36,7 +90,7 @@ const requireZone = (zoneId: string) => {
   return zone;
 };
 
-function validateZoneFields(fields: Record<string, any>): void {
+function validateZoneFields(fields: ZoneFieldsBody): void {
   if (fields.kind !== undefined && !ZONE_KINDS.includes(fields.kind)) {
     throw new BadRequest(`kind must be one of ${ZONE_KINDS.join(", ")}`);
   }
@@ -103,327 +157,319 @@ const cameraView = (zone: any, cameraId: string) =>
 const activeCameraIds = (zone: any) =>
   zone.cameras.filter((c: any) => c.active).map((c: any) => c.cameraId);
 
-export const zoneRoutes = {
-  "/api/zones": {
-    /** Every zone at this site, each with its cameras, policy and overrides. */
-    GET: handled(async () => json(listZones(DEFAULT_SITE))),
+export const zoneRoutes = Router();
 
-    /**
-     * Create a zone across a set of cameras.
-     *
-     * The cameras come from an area the supervisor picked in the console; this
-     * only checks they exist. Each starts with a placeholder shape, so a zone
-     * never goes live pretending somebody positioned it.
-     */
-    POST: handled(async (req) => {
-      const actor = actorOf(req);
-      requireRole(actor, "supervisor", "admin");
+/** Every zone at this site, each with its cameras, policy and overrides. */
+zoneRoutes.get("/api/zones", (_req, res) => {
+  res.json(listZones(DEFAULT_SITE));
+});
 
-      const body = await readJson(req);
-      validateZoneFields(body);
+/**
+ * Create a zone across a set of cameras.
+ *
+ * The cameras come from an area the supervisor picked in the console; this
+ * only checks they exist. Each starts with a placeholder shape, so a zone
+ * never goes live pretending somebody positioned it.
+ */
+zoneRoutes.post("/api/zones", (req, res) => {
+  const actor = actorOf(req);
+  requireRole(actor, "supervisor", "admin");
 
-      const name = typeof body.name === "string" ? body.name.trim() : "";
-      if (!name) throw new BadRequest("name is required");
+  const body = readJson<CreateZoneBody>(req);
+  validateZoneFields(body);
 
-      const cameraIds = requireCameras(body.cameraIds);
-      const targets = parseTargets(body.targets ?? []);
-      if (targets.length === 0) {
-        throw new BadRequest("a zone needs at least one thing to detect against");
-      }
+  const name = typeof body.name === "string" ? body.name.trim() : "";
+  if (!name) throw new BadRequest("name is required");
 
-      const zoneId = createZone({
-        orgId: DEFAULT_ORG,
-        siteId: DEFAULT_SITE,
-        name,
-        kind: body.kind ?? "fence_line",
-        sector: body.sector ?? null,
-        cameraIds,
-        targets,
-        direction: body.direction,
-        confirmSeconds: body.confirmSeconds,
-      });
+  const cameraIds = requireCameras(body.cameraIds);
+  const targets = parseTargets(body.targets ?? []);
+  if (targets.length === 0) {
+    throw new BadRequest("a zone needs at least one thing to detect against");
+  }
 
-      const created = requireZone(zoneId);
-      recordAction({
-        actor,
-        orgId: DEFAULT_ORG,
-        verb: "zone.create",
-        targetType: "zone",
-        targetId: zoneId,
-        reason: body.reason ?? null,
-        detail: {
-          sector: body.sector ?? null,
-          cameras: cameraIds.length,
-          targets: targets.length,
-        },
-        after: created,
-      });
+  const zoneId = createZone({
+    orgId: DEFAULT_ORG,
+    siteId: DEFAULT_SITE,
+    name,
+    kind: body.kind ?? "fence_line",
+    sector: body.sector ?? null,
+    cameraIds,
+    targets,
+    direction: body.direction,
+    confirmSeconds: body.confirmSeconds,
+  });
 
-      publish({ type: "camera", data: { zoneChanged: zoneId } });
-      return json(created, 201);
-    }),
-  },
+  const created = requireZone(zoneId);
+  recordAction({
+    actor,
+    orgId: DEFAULT_ORG,
+    verb: "zone.create",
+    targetType: "zone",
+    targetId: zoneId,
+    reason: body.reason ?? null,
+    detail: {
+      sector: body.sector ?? null,
+      cameras: cameraIds.length,
+      targets: targets.length,
+    },
+    after: created,
+  });
 
-  "/api/zones/:zoneId": {
-    GET: handled(async (req: any) => json(requireZone(req.params.zoneId))),
+  publish({ type: "camera", data: { zoneChanged: zoneId } });
+  res.status(201).json(created);
+});
 
-    PATCH: handled(async (req: any) => {
-      const actor = actorOf(req);
-      requireRole(actor, "supervisor", "admin");
+zoneRoutes.get("/api/zones/:zoneId", (req, res) => {
+  res.json(requireZone(req.params.zoneId));
+});
 
-      const zoneId = req.params.zoneId;
-      const before = requireZone(zoneId);
-      const body = await readJson(req);
-      validateZoneFields(body);
+zoneRoutes.patch("/api/zones/:zoneId", (req, res) => {
+  const actor = actorOf(req);
+  requireRole(actor, "supervisor", "admin");
 
-      const after = updateZone(zoneId, {
-        name: body.name,
-        kind: body.kind,
-        sector: body.sector,
-        active: body.active,
-      });
-      forgetZone(zoneId);
+  const zoneId = req.params.zoneId;
+  const before = requireZone(zoneId);
+  const body = readJson<UpdateZoneBody>(req);
+  validateZoneFields(body);
 
-      recordAction({
-        actor,
-        orgId: DEFAULT_ORG,
-        verb: "zone.update",
-        targetType: "zone",
-        targetId: zoneId,
-        reason: body.reason ?? null,
-        before,
-        after,
-      });
+  const after = updateZone(zoneId, {
+    name: body.name,
+    kind: body.kind,
+    sector: body.sector,
+    active: body.active,
+  });
+  forgetZone(zoneId);
 
-      publish({ type: "camera", data: { zoneChanged: zoneId } });
-      return json(after);
-    }),
+  recordAction({
+    actor,
+    orgId: DEFAULT_ORG,
+    verb: "zone.update",
+    targetType: "zone",
+    targetId: zoneId,
+    reason: body.reason ?? null,
+    before,
+    after,
+  });
 
-    DELETE: handled(async (req: any) => {
-      const actor = actorOf(req);
-      requireRole(actor, "supervisor", "admin");
+  publish({ type: "camera", data: { zoneChanged: zoneId } });
+  res.json(after);
+});
 
-      const zoneId = req.params.zoneId;
-      const before = requireZone(zoneId);
-      const body = await readJson(req).catch(() => ({}) as Record<string, any>);
+zoneRoutes.delete("/api/zones/:zoneId", (req, res) => {
+  const actor = actorOf(req);
+  requireRole(actor, "supervisor", "admin");
 
-      // Deactivated, not deleted -- past events still point at it.
-      const after = updateZone(zoneId, { active: false });
-      forgetZone(zoneId);
+  const zoneId = req.params.zoneId;
+  const before = requireZone(zoneId);
+  const body = optionalJson<ReasonBody>(req);
 
-      recordAction({
-        actor,
-        orgId: DEFAULT_ORG,
-        verb: "zone.delete",
-        targetType: "zone",
-        targetId: zoneId,
-        reason: body.reason ?? null,
-        before,
-        after,
-      });
+  // Deactivated, not deleted -- past events still point at it.
+  const after = updateZone(zoneId, { active: false });
+  forgetZone(zoneId);
 
-      publish({ type: "camera", data: { zoneChanged: zoneId } });
-      return json({ ok: true });
-    }),
-  },
+  recordAction({
+    actor,
+    orgId: DEFAULT_ORG,
+    verb: "zone.delete",
+    targetType: "zone",
+    targetId: zoneId,
+    reason: body.reason ?? null,
+    before,
+    after,
+  });
 
-  /**
-   * The zone's own target policy, in priority order. The whole list is
-   * replaced on every write, because a rank only means anything relative to
-   * the others.
-   */
-  "/api/zones/:zoneId/targets": {
-    PUT: handled(async (req: any) => {
-      const actor = actorOf(req);
-      requireRole(actor, "supervisor", "admin");
+  publish({ type: "camera", data: { zoneChanged: zoneId } });
+  res.json({ ok: true });
+});
 
-      const zoneId = req.params.zoneId;
-      const before = requireZone(zoneId);
-      const body = await readJson(req);
-      const targets = parseTargets(body.targets);
-      if (targets.length === 0) {
-        throw new BadRequest("a zone needs at least one thing to detect against");
-      }
+/**
+ * The zone's own target policy, in priority order. The whole list is
+ * replaced on every write, because a rank only means anything relative to
+ * the others.
+ */
+zoneRoutes.put("/api/zones/:zoneId/targets", (req, res) => {
+  const actor = actorOf(req);
+  requireRole(actor, "supervisor", "admin");
 
-      setTargets(zoneId, null, targets);
-      forgetZone(zoneId);
-      const after = requireZone(zoneId);
+  const zoneId = req.params.zoneId;
+  const before = requireZone(zoneId);
+  const body = readJson<TargetsBody>(req);
+  const targets = parseTargets(body.targets);
+  if (targets.length === 0) {
+    throw new BadRequest("a zone needs at least one thing to detect against");
+  }
 
-      recordAction({
-        actor,
-        orgId: DEFAULT_ORG,
-        verb: "zone.targets",
-        targetType: "zone",
-        targetId: zoneId,
-        reason: body.reason ?? null,
-        before: { targets: before.targets },
-        after: { targets: after.targets },
-      });
+  setTargets(zoneId, null, targets);
+  forgetZone(zoneId);
+  const after = requireZone(zoneId);
 
-      publish({ type: "camera", data: { zoneChanged: zoneId } });
-      return json(after);
-    }),
-  },
+  recordAction({
+    actor,
+    orgId: DEFAULT_ORG,
+    verb: "zone.targets",
+    targetType: "zone",
+    targetId: zoneId,
+    reason: body.reason ?? null,
+    before: { targets: before.targets },
+    after: { targets: after.targets },
+  });
 
-  "/api/zones/:zoneId/cameras": {
-    POST: handled(async (req: any) => {
-      const actor = actorOf(req);
-      requireRole(actor, "supervisor", "admin");
+  publish({ type: "camera", data: { zoneChanged: zoneId } });
+  res.json(after);
+});
 
-      const zoneId = req.params.zoneId;
-      const before = requireZone(zoneId);
-      const body = await readJson(req);
-      const [cameraId] = requireCameras([body.cameraId]);
+zoneRoutes.post("/api/zones/:zoneId/cameras", (req, res) => {
+  const actor = actorOf(req);
+  requireRole(actor, "supervisor", "admin");
 
-      const existing = getBinding(zoneId, cameraId!);
-      if (existing && existing.active === 1) {
-        throw new BadRequest("that camera is already in this zone");
-      }
+  const zoneId = req.params.zoneId;
+  const before = requireZone(zoneId);
+  const body = readJson<AddZoneCameraBody>(req);
+  const [cameraId] = requireCameras([body.cameraId]);
 
-      if (existing) {
-        // Re-joining: its old shape and any overrides are still there.
-        run("UPDATE zone_camera SET active = 1, updated_at = $at WHERE id = $id", {
-          $at: nowIso(),
-          $id: existing.id,
-        });
-      } else {
-        addCamera(zoneId, cameraId!, before.kind as ZoneKind);
-      }
+  const existing = getBinding(zoneId, cameraId!);
+  if (existing && existing.active === 1) {
+    throw new BadRequest("that camera is already in this zone");
+  }
 
-      const after = requireZone(zoneId);
-      recordAction({
-        actor,
-        orgId: DEFAULT_ORG,
-        verb: "zone.camera.add",
-        targetType: "zone",
-        targetId: zoneId,
-        reason: body.reason ?? null,
-        detail: { cameraId, rejoined: Boolean(existing) },
-        before: { cameras: activeCameraIds(before) },
-        after: { cameras: activeCameraIds(after) },
-      });
+  if (existing) {
+    // Re-joining: its old shape and any overrides are still there.
+    run("UPDATE zone_camera SET active = 1, updated_at = $at WHERE id = $id", {
+      $at: nowIso(),
+      $id: existing.id,
+    });
+  } else {
+    addCamera(zoneId, cameraId!, before.kind as ZoneKind);
+  }
 
-      publish({ type: "camera", data: { zoneChanged: zoneId } });
-      return json(after, 201);
-    }),
-  },
+  const after = requireZone(zoneId);
+  recordAction({
+    actor,
+    orgId: DEFAULT_ORG,
+    verb: "zone.camera.add",
+    targetType: "zone",
+    targetId: zoneId,
+    reason: body.reason ?? null,
+    detail: { cameraId, rejoined: Boolean(existing) },
+    before: { cameras: activeCameraIds(before) },
+    after: { cameras: activeCameraIds(after) },
+  });
 
-  "/api/zones/:zoneId/cameras/:cameraId": {
-    /** Move or retune this camera's shape. Marks it placed. */
-    PATCH: handled(async (req: any) => {
-      const actor = actorOf(req);
-      requireRole(actor, "supervisor", "admin");
+  publish({ type: "camera", data: { zoneChanged: zoneId } });
+  res.status(201).json(after);
+});
 
-      const { zoneId, cameraId } = req.params;
-      const before = requireZone(zoneId);
-      const body = await readJson(req);
-      validateZoneFields(body);
+/** Move or retune this camera's shape. Marks it placed. */
+zoneRoutes.patch("/api/zones/:zoneId/cameras/:cameraId", (req, res) => {
+  const actor = actorOf(req);
+  requireRole(actor, "supervisor", "admin");
 
-      const binding = getBinding(zoneId, cameraId);
-      if (!binding) throw new NotFound(`camera ${cameraId} is not in this zone`);
+  const { zoneId, cameraId } = req.params;
+  const before = requireZone(zoneId);
+  const body = readJson<UpdateZoneCameraBody>(req);
+  validateZoneFields(body);
 
-      const geometry = body.geometry ?? binding.geometry;
-      const points = body.points ?? JSON.parse(binding.points);
-      const problem = validateZonePoints(geometry, points);
-      if (problem) throw new BadRequest(problem);
+  const binding = getBinding(zoneId, cameraId);
+  if (!binding) throw new NotFound(`camera ${cameraId} is not in this zone`);
 
-      updateBinding(zoneId, cameraId, {
-        geometry,
-        points,
-        direction: body.direction,
-        confirmSeconds: body.confirmSeconds,
-      });
+  const geometry = body.geometry ?? (binding.geometry as ZoneGeometry);
+  const points = body.points ?? JSON.parse(binding.points);
+  const problem = validateZonePoints(geometry, points);
+  if (problem) throw new BadRequest(problem);
 
-      // A pending crossing held against the old shape would otherwise confirm
-      // against geometry that no longer exists.
-      forgetZone(zoneId);
-      const after = requireZone(zoneId);
+  updateBinding(zoneId, cameraId, {
+    geometry,
+    points,
+    direction: body.direction,
+    confirmSeconds: body.confirmSeconds,
+  });
 
-      recordAction({
-        actor,
-        orgId: DEFAULT_ORG,
-        verb: "zone.camera.update",
-        targetType: "zone",
-        targetId: zoneId,
-        reason: body.reason ?? null,
-        detail: { cameraId },
-        before: cameraView(before, cameraId),
-        after: cameraView(after, cameraId),
-      });
+  // A pending crossing held against the old shape would otherwise confirm
+  // against geometry that no longer exists.
+  forgetZone(zoneId);
+  const after = requireZone(zoneId);
 
-      publish({ type: "camera", data: { cameraId, zoneChanged: zoneId } });
-      return json(after);
-    }),
+  recordAction({
+    actor,
+    orgId: DEFAULT_ORG,
+    verb: "zone.camera.update",
+    targetType: "zone",
+    targetId: zoneId,
+    reason: body.reason ?? null,
+    detail: { cameraId },
+    before: cameraView(before, cameraId),
+    after: cameraView(after, cameraId),
+  });
 
-    DELETE: handled(async (req: any) => {
-      const actor = actorOf(req);
-      requireRole(actor, "supervisor", "admin");
+  publish({ type: "camera", data: { cameraId, zoneChanged: zoneId } });
+  res.json(after);
+});
 
-      const { zoneId, cameraId } = req.params;
-      const before = requireZone(zoneId);
-      if (activeCameraIds(before).length <= 1) {
-        throw new BadRequest("a zone must keep at least one camera; deactivate the zone instead");
-      }
-      const body = await readJson(req).catch(() => ({}) as Record<string, any>);
+zoneRoutes.delete("/api/zones/:zoneId/cameras/:cameraId", (req, res) => {
+  const actor = actorOf(req);
+  requireRole(actor, "supervisor", "admin");
 
-      removeCamera(zoneId, cameraId);
-      forgetZone(zoneId);
-      const after = requireZone(zoneId);
+  const { zoneId, cameraId } = req.params;
+  const before = requireZone(zoneId);
+  if (activeCameraIds(before).length <= 1) {
+    throw new BadRequest("a zone must keep at least one camera; deactivate the zone instead");
+  }
+  const body = optionalJson<ReasonBody>(req);
 
-      recordAction({
-        actor,
-        orgId: DEFAULT_ORG,
-        verb: "zone.camera.remove",
-        targetType: "zone",
-        targetId: zoneId,
-        reason: body.reason ?? null,
-        detail: { cameraId },
-        before: { cameras: activeCameraIds(before) },
-        after: { cameras: activeCameraIds(after) },
-      });
+  removeCamera(zoneId, cameraId);
+  forgetZone(zoneId);
+  const after = requireZone(zoneId);
 
-      publish({ type: "camera", data: { zoneChanged: zoneId } });
-      return json({ ok: true });
-    }),
-  },
+  recordAction({
+    actor,
+    orgId: DEFAULT_ORG,
+    verb: "zone.camera.remove",
+    targetType: "zone",
+    targetId: zoneId,
+    reason: body.reason ?? null,
+    detail: { cameraId },
+    before: { cameras: activeCameraIds(before) },
+    after: { cameras: activeCameraIds(after) },
+  });
 
-  /**
-   * Camera-specific exceptions to the zone policy. An empty list clears them
-   * and puts the camera back on the zone's own policy -- the only way to undo
-   * an override.
-   */
-  "/api/zones/:zoneId/cameras/:cameraId/targets": {
-    PUT: handled(async (req: any) => {
-      const actor = actorOf(req);
-      requireRole(actor, "supervisor", "admin");
+  publish({ type: "camera", data: { zoneChanged: zoneId } });
+  res.json({ ok: true });
+});
 
-      const { zoneId, cameraId } = req.params;
-      const before = requireZone(zoneId);
-      if (!getBinding(zoneId, cameraId)) {
-        throw new NotFound(`camera ${cameraId} is not in this zone`);
-      }
+/**
+ * Camera-specific exceptions to the zone policy. An empty list clears them
+ * and puts the camera back on the zone's own policy -- the only way to undo
+ * an override.
+ */
+zoneRoutes.put("/api/zones/:zoneId/cameras/:cameraId/targets", (req, res) => {
+  const actor = actorOf(req);
+  requireRole(actor, "supervisor", "admin");
 
-      const body = await readJson(req);
-      const targets = parseTargets(body.targets ?? []);
+  const { zoneId, cameraId } = req.params;
+  const before = requireZone(zoneId);
+  if (!getBinding(zoneId, cameraId)) {
+    throw new NotFound(`camera ${cameraId} is not in this zone`);
+  }
 
-      setTargets(zoneId, cameraId, targets);
-      forgetZone(zoneId);
-      const after = requireZone(zoneId);
+  const body = readJson<TargetsBody>(req);
+  const targets = parseTargets(body.targets ?? []);
 
-      recordAction({
-        actor,
-        orgId: DEFAULT_ORG,
-        verb: "zone.camera.targets",
-        targetType: "zone",
-        targetId: zoneId,
-        reason: body.reason ?? null,
-        detail: { cameraId, cleared: targets.length === 0 },
-        before: { overrides: cameraView(before, cameraId)?.overrides ?? [] },
-        after: { overrides: cameraView(after, cameraId)?.overrides ?? [] },
-      });
+  setTargets(zoneId, cameraId, targets);
+  forgetZone(zoneId);
+  const after = requireZone(zoneId);
 
-      publish({ type: "camera", data: { cameraId, zoneChanged: zoneId } });
-      return json(after);
-    }),
-  },
-} as const;
+  recordAction({
+    actor,
+    orgId: DEFAULT_ORG,
+    verb: "zone.camera.targets",
+    targetType: "zone",
+    targetId: zoneId,
+    reason: body.reason ?? null,
+    detail: { cameraId, cleared: targets.length === 0 },
+    before: { overrides: cameraView(before, cameraId)?.overrides ?? [] },
+    after: { overrides: cameraView(after, cameraId)?.overrides ?? [] },
+  });
+
+  publish({ type: "camera", data: { cameraId, zoneChanged: zoneId } });
+  res.json(after);
+});
