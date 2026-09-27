@@ -20,7 +20,7 @@
  */
 import type { LucideIcon } from "lucide-react";
 import {
-  CarFrontIcon, CctvIcon, FileClockIcon, HistoryIcon, LayersIcon,
+  BrainCircuitIcon, CarFrontIcon, CctvIcon, FileClockIcon, HistoryIcon, LayersIcon,
   LayoutDashboardIcon, MapIcon, ScanEyeIcon, ScanFaceIcon, SettingsIcon, SirenIcon, UsersIcon,
 } from "lucide-react";
 import { canUse, GROUP_ORDER, selectEnabled, type SectionGroup, type SectionMeta } from "./sections";
@@ -28,6 +28,7 @@ import { canUse, GROUP_ORDER, selectEnabled, type SectionGroup, type SectionMeta
 import { DashboardScreen } from "./dashboard/screen";
 import { IncidentsScreen } from "./incidents/screen";
 import { IncidentPage } from "./incidents/page";
+import { IntelligenceScreen } from "./intelligence/screen";
 import { HistoryScreen } from "./history/screen";
 import { AuditScreen } from "./audit/screen";
 import { ZonesScreen } from "./zones/screen";
@@ -76,6 +77,15 @@ export const SECTIONS: Section[] = [
     path: "/dashboard",
     minRole: "operator",
     element: <DashboardScreen />,
+  },
+  {
+    id: "intelligence",
+    group: "Operations",
+    label: "Intelligence",
+    icon: BrainCircuitIcon,
+    path: "/intelligence",
+    minRole: "operator",
+    element: <IntelligenceScreen />,
   },
   {
     id: "incidents",

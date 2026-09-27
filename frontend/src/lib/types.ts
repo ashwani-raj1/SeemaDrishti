@@ -249,6 +249,7 @@ export interface ServerConfig {
   site: Site;
   users: AppUser[];
   cameras: Camera[];
+  zones: MonitoringZone[];
   media?: MediaConfig;
   settings: NodeSettings;
 }
@@ -619,4 +620,31 @@ export interface HubCamera {
 export interface HubCameraList {
   hub: { url: string; reachable: boolean; error: string | null };
   cameras: HubCamera[];
+}
+
+// ---- intelligence assistant -----------------------------------------
+// What the node returns from /api/intelligence/ask: the operator-facing
+// answer, plus the records behind it. Evidence is keyed by what it IS, not by
+// which internal tool produced it -- the tool registry is an implementation
+// detail and renaming a tool there must not ripple into the browser.
+// Distinct from the `Evidence` interface above, which is per-event imagery.
+
+export type IntelligenceEvidenceKind =
+  | "vehicle"
+  | "events"
+  | "incidents"
+  | "incident"
+  | "camera"
+  | "cameras"
+  | "zones";
+
+export interface IntelligenceEvidence {
+  kind: IntelligenceEvidenceKind;
+  args: Record<string, unknown>;
+  result: unknown;
+}
+
+export interface IntelligenceAskResult {
+  answer: string;
+  evidence: IntelligenceEvidence[];
 }

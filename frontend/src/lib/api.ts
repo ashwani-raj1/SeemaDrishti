@@ -7,8 +7,8 @@
  */
 import type {
   Action, CameraDetail, CameraIncidents, ChainVerdict, ClipManifest, ClipUsage,
-  CreateWatchlistInput, Decision, DetectVehicleInput, Health, HubCameraList,
-  IbvapEvent, Incident, IncidentDetail, MonitoringZone, NodeSettings, PlateDetection,
+  CreateWatchlistInput, Decision, DetectVehicleInput, FrameAnalysisResult, Health, HubCameraList,
+  IbvapEvent, Incident, IncidentDetail, IntelligenceAskResult, MonitoringZone, NodeSettings, PlateDetection,
   Point, ResetCounts, ServerConfig, SimStatus,
   UpdateWatchlistInput, WatchlistEntry, WatchlistStats,
   VehicleTrafficSummary,
@@ -115,6 +115,15 @@ export type EventQuery = {
 export const api = {
   health: () => request<Health>("/api/health"),
   config: () => request<ServerConfig>("/api/config"),
+  /**
+   * The model reads the question and drives the tool registry itself.
+   *
+   * A 503 means GenAI is absent or unreachable on this node, which is a normal
+   * condition for an edge post -- callers fall back to the deterministic
+   * engine rather than showing the operator an error.
+   */
+  intelligenceAsk: (body: { question: string }) =>
+    post<IntelligenceAskResult>("/api/intelligence/ask", body),
 
   incidents: (
     params: {
@@ -343,5 +352,4 @@ export const api = {
     request<PlateDetection[]>(`/api/watchlist/detections${qs(params)}`),
   detectVehicleAndPlate: (body: DetectVehicleInput) => post<PlateDetection>("/api/watchlist/detect", body),
 };
-
 

@@ -25,6 +25,7 @@ const CAMERAS = [
   // unknown camera, and the worker looked like it was running fine while
   // producing nothing. It is also the one camera pointed at real footage.
   { id: "cam_garden", name: "BOP-05 Garden" },
+  { id: "cam_border_gate", name: "BOP-06 Border Gate" },
 ];
 
 interface TargetSeed {

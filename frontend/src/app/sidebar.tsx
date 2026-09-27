@@ -159,15 +159,17 @@ function SidebarItem({
       isActive={active}
       tooltip={section.label}
       className={cn(
-        "rounded-lg font-medium text-xs transition-colors",
+        "rounded-lg font-medium text-xs transition-colors group/item",
         active
-          ? "bg-blue-600 text-white font-bold hover:bg-blue-700 hover:text-white dark:bg-blue-600 dark:text-white"
-          : "text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800"
+          ? "bg-blue-600 text-white font-bold hover:bg-blue-700 hover:text-white dark:bg-blue-600 dark:text-white [&>svg]:text-white"
+          : "text-slate-700 dark:text-slate-300 hover:bg-blue-50/70 hover:text-blue-600 dark:hover:bg-blue-950/40 dark:hover:text-blue-400 [&>svg]:transition-colors [&>svg]:group-hover/item:text-blue-600 dark:[&>svg]:group-hover/item:text-blue-400"
       )}
     >
       <NavLink to={section.path}>
-        <Icon className={cn("size-4", active && "text-white")} />
-        <span className={locked ? "text-muted-foreground" : undefined}>{section.label}</span>
+        <Icon className={cn("size-4 transition-colors", active ? "text-white" : "text-slate-500 dark:text-slate-400 group-hover/item:text-blue-600 dark:group-hover/item:text-blue-400")} />
+        <span className={cn(locked ? "text-muted-foreground" : undefined, "group-hover/item:text-blue-600 dark:group-hover/item:text-blue-400 transition-colors")}>
+          {section.label}
+        </span>
       </NavLink>
     </SidebarMenuButton>
   );

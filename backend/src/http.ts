@@ -33,6 +33,14 @@ export interface ErrorBody {
 }
 
 /**
+ * A dependency this node can do without is missing or unreachable.
+ *
+ * Distinct from a 500 on purpose: nothing is broken here, an optional upstream
+ * simply did not answer, and callers are expected to degrade rather than fail.
+ */
+export class ServiceUnavailable extends Error {}
+
+/**
  * Who is acting. Every mutating route needs this, because an unattributed
  * change is exactly what the audit log exists to make impossible.
  *

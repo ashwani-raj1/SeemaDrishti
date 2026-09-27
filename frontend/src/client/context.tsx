@@ -10,6 +10,7 @@ import type {
   AppUser, Camera, MediaConfig, NodeSettings, Organisation, Role, ServerConfig, Site,
 } from "@/lib/types";
 import { FALLBACK_CONFIG, loadClientConfig, type ClientConfig } from "./config";
+import { ZONE_STORAGE_KEY, zoneFromSiteName } from "./zones";
 
 interface ClientContextValue {
   ready: boolean;
@@ -31,6 +32,9 @@ interface ClientContextValue {
   chooseActor: (id: string) => void;
   refreshServer: () => Promise<void>;
   stream: StreamState;
+  /** Geographic BOP chosen in the global header. The only zone selector. */
+  selectedZone: string;
+  setSelectedZone: (name: string) => void;
 }
 
 const ClientContext = createContext<ClientContextValue | null>(null);
@@ -44,6 +48,13 @@ export function ClientProvider({ children }: { children: React.ReactNode }) {
   const [error, setError] = useState<string | null>(null);
   const [ready, setReady] = useState(false);
   const [stream, setStream] = useState<StreamState>("connecting");
+  const [selectedZone, setSelectedZoneState] = useState<string>(() => {
+    try {
+      return localStorage.getItem(ZONE_STORAGE_KEY) ?? "";
+    } catch {
+      return "";
+    }
+  });
 
   useEffect(() => {
     let cancelled = false;
@@ -113,6 +124,28 @@ export function ClientProvider({ children }: { children: React.ReactNode }) {
     [],
   );
 
+  const setSelectedZone = useCallback((name: string) => {
+    setSelectedZoneState(name);
+    try {
+      localStorage.setItem(ZONE_STORAGE_KEY, name);
+    } catch {
+      /* private mode */
+    }
+  }, []);
+
+  // Once we know which BOP this node is, default the header to it — unless
+  // the operator already picked one this session.
+  useEffect(() => {
+    if (selectedZone) return;
+    const fromSite = zoneFromSiteName(server?.site?.name);
+    setSelectedZoneState(fromSite);
+    try {
+      localStorage.setItem(ZONE_STORAGE_KEY, fromSite);
+    } catch {
+      /* private mode */
+    }
+  }, [server?.site?.name, selectedZone]);
+
   const refreshServer = useCallback(async () => {
     setServer(await api.config());
   }, []);
@@ -140,8 +173,10 @@ export function ClientProvider({ children }: { children: React.ReactNode }) {
       chooseActor,
       refreshServer,
       stream,
+      selectedZone: selectedZone || zoneFromSiteName(server?.site?.name),
+      setSelectedZone,
     }),
-    [ready, error, config, server, actor, chooseActor, refreshServer, stream],
+    [ready, error, config, server, actor, chooseActor, refreshServer, stream, selectedZone, setSelectedZone],
   );
 
   return <ClientContext.Provider value={value}>{children}</ClientContext.Provider>;

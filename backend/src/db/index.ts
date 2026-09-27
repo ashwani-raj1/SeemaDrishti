@@ -11,6 +11,7 @@ import { migrateAfter, migrateBefore } from "./migrate";
 const DB_PATH = process.env.IBVAP_DB ?? join(import.meta.dir, "..", "..", "ibvap.db");
 
 export const db = new Database(DB_PATH, { create: true });
+db.exec("PRAGMA journal_mode = WAL; PRAGMA busy_timeout = 5000;");
 
 // The legacy single-camera `zone` table has to move aside before the schema
 // can create the new one under that name.

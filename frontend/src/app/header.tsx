@@ -1,5 +1,5 @@
-import { useState, useEffect } from "react";
-import { useLocation, useNavigate } from "react-router-dom";
+import { useEffect, useState } from "react";
+import { useNavigate } from "react-router-dom";
 import {
   SunIcon,
   MoonIcon,
@@ -21,6 +21,9 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { useClient } from "@/client/context";
+import { api } from "@/lib/api";
+import { onStream } from "@/lib/stream";
+import { useResource } from "@/lib/use-resource";
 
 interface ZoneOption {
   name: string;
@@ -76,11 +79,22 @@ const ZONE_OPTIONS: ZoneOption[] = [
 
 export function CommandHeader() {
   const { theme, setTheme } = useTheme();
-  const { config, site, cameras, actor, users, chooseActor } = useClient();
+  const { config, site, actor, users, chooseActor, selectedZone, setSelectedZone } = useClient();
   const navigate = useNavigate();
+  const openIncidents = useResource(() => api.incidents({ limit: 200 }), []);
 
-  // Zone filter state defaulting to Attari
-  const [selectedZone, setSelectedZone] = useState("Attari");
+  useEffect(() => {
+    const off = onStream("incident", () => openIncidents.reload());
+    const offEvent = onStream("event", () => openIncidents.reload());
+    return () => {
+      off();
+      offEvent();
+    };
+  }, [openIncidents.reload]);
+
+  const openCount = (openIncidents.data ?? []).filter(
+    (incident) => incident.status === "OPEN" || incident.status === "ACKNOWLEDGED",
+  ).length;
 
   // Real-time live clock
   const [currentTime, setCurrentTime] = useState("");
@@ -176,7 +190,7 @@ export function CommandHeader() {
                   selectedZone === zone.name
                     ? "bg-blue-50 font-bold text-blue-700 dark:bg-blue-950/50 dark:text-blue-300"
                     : ""
-                }`}
+                  }`}
               >
                 <span>{zone.name}</span>
                 <span className="text-[10px] font-mono text-slate-400">
@@ -212,9 +226,11 @@ export function CommandHeader() {
           title="Recent Alerts & Incidents"
         >
           <BellIcon className="size-4" />
-          <span className="absolute -top-1 -right-1 flex size-4 items-center justify-center rounded-full bg-red-500 text-[10px] font-bold text-white shadow-xs">
-            3
-          </span>
+          {openCount > 0 && (
+            <span className="absolute -top-1 -right-1 flex size-4 items-center justify-center rounded-full bg-red-500 text-[10px] font-bold text-white shadow-xs">
+              {openCount > 9 ? "9+" : openCount}
+            </span>
+          )}
         </button>
 
         {/* Digital Real-Time Clock */}

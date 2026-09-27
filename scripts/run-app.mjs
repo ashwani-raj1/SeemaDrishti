@@ -1,9 +1,13 @@
+import { fileURLToPath } from "node:url";
+import { join } from "node:path";
+
 const mode = process.argv[2] === "start" ? "start" : "dev";
-const root = new URL("../", import.meta.url).pathname.replace(/^\/(.:\/)/, "$1");
+const root = fileURLToPath(new URL("../", import.meta.url));
 
 const children = ["backend", "frontend"].map((directory) => Bun.spawn({
   cmd: ["bun", "run", mode],
-  cwd: `${root}${directory}`,
+  cwd: join(root, directory),
+  env: process.env,
   stdin: "inherit",
   stdout: "inherit",
   stderr: "inherit",

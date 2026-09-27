@@ -134,6 +134,18 @@ export const ATTARI_SECTOR: SiteGeography = {
       fovDeg: 58,
       rangeM: 450,
     },
+    cam_garden: {
+      at: { lat: 31.6045, lon: 74.5819 },
+      bearing: 210,
+      fovDeg: 70,
+      rangeM: 380,
+    },
+    cam_border_gate: {
+      at: { lat: 31.6047, lon: 74.573 },
+      bearing: 270,
+      fovDeg: 65,
+      rangeM: 400,
+    },
   },
 };
 

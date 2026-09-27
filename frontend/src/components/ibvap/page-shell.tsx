@@ -20,7 +20,7 @@ export function PageShell({
   breadcrumbs,
   children,
 }: {
-  title: string;
+  title?: string;
   description?: string;
   actions?: ReactNode;
   toolbar?: ReactNode;
@@ -54,13 +54,19 @@ export function PageShell({
         </Breadcrumb>
       )}
 
-      <div className="flex flex-wrap items-start justify-between gap-3">
-        <div className="flex min-w-0 flex-col gap-1">
-          <h1 className="text-lg font-semibold tracking-tight sm:text-xl">{title}</h1>
-          {description && <p className="max-w-4xl text-xs leading-5 text-muted-foreground sm:text-sm">{description}</p>}
+      {(title || actions) && (
+        <div className="flex flex-wrap items-start justify-between gap-3">
+          {title ? (
+            <div className="flex min-w-0 flex-col gap-1">
+              <h1 className="text-lg font-semibold tracking-tight sm:text-xl">{title}</h1>
+              {description && <p className="max-w-4xl text-xs leading-5 text-muted-foreground sm:text-sm">{description}</p>}
+            </div>
+          ) : (
+            <div />
+          )}
+          {actions && <div className="flex max-w-full items-center gap-2">{actions}</div>}
         </div>
-        {actions && <div className="flex max-w-full items-center gap-2">{actions}</div>}
-      </div>
+      )}
       {toolbar}
       {children}
     </div>
