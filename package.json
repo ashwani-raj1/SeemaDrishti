@@ -16,8 +16,8 @@
   "main": "index.js",
   "scripts": {
     "setup": "cd backend && bun install && cd ../frontend && bun install",
-    "dev": "trap 'kill 0' INT TERM; (cd backend && bun run dev) & (cd frontend && bun run dev) & wait",
-    "start": "trap 'kill 0' INT TERM; (cd backend && bun run start) & (cd frontend && bun run start) & wait",
+    "dev": "bun scripts/run-app.mjs dev",
+    "start": "bun scripts/run-app.mjs start",
     "test": "(cd backend && bun test) && (cd frontend && bun test)"
   }
 }

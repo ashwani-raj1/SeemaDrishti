@@ -58,6 +58,11 @@
 
 defaults:
   detect: true
+  # These configured feeds are the operator's active monitoring sources even
+  # when MediaMTX is currently replaying a file. Set true only for a deliberate
+  # training/test feed; simulated events are excluded from operational ANPR
+  # logs and cannot create incidents.
+  simulated: false
   # Downscale on publish. Detection runs at --imgsz anyway, so pushing
   # 1080p into the hub buys nothing and costs decode on every worker.
   # null = publish at the source's own resolution.
@@ -129,10 +134,12 @@ cameras:
     # crossings. `clip_pre_seconds` / `clip_post_seconds` default to 4 and 2.
     modules:
       fence: { clips: true }
+      anpr: {}
+      multi_human: {}
     source:
       kind: file
       path: clips/virtual_fence.mp4
-      # url: https://www.youtube.com/watch?v=...
+      url: https://youtu.be/eO19UTm93GQ?si=tPGauaT3Cj4EhpCG
  
 
   - id: cam_border_gate

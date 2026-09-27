@@ -150,7 +150,8 @@ already-migrated database, and a zone whose camera was deleted.
 
 ## Not built yet
 
-- No retention sweeper — `organisation.retention_days` is stored and not yet enforced.
+- ANPR plate detections follow `organisation.retention_days` (15 days by default)
+  and are swept automatically during detection ingestion and log reads.
 - No post-to-HQ sync. The `seq` field and the queue design are there for it; the sync agent
   is not.
 - No cross-camera appearance matching.

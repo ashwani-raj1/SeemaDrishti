@@ -78,7 +78,7 @@ export function mediaConfig() {
   const mediaHost = env("IBVAP_MEDIA_HOST", "127.0.0.1");
   const whepPort = envInt("IBVAP_WHEP_PORT", 8889);
   const boxesHost = env("IBVAP_BOXES_HOST", "127.0.0.1");
-  const boxesPort = envInt("IBVAP_BOXES_PORT", 8100);
+  const boxesPort = envInt("IBVAP_BOXES_PORT", 8200);
 
   return {
     whepBase: `http://${mediaHost}:${whepPort}`,

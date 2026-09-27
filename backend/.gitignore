@@ -37,3 +37,6 @@ report.[0-9]_.[0-9]_.[0-9]_.[0-9]_.json
 ibvap.db
 ibvap.db-wal
 ibvap.db-shm
+ibvap.db*.bak
+ibvap.db*.bak-wal
+ibvap.db*.bak-shm
