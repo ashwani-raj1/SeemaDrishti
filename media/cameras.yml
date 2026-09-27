@@ -68,10 +68,6 @@ defaults:
 cameras:
   - id: cam_fence_north
     label: BOP-01 Fence North
-    # The human-tracking + face-detection demo camera: multi_human for
-    # within-camera tracking, face for the cascaded detector inside each
-    # tracked person's box.
-    modules: [fence, multi_human, face]
     detect: true
     source:
       kind: file
