@@ -21,8 +21,7 @@
 import type { LucideIcon } from "lucide-react";
 import {
   CarFrontIcon, CctvIcon, FileClockIcon, HistoryIcon, LayersIcon,
-  LayoutDashboardIcon, MapIcon, ScanEyeIcon, SettingsIcon, SirenIcon, UsersIcon,
-//   LayoutDashboardIcon, MapIcon, ScanEyeIcon, ScanFaceIcon, SirenIcon, UsersIcon,
+  LayoutDashboardIcon, MapIcon, ScanEyeIcon, ScanFaceIcon, SettingsIcon, SirenIcon, UsersIcon,
 } from "lucide-react";
 import { canUse, GROUP_ORDER, selectEnabled, type SectionGroup, type SectionMeta } from "./sections";
 
@@ -184,15 +183,6 @@ export const SECTIONS: Section[] = [
     path: "/zones",
     minRole: "supervisor",
     element: <ZonesScreen />,
-  },
-  {
-    id: "watchlist",
-    group: "Configure",
-    label: "Plate watchlist",
-    icon: CarFrontIcon,
-    path: "/watchlist",
-    minRole: "supervisor",
-    element: <WatchlistScreen />,
   },
   // Reachable by every role: most of the page is what an operator has to be
   // able to read off -- who they are acting as, where the node and the hub

@@ -246,6 +246,7 @@ export function migrateAfter(db: Database): void {
   // DEFAULT_CLIP_RETENTION_DAYS in l3/settings.ts for why they differ.
   addColumn(db, "organisation", "clip_retention_days", "INTEGER NOT NULL DEFAULT 7");
   addColumn(db, "incident", "number", "INTEGER");
+  addColumn(db, "plate_detection", "verified", "INTEGER NOT NULL DEFAULT 1");
   backfillIncidentNumbers(db);
   renameZoneSectorToArea(db);
 

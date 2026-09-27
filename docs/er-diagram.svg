@@ -1,0 +1,684 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1980" height="1250" viewBox="0 0 1980 1250" font-family="'Segoe UI', Roboto, Helvetica, Arial, sans-serif">
+<style>
+:root{
+  --bg:#F6F7F5; --card:#FFFFFF; --brd:#D3D8D5; --ink:#16191B; --mut:#6B7572;
+  --alt:#FAFBFA; --line:#97A29E; --pk:#A2661B; --fk:#2F6FA8;
+}
+@media (prefers-color-scheme: dark){
+  :root{
+    --bg:#111415; --card:#1A1E20; --brd:#343B39; --ink:#E9EDEB; --mut:#94A09B;
+    --alt:#1F2426; --line:#6E7B77; --pk:#D99A3E; --fk:#6FA8DC;
+  }
+}
+text{ fill:var(--ink); }
+.mut{ fill:var(--mut); }
+rect.body{ fill:var(--card); stroke:var(--brd); }
+.alt{ fill:var(--alt); }
+.edge{ fill:none; stroke:var(--line); stroke-width:1.4; }
+.soft{ stroke-dasharray:5 4; }
+.mark{ stroke:var(--line); stroke-width:1.4; fill:none; }
+.ttl{ font-size:11px; }
+.typ{ font-size:9px; font-family:Consolas,'SF Mono',Menlo,monospace; }
+.key{ font-size:8px; font-weight:700; letter-spacing:.4px; font-family:Consolas,monospace; }
+</style>
+<rect width="1980" height="1250" fill="var(--bg)"/>
+<text x="30" y="50" font-size="22" font-weight="700">SeemaDrishti &#183; ibvap.db</text>
+<text x="30" y="72" class="mut" font-size="12">SQLite (WAL) &#183; 16 tables, 1 view &#183; row counts from the snapshot of 26 Sep 2026</text>
+<g transform="translate(1320,26)">
+<text x="0" y="10" class="mut key">RELATIONSHIPS</text>
+<line x1="0" y1="26" x2="34" y2="26" class="edge"/><text x="42" y="30" font-size="10.5">declared FOREIGN KEY</text>
+<line x1="196" y1="26" x2="230" y2="26" class="edge soft"/><text x="238" y="30" font-size="10.5">reference by convention (no FK clause)</text>
+<text x="0" y="48" class="mut" font-size="10.5">bar = one &#183; crow's foot = many &#183; PRAGMA foreign_keys is OFF, so even the solid links are held by the app</text>
+<text x="0" y="70" class="mut key">DOMAINS</text>
+<rect x="0" y="78" width="10" height="10" rx="2" fill="#2F4858"/>
+<text x="15" y="87" font-size="10.5">tenant &amp; people</text>
+<rect x="112" y="78" width="10" height="10" rx="2" fill="#1F6F5C"/>
+<text x="127" y="87" font-size="10.5">sites, zones, cameras</text>
+<rect x="259" y="78" width="10" height="10" rx="2" fill="#8A6116"/>
+<text x="274" y="87" font-size="10.5">vision &amp; evidence</text>
+<rect x="383" y="78" width="10" height="10" rx="2" fill="#9B3B2E"/>
+<text x="398" y="87" font-size="10.5">events &amp; incidents</text>
+<rect x="513" y="78" width="10" height="10" rx="2" fill="#5A4A8C"/>
+<text x="528" y="87" font-size="10.5">ANPR</text>
+<rect x="560" y="78" width="10" height="10" rx="2" fill="#4A5568"/>
+<text x="575" y="87" font-size="10.5">view</text>
+</g>
+<path class="edge" d="M 290.0 154.0 L 295.0 154.0 Q 300.0 154.0 300.0 161.0 L 300.0 163.0 Q 300.0 170.0 307.0 170.0 L 360.0 170.0"/>
+<g class="mark"><line x1="297.0" y1="149.0" x2="297.0" y2="159.0"/><line x1="360.0" y1="170.0" x2="349.0" y2="165.0"/><line x1="360.0" y1="170.0" x2="349.0" y2="170.0"/><line x1="360.0" y1="170.0" x2="349.0" y2="175.0"/></g>
+<path class="edge" d="M 30.0 154.0 L 24.0 154.0 Q 18.0 154.0 18.0 161.0 L 18.0 343.0 Q 18.0 350.0 24.0 350.0 L 30.0 350.0"/>
+<g class="mark"><line x1="23.0" y1="159.0" x2="23.0" y2="149.0"/><line x1="30.0" y1="350.0" x2="19.0" y2="345.0"/><line x1="30.0" y1="350.0" x2="19.0" y2="350.0"/><line x1="30.0" y1="350.0" x2="19.0" y2="355.0"/></g>
+<path class="edge" d="M 290.0 154.0 L 305.0 154.0 Q 312.0 154.0 312.0 161.0 L 312.0 313.0 Q 312.0 320.0 319.0 320.0 L 360.0 320.0"/>
+<g class="mark"><line x1="297.0" y1="149.0" x2="297.0" y2="159.0"/><line x1="360.0" y1="320.0" x2="349.0" y2="315.0"/><line x1="360.0" y1="320.0" x2="349.0" y2="320.0"/><line x1="360.0" y1="320.0" x2="349.0" y2="325.0"/></g>
+<path class="edge" d="M 290.0 154.0 L 317.0 154.0 Q 324.0 154.0 324.0 161.0 L 324.0 533.0 Q 324.0 540.0 331.0 540.0 L 360.0 540.0"/>
+<g class="mark"><line x1="297.0" y1="149.0" x2="297.0" y2="159.0"/><line x1="360.0" y1="540.0" x2="349.0" y2="535.0"/><line x1="360.0" y1="540.0" x2="349.0" y2="540.0"/><line x1="360.0" y1="540.0" x2="349.0" y2="545.0"/></g>
+<path class="edge soft" d="M 30.0 334.0 L 17.0 334.0 Q 10.0 334.0 10.0 341.0 L 10.0 525.0 Q 10.0 532.0 17.0 532.0 L 30.0 532.0"/>
+<g class="mark"><line x1="23.0" y1="339.0" x2="23.0" y2="329.0"/><line x1="30.0" y1="532.0" x2="19.0" y2="527.0"/><line x1="30.0" y1="532.0" x2="19.0" y2="532.0"/><line x1="30.0" y1="532.0" x2="19.0" y2="537.0"/></g>
+<path class="edge" d="M 620.0 154.0 L 625.0 154.0 Q 630.0 154.0 630.0 161.0 L 630.0 163.0 Q 630.0 170.0 637.0 170.0 L 690.0 170.0"/>
+<g class="mark"><line x1="627.0" y1="149.0" x2="627.0" y2="159.0"/><line x1="690.0" y1="170.0" x2="679.0" y2="165.0"/><line x1="690.0" y1="170.0" x2="679.0" y2="170.0"/><line x1="690.0" y1="170.0" x2="679.0" y2="175.0"/></g>
+<path class="edge" d="M 360.0 154.0 L 354.0 154.0 Q 348.0 154.0 348.0 161.0 L 348.0 329.0 Q 348.0 336.0 354.0 336.0 L 360.0 336.0"/>
+<g class="mark"><line x1="353.0" y1="159.0" x2="353.0" y2="149.0"/><line x1="360.0" y1="336.0" x2="349.0" y2="331.0"/><line x1="360.0" y1="336.0" x2="349.0" y2="336.0"/><line x1="360.0" y1="336.0" x2="349.0" y2="341.0"/></g>
+<path class="edge" d="M 620.0 304.0 L 635.0 304.0 Q 642.0 304.0 642.0 311.0 L 642.0 363.0 Q 642.0 370.0 649.0 370.0 L 690.0 370.0"/>
+<g class="mark"><line x1="627.0" y1="299.0" x2="627.0" y2="309.0"/><line x1="690.0" y1="370.0" x2="679.0" y2="365.0"/><line x1="690.0" y1="370.0" x2="679.0" y2="370.0"/><line x1="690.0" y1="370.0" x2="679.0" y2="375.0"/></g>
+<path class="edge" d="M 620.0 304.0 L 647.0 304.0 Q 654.0 304.0 654.0 311.0 L 654.0 613.0 Q 654.0 620.0 661.0 620.0 L 690.0 620.0"/>
+<g class="mark"><line x1="627.0" y1="299.0" x2="627.0" y2="309.0"/><line x1="690.0" y1="620.0" x2="679.0" y2="615.0"/><line x1="690.0" y1="620.0" x2="679.0" y2="620.0"/><line x1="690.0" y1="620.0" x2="679.0" y2="625.0"/></g>
+<path class="edge" d="M 690.0 154.0 L 684.0 154.0 Q 678.0 154.0 678.0 161.0 L 678.0 379.0 Q 678.0 386.0 684.0 386.0 L 690.0 386.0"/>
+<g class="mark"><line x1="683.0" y1="159.0" x2="683.0" y2="149.0"/><line x1="690.0" y1="386.0" x2="679.0" y2="381.0"/><line x1="690.0" y1="386.0" x2="679.0" y2="386.0"/><line x1="690.0" y1="386.0" x2="679.0" y2="391.0"/></g>
+<path class="edge" d="M 690.0 154.0 L 673.0 154.0 Q 666.0 154.0 666.0 161.0 L 666.0 629.0 Q 666.0 636.0 673.0 636.0 L 690.0 636.0"/>
+<g class="mark"><line x1="683.0" y1="159.0" x2="683.0" y2="149.0"/><line x1="690.0" y1="636.0" x2="679.0" y2="631.0"/><line x1="690.0" y1="636.0" x2="679.0" y2="636.0"/><line x1="690.0" y1="636.0" x2="679.0" y2="641.0"/></g>
+<path class="edge" d="M 950.0 154.0 L 955.0 154.0 Q 960.0 154.0 960.0 161.0 L 960.0 179.0 Q 960.0 186.0 967.0 186.0 L 1020.0 186.0"/>
+<g class="mark"><line x1="957.0" y1="149.0" x2="957.0" y2="159.0"/><line x1="1020.0" y1="186.0" x2="1009.0" y2="181.0"/><line x1="1020.0" y1="186.0" x2="1009.0" y2="186.0"/><line x1="1020.0" y1="186.0" x2="1009.0" y2="191.0"/></g>
+<path class="edge soft" d="M 950.0 154.0 L 965.0 154.0 Q 972.0 154.0 972.0 161.0 L 972.0 399.0 Q 972.0 406.0 979.0 406.0 L 1020.0 406.0"/>
+<g class="mark"><line x1="957.0" y1="149.0" x2="957.0" y2="159.0"/><line x1="1020.0" y1="406.0" x2="1009.0" y2="401.0"/><line x1="1020.0" y1="406.0" x2="1009.0" y2="406.0"/><line x1="1020.0" y1="406.0" x2="1009.0" y2="411.0"/></g>
+<path class="edge" d="M 950.0 154.0 L 977.0 154.0 Q 984.0 154.0 984.0 161.0 L 984.0 779.0 Q 984.0 786.0 991.0 786.0 L 1020.0 786.0"/>
+<g class="mark"><line x1="957.0" y1="149.0" x2="957.0" y2="159.0"/><line x1="1020.0" y1="786.0" x2="1009.0" y2="781.0"/><line x1="1020.0" y1="786.0" x2="1009.0" y2="786.0"/><line x1="1020.0" y1="786.0" x2="1009.0" y2="791.0"/></g>
+<path class="edge" d="M 360.0 304.0 L 343.0 304.0 Q 336.0 304.0 336.0 311.0 L 336.0 1041.0 Q 336.0 1048.0 343.0 1048.0 L 1001.0 1048.0 Q 1008.0 1048.0 1008.0 1041.0 L 1008.0 809.0 Q 1008.0 802.0 1014.0 802.0 L 1020.0 802.0"/>
+<g class="mark"><line x1="353.0" y1="309.0" x2="353.0" y2="299.0"/><line x1="1020.0" y1="802.0" x2="1009.0" y2="797.0"/><line x1="1020.0" y1="802.0" x2="1009.0" y2="802.0"/><line x1="1020.0" y1="802.0" x2="1009.0" y2="807.0"/></g>
+<path class="edge" d="M 620.0 524.0 L 629.0 524.0 Q 636.0 524.0 636.0 531.0 L 636.0 1055.0 Q 636.0 1062.0 643.0 1062.0 L 989.0 1062.0 Q 996.0 1062.0 996.0 1055.0 L 996.0 889.0 Q 996.0 882.0 1003.0 882.0 L 1020.0 882.0"/>
+<g class="mark"><line x1="627.0" y1="519.0" x2="627.0" y2="529.0"/><line x1="1020.0" y1="882.0" x2="1009.0" y2="877.0"/><line x1="1020.0" y1="882.0" x2="1009.0" y2="882.0"/><line x1="1020.0" y1="882.0" x2="1009.0" y2="887.0"/></g>
+<path class="edge" d="M 1020.0 374.0 L 1014.0 374.0 Q 1008.0 374.0 1008.0 381.0 L 1008.0 587.0 Q 1008.0 594.0 1014.0 594.0 L 1020.0 594.0"/>
+<g class="mark"><line x1="1013.0" y1="379.0" x2="1013.0" y2="369.0"/><line x1="1020.0" y1="594.0" x2="1009.0" y2="589.0"/><line x1="1020.0" y1="594.0" x2="1009.0" y2="594.0"/><line x1="1020.0" y1="594.0" x2="1009.0" y2="599.0"/></g>
+<path class="edge" d="M 1280.0 282.0 L 1285.0 282.0 Q 1290.0 282.0 1290.0 275.0 L 1290.0 161.0 Q 1290.0 154.0 1285.0 154.0 L 1280.0 154.0"/>
+<g class="mark"><line x1="1287.0" y1="277.0" x2="1287.0" y2="287.0"/><line x1="1280.0" y1="154.0" x2="1291.0" y2="159.0"/><line x1="1280.0" y1="154.0" x2="1291.0" y2="154.0"/><line x1="1280.0" y1="154.0" x2="1291.0" y2="149.0"/></g>
+<path class="edge soft" d="M 1280.0 154.0 L 1293.0 154.0 Q 1300.0 154.0 1300.0 161.0 L 1300.0 307.0 Q 1300.0 314.0 1307.0 314.0 L 1350.0 314.0"/>
+<g class="mark"><line x1="1287.0" y1="149.0" x2="1287.0" y2="159.0"/><line x1="1350.0" y1="314.0" x2="1339.0" y2="309.0"/><line x1="1350.0" y1="314.0" x2="1339.0" y2="314.0"/><line x1="1350.0" y1="314.0" x2="1339.0" y2="319.0"/></g>
+<path class="edge soft" d="M 950.0 154.0 L 1001.0 154.0 Q 1008.0 154.0 1008.0 147.0 L 1008.0 111.0 Q 1008.0 104.0 1015.0 104.0 L 1303.0 104.0 Q 1310.0 104.0 1310.0 111.0 L 1310.0 275.0 Q 1310.0 282.0 1317.0 282.0 L 1350.0 282.0"/>
+<g class="mark"><line x1="957.0" y1="149.0" x2="957.0" y2="159.0"/><line x1="1350.0" y1="282.0" x2="1339.0" y2="277.0"/><line x1="1350.0" y1="282.0" x2="1339.0" y2="282.0"/><line x1="1350.0" y1="282.0" x2="1339.0" y2="287.0"/></g>
+<path class="edge soft" d="M 620.0 304.0 L 647.0 304.0 Q 654.0 304.0 654.0 297.0 L 654.0 103.0 Q 654.0 96.0 661.0 96.0 L 1313.0 96.0 Q 1320.0 96.0 1320.0 103.0 L 1320.0 291.0 Q 1320.0 298.0 1327.0 298.0 L 1350.0 298.0"/>
+<g class="mark"><line x1="627.0" y1="299.0" x2="627.0" y2="309.0"/><line x1="1350.0" y1="298.0" x2="1339.0" y2="293.0"/><line x1="1350.0" y1="298.0" x2="1339.0" y2="298.0"/><line x1="1350.0" y1="298.0" x2="1339.0" y2="303.0"/></g>
+<path class="edge soft" d="M 1350.0 594.0 L 1347.0 594.0 Q 1344.0 594.0 1344.0 587.0 L 1344.0 497.0 Q 1344.0 490.0 1347.0 490.0 L 1350.0 490.0"/>
+<g class="mark"><line x1="1343.0" y1="599.0" x2="1343.0" y2="589.0"/><line x1="1350.0" y1="490.0" x2="1339.0" y2="485.0"/><line x1="1350.0" y1="490.0" x2="1339.0" y2="490.0"/><line x1="1350.0" y1="490.0" x2="1339.0" y2="495.0"/></g>
+<path class="edge" d="M 1350.0 594.0 L 1341.0 594.0 Q 1334.0 594.0 1334.0 601.0 L 1334.0 853.0 Q 1334.0 860.0 1341.0 860.0 L 1350.0 860.0"/>
+<g class="mark"><line x1="1343.0" y1="599.0" x2="1343.0" y2="589.0"/><line x1="1350.0" y1="860.0" x2="1339.0" y2="855.0"/><line x1="1350.0" y1="860.0" x2="1339.0" y2="860.0"/><line x1="1350.0" y1="860.0" x2="1339.0" y2="865.0"/></g>
+<path class="edge soft" d="M 1350.0 474.0 L 1335.0 474.0 Q 1328.0 474.0 1328.0 467.0 L 1328.0 381.0 Q 1328.0 374.0 1321.0 374.0 L 1280.0 374.0"/>
+<g class="mark"><line x1="1343.0" y1="479.0" x2="1343.0" y2="469.0"/><line x1="1280.0" y1="374.0" x2="1291.0" y2="379.0"/><line x1="1280.0" y1="374.0" x2="1291.0" y2="374.0"/><line x1="1280.0" y1="374.0" x2="1291.0" y2="369.0"/></g>
+<path class="edge soft" d="M 1610.0 490.0 L 1623.0 490.0 Q 1630.0 490.0 1630.0 483.0 L 1630.0 177.0 Q 1630.0 170.0 1637.0 170.0 L 1680.0 170.0"/>
+<g class="mark"><line x1="1617.0" y1="485.0" x2="1617.0" y2="495.0"/><line x1="1680.0" y1="170.0" x2="1669.0" y2="165.0"/><line x1="1680.0" y1="170.0" x2="1669.0" y2="170.0"/><line x1="1680.0" y1="170.0" x2="1669.0" y2="175.0"/></g>
+<path class="edge soft" d="M 1610.0 594.0 L 1637.0 594.0 Q 1644.0 594.0 1644.0 587.0 L 1644.0 161.0 Q 1644.0 154.0 1651.0 154.0 L 1680.0 154.0"/>
+<g class="mark"><line x1="1617.0" y1="589.0" x2="1617.0" y2="599.0"/><line x1="1680.0" y1="154.0" x2="1669.0" y2="149.0"/><line x1="1680.0" y1="154.0" x2="1669.0" y2="154.0"/><line x1="1680.0" y1="154.0" x2="1669.0" y2="159.0"/></g>
+<path class="edge soft" d="M 160.0 738.0 L 160.0 1069.0 Q 160.0 1076.0 167.0 1076.0 L 1651.0 1076.0 Q 1658.0 1076.0 1658.0 1069.0 L 1658.0 193.0 Q 1658.0 186.0 1665.0 186.0 L 1680.0 186.0"/>
+<g class="mark"><line x1="165.0" y1="745.0" x2="155.0" y2="745.0"/><line x1="1680.0" y1="186.0" x2="1669.0" y2="181.0"/><line x1="1680.0" y1="186.0" x2="1669.0" y2="186.0"/><line x1="1680.0" y1="186.0" x2="1669.0" y2="191.0"/></g>
+<g>
+<rect class="body" x="30" y="120" width="260" height="144" rx="7"/>
+<path d="M 30 127 a7 7 0 0 1 7 -7 h246 a7 7 0 0 1 7 7 v19 h-260 z" fill="#2F4858"/>
+<text x="40" y="138" font-size="12.5" font-weight="700" fill="#fff">organisation</text>
+<text x="280" y="138" font-size="9" fill="#ffffff" fill-opacity=".72" text-anchor="end">1 row</text>
+<text x="39" y="157.5" class="key" fill="var(--pk)">PK</text>
+<text x="62" y="157.5" class="ttl" font-weight="600">id</text>
+<text x="281" y="157.5" class="typ mut" text-anchor="end">TEXT</text>
+<rect class="alt" x="31" y="162" width="258" height="16"/>
+<text x="62" y="173.5" class="ttl">name</text>
+<text x="281" y="173.5" class="typ mut" text-anchor="end">TEXT</text>
+<text x="62" y="189.5" class="ttl">code</text>
+<text x="281" y="189.5" class="typ mut" text-anchor="end">TEXT</text>
+<rect class="alt" x="31" y="194" width="258" height="16"/>
+<text x="62" y="205.5" class="ttl">retention_days</text>
+<text x="281" y="205.5" class="typ mut" text-anchor="end">INTEGER</text>
+<text x="62" y="221.5" class="ttl">created_at</text>
+<text x="281" y="221.5" class="typ mut" text-anchor="end">TEXT</text>
+<rect class="alt" x="31" y="226" width="258" height="16"/>
+<text x="62" y="237.5" class="ttl">grouping_window_seconds</text>
+<text x="281" y="237.5" class="typ mut" text-anchor="end">INTEGER</text>
+<text x="62" y="253.5" class="ttl">clip_retention_days</text>
+<text x="281" y="253.5" class="typ mut" text-anchor="end">INTEGER</text>
+<text x="30" y="277" class="mut" font-size="9.5">tenant</text>
+</g>
+<g>
+<rect class="body" x="30" y="300" width="260" height="112" rx="7"/>
+<path d="M 30 307 a7 7 0 0 1 7 -7 h246 a7 7 0 0 1 7 7 v19 h-260 z" fill="#2F4858"/>
+<text x="40" y="318" font-size="12.5" font-weight="700" fill="#fff">app_user</text>
+<text x="280" y="318" font-size="9" fill="#ffffff" fill-opacity=".72" text-anchor="end">2 rows</text>
+<text x="39" y="337.5" class="key" fill="var(--pk)">PK</text>
+<text x="62" y="337.5" class="ttl" font-weight="600">id</text>
+<text x="281" y="337.5" class="typ mut" text-anchor="end">TEXT</text>
+<rect class="alt" x="31" y="342" width="258" height="16"/>
+<text x="39" y="353.5" class="key" fill="var(--fk)">FK</text>
+<text x="62" y="353.5" class="ttl" font-weight="600">org_id</text>
+<text x="281" y="353.5" class="typ mut" text-anchor="end">TEXT</text>
+<text x="62" y="369.5" class="ttl">name</text>
+<text x="281" y="369.5" class="typ mut" text-anchor="end">TEXT</text>
+<rect class="alt" x="31" y="374" width="258" height="16"/>
+<text x="62" y="385.5" class="ttl">role</text>
+<text x="281" y="385.5" class="typ mut" text-anchor="end">TEXT</text>
+<text x="62" y="401.5" class="ttl">created_at</text>
+<text x="281" y="401.5" class="typ mut" text-anchor="end">TEXT</text>
+<text x="30" y="425" class="mut" font-size="9.5">operator / supervisor / admin</text>
+</g>
+<g>
+<rect class="body" x="30" y="450" width="260" height="288" rx="7"/>
+<path d="M 30 457 a7 7 0 0 1 7 -7 h246 a7 7 0 0 1 7 7 v19 h-260 z" fill="#9B3B2E"/>
+<text x="40" y="468" font-size="12.5" font-weight="700" fill="#fff">action</text>
+<text x="280" y="468" font-size="9" fill="#ffffff" fill-opacity=".72" text-anchor="end">40 rows</text>
+<text x="39" y="487.5" class="key" fill="var(--pk)">PK</text>
+<text x="62" y="487.5" class="ttl" font-weight="600">seq</text>
+<text x="281" y="487.5" class="typ mut" text-anchor="end">INTEGER</text>
+<rect class="alt" x="31" y="492" width="258" height="16"/>
+<text x="62" y="503.5" class="ttl">id</text>
+<text x="281" y="503.5" class="typ mut" text-anchor="end">TEXT</text>
+<text x="62" y="519.5" class="ttl">org_id</text>
+<text x="281" y="519.5" class="typ mut" text-anchor="end">TEXT</text>
+<rect class="alt" x="31" y="524" width="258" height="16"/>
+<text x="62" y="535.5" class="ttl">actor_id</text>
+<text x="281" y="535.5" class="typ mut" text-anchor="end">TEXT</text>
+<text x="62" y="551.5" class="ttl">actor_name</text>
+<text x="281" y="551.5" class="typ mut" text-anchor="end">TEXT</text>
+<rect class="alt" x="31" y="556" width="258" height="16"/>
+<text x="62" y="567.5" class="ttl">actor_role</text>
+<text x="281" y="567.5" class="typ mut" text-anchor="end">TEXT</text>
+<text x="62" y="583.5" class="ttl">verb</text>
+<text x="281" y="583.5" class="typ mut" text-anchor="end">TEXT</text>
+<rect class="alt" x="31" y="588" width="258" height="16"/>
+<text x="62" y="599.5" class="ttl">target_type</text>
+<text x="281" y="599.5" class="typ mut" text-anchor="end">TEXT</text>
+<text x="62" y="615.5" class="ttl">target_id</text>
+<text x="281" y="615.5" class="typ mut" text-anchor="end">TEXT</text>
+<rect class="alt" x="31" y="620" width="258" height="16"/>
+<text x="62" y="631.5" class="ttl">reason</text>
+<text x="281" y="631.5" class="typ mut" text-anchor="end">TEXT</text>
+<text x="62" y="647.5" class="ttl">detail</text>
+<text x="281" y="647.5" class="typ mut" text-anchor="end">TEXT</text>
+<rect class="alt" x="31" y="652" width="258" height="16"/>
+<text x="62" y="663.5" class="ttl">before</text>
+<text x="281" y="663.5" class="typ mut" text-anchor="end">TEXT</text>
+<text x="62" y="679.5" class="ttl">after</text>
+<text x="281" y="679.5" class="typ mut" text-anchor="end">TEXT</text>
+<rect class="alt" x="31" y="684" width="258" height="16"/>
+<text x="62" y="695.5" class="ttl">at</text>
+<text x="281" y="695.5" class="typ mut" text-anchor="end">TEXT</text>
+<text x="62" y="711.5" class="ttl">prev_hash</text>
+<text x="281" y="711.5" class="typ mut" text-anchor="end">TEXT</text>
+<rect class="alt" x="31" y="716" width="258" height="16"/>
+<text x="62" y="727.5" class="ttl">hash</text>
+<text x="281" y="727.5" class="typ mut" text-anchor="end">TEXT</text>
+<text x="30" y="751" class="mut" font-size="9.5">hash-chained audit log</text>
+</g>
+<g>
+<rect class="body" x="360" y="120" width="260" height="112" rx="7"/>
+<path d="M 360 127 a7 7 0 0 1 7 -7 h246 a7 7 0 0 1 7 7 v19 h-260 z" fill="#2F4858"/>
+<text x="370" y="138" font-size="12.5" font-weight="700" fill="#fff">site</text>
+<text x="610" y="138" font-size="9" fill="#ffffff" fill-opacity=".72" text-anchor="end">1 row</text>
+<text x="369" y="157.5" class="key" fill="var(--pk)">PK</text>
+<text x="392" y="157.5" class="ttl" font-weight="600">id</text>
+<text x="611" y="157.5" class="typ mut" text-anchor="end">TEXT</text>
+<rect class="alt" x="361" y="162" width="258" height="16"/>
+<text x="369" y="173.5" class="key" fill="var(--fk)">FK</text>
+<text x="392" y="173.5" class="ttl" font-weight="600">org_id</text>
+<text x="611" y="173.5" class="typ mut" text-anchor="end">TEXT</text>
+<text x="392" y="189.5" class="ttl">name</text>
+<text x="611" y="189.5" class="typ mut" text-anchor="end">TEXT</text>
+<rect class="alt" x="361" y="194" width="258" height="16"/>
+<text x="392" y="205.5" class="ttl">kind</text>
+<text x="611" y="205.5" class="typ mut" text-anchor="end">TEXT</text>
+<text x="392" y="221.5" class="ttl">created_at</text>
+<text x="611" y="221.5" class="typ mut" text-anchor="end">TEXT</text>
+<text x="360" y="245" class="mut" font-size="9.5">bop | check_post | jetty | pass</text>
+</g>
+<g>
+<rect class="body" x="360" y="270" width="260" height="176" rx="7"/>
+<path d="M 360 277 a7 7 0 0 1 7 -7 h246 a7 7 0 0 1 7 7 v19 h-260 z" fill="#1F6F5C"/>
+<text x="370" y="288" font-size="12.5" font-weight="700" fill="#fff">zone</text>
+<text x="610" y="288" font-size="9" fill="#ffffff" fill-opacity=".72" text-anchor="end">1 row</text>
+<text x="369" y="307.5" class="key" fill="var(--pk)">PK</text>
+<text x="392" y="307.5" class="ttl" font-weight="600">id</text>
+<text x="611" y="307.5" class="typ mut" text-anchor="end">TEXT</text>
+<rect class="alt" x="361" y="312" width="258" height="16"/>
+<text x="369" y="323.5" class="key" fill="var(--fk)">FK</text>
+<text x="392" y="323.5" class="ttl" font-weight="600">org_id</text>
+<text x="611" y="323.5" class="typ mut" text-anchor="end">TEXT</text>
+<text x="369" y="339.5" class="key" fill="var(--fk)">FK</text>
+<text x="392" y="339.5" class="ttl" font-weight="600">site_id</text>
+<text x="611" y="339.5" class="typ mut" text-anchor="end">TEXT</text>
+<rect class="alt" x="361" y="344" width="258" height="16"/>
+<text x="392" y="355.5" class="ttl">name</text>
+<text x="611" y="355.5" class="typ mut" text-anchor="end">TEXT</text>
+<text x="392" y="371.5" class="ttl">kind</text>
+<text x="611" y="371.5" class="typ mut" text-anchor="end">TEXT</text>
+<rect class="alt" x="361" y="376" width="258" height="16"/>
+<text x="392" y="387.5" class="ttl">active</text>
+<text x="611" y="387.5" class="typ mut" text-anchor="end">INTEGER</text>
+<text x="392" y="403.5" class="ttl">created_at</text>
+<text x="611" y="403.5" class="typ mut" text-anchor="end">TEXT</text>
+<rect class="alt" x="361" y="408" width="258" height="16"/>
+<text x="392" y="419.5" class="ttl">updated_at</text>
+<text x="611" y="419.5" class="typ mut" text-anchor="end">TEXT</text>
+<text x="392" y="435.5" class="ttl">area</text>
+<text x="611" y="435.5" class="typ mut" text-anchor="end">TEXT</text>
+<text x="360" y="459" class="mut" font-size="9.5">fence_line | gate | waterline | ...</text>
+</g>
+<g>
+<rect class="body" x="360" y="490" width="260" height="240" rx="7"/>
+<path d="M 360 497 a7 7 0 0 1 7 -7 h246 a7 7 0 0 1 7 7 v19 h-260 z" fill="#5A4A8C"/>
+<text x="370" y="508" font-size="12.5" font-weight="700" fill="#fff">watchlist_entry</text>
+<text x="610" y="508" font-size="9" fill="#ffffff" fill-opacity=".72" text-anchor="end">11 rows</text>
+<text x="369" y="527.5" class="key" fill="var(--pk)">PK</text>
+<text x="392" y="527.5" class="ttl" font-weight="600">id</text>
+<text x="611" y="527.5" class="typ mut" text-anchor="end">TEXT</text>
+<rect class="alt" x="361" y="532" width="258" height="16"/>
+<text x="369" y="543.5" class="key" fill="var(--fk)">FK</text>
+<text x="392" y="543.5" class="ttl" font-weight="600">org_id</text>
+<text x="611" y="543.5" class="typ mut" text-anchor="end">TEXT</text>
+<text x="392" y="559.5" class="ttl">plate_number</text>
+<text x="611" y="559.5" class="typ mut" text-anchor="end">TEXT</text>
+<rect class="alt" x="361" y="564" width="258" height="16"/>
+<text x="392" y="575.5" class="ttl">vehicle_type</text>
+<text x="611" y="575.5" class="typ mut" text-anchor="end">TEXT</text>
+<text x="392" y="591.5" class="ttl">make_model</text>
+<text x="611" y="591.5" class="typ mut" text-anchor="end">TEXT</text>
+<rect class="alt" x="361" y="596" width="258" height="16"/>
+<text x="392" y="607.5" class="ttl">color</text>
+<text x="611" y="607.5" class="typ mut" text-anchor="end">TEXT</text>
+<text x="392" y="623.5" class="ttl">severity</text>
+<text x="611" y="623.5" class="typ mut" text-anchor="end">TEXT</text>
+<rect class="alt" x="361" y="628" width="258" height="16"/>
+<text x="392" y="639.5" class="ttl">flag_reason</text>
+<text x="611" y="639.5" class="typ mut" text-anchor="end">TEXT</text>
+<text x="392" y="655.5" class="ttl">notes</text>
+<text x="611" y="655.5" class="typ mut" text-anchor="end">TEXT</text>
+<rect class="alt" x="361" y="660" width="258" height="16"/>
+<text x="392" y="671.5" class="ttl">active</text>
+<text x="611" y="671.5" class="typ mut" text-anchor="end">INTEGER</text>
+<text x="392" y="687.5" class="ttl">added_by</text>
+<text x="611" y="687.5" class="typ mut" text-anchor="end">TEXT</text>
+<rect class="alt" x="361" y="692" width="258" height="16"/>
+<text x="392" y="703.5" class="ttl">created_at</text>
+<text x="611" y="703.5" class="typ mut" text-anchor="end">TEXT</text>
+<text x="392" y="719.5" class="ttl">updated_at</text>
+<text x="611" y="719.5" class="typ mut" text-anchor="end">TEXT</text>
+<text x="360" y="743" class="mut" font-size="9.5">flagged plates</text>
+</g>
+<g>
+<rect class="body" x="690" y="120" width="260" height="160" rx="7"/>
+<path d="M 690 127 a7 7 0 0 1 7 -7 h246 a7 7 0 0 1 7 7 v19 h-260 z" fill="#1F6F5C"/>
+<text x="700" y="138" font-size="12.5" font-weight="700" fill="#fff">camera</text>
+<text x="940" y="138" font-size="9" fill="#ffffff" fill-opacity=".72" text-anchor="end">5 rows</text>
+<text x="699" y="157.5" class="key" fill="var(--pk)">PK</text>
+<text x="722" y="157.5" class="ttl" font-weight="600">id</text>
+<text x="941" y="157.5" class="typ mut" text-anchor="end">TEXT</text>
+<rect class="alt" x="691" y="162" width="258" height="16"/>
+<text x="699" y="173.5" class="key" fill="var(--fk)">FK</text>
+<text x="722" y="173.5" class="ttl" font-weight="600">site_id</text>
+<text x="941" y="173.5" class="typ mut" text-anchor="end">TEXT</text>
+<text x="722" y="189.5" class="ttl">name</text>
+<text x="941" y="189.5" class="typ mut" text-anchor="end">TEXT</text>
+<rect class="alt" x="691" y="194" width="258" height="16"/>
+<text x="722" y="205.5" class="ttl">stream_url</text>
+<text x="941" y="205.5" class="typ mut" text-anchor="end">TEXT</text>
+<text x="722" y="221.5" class="ttl">status</text>
+<text x="941" y="221.5" class="typ mut" text-anchor="end">TEXT</text>
+<rect class="alt" x="691" y="226" width="258" height="16"/>
+<text x="722" y="237.5" class="ttl">enabled</text>
+<text x="941" y="237.5" class="typ mut" text-anchor="end">INTEGER</text>
+<text x="722" y="253.5" class="ttl">created_at</text>
+<text x="941" y="253.5" class="typ mut" text-anchor="end">TEXT</text>
+<rect class="alt" x="691" y="258" width="258" height="16"/>
+<text x="722" y="269.5" class="ttl">updated_at</text>
+<text x="941" y="269.5" class="typ mut" text-anchor="end">TEXT</text>
+<text x="690" y="293" class="mut" font-size="9.5">status = the blindness ladder</text>
+</g>
+<g>
+<rect class="body" x="690" y="320" width="260" height="208" rx="7"/>
+<path d="M 690 327 a7 7 0 0 1 7 -7 h246 a7 7 0 0 1 7 7 v19 h-260 z" fill="#1F6F5C"/>
+<text x="700" y="338" font-size="12.5" font-weight="700" fill="#fff">zone_camera</text>
+<text x="940" y="338" font-size="9" fill="#ffffff" fill-opacity=".72" text-anchor="end">1 row</text>
+<text x="699" y="357.5" class="key" fill="var(--pk)">PK</text>
+<text x="722" y="357.5" class="ttl" font-weight="600">id</text>
+<text x="941" y="357.5" class="typ mut" text-anchor="end">TEXT</text>
+<rect class="alt" x="691" y="362" width="258" height="16"/>
+<text x="699" y="373.5" class="key" fill="var(--fk)">FK</text>
+<text x="722" y="373.5" class="ttl" font-weight="600">zone_id</text>
+<text x="941" y="373.5" class="typ mut" text-anchor="end">TEXT</text>
+<text x="699" y="389.5" class="key" fill="var(--fk)">FK</text>
+<text x="722" y="389.5" class="ttl" font-weight="600">camera_id</text>
+<text x="941" y="389.5" class="typ mut" text-anchor="end">TEXT</text>
+<rect class="alt" x="691" y="394" width="258" height="16"/>
+<text x="722" y="405.5" class="ttl">geometry</text>
+<text x="941" y="405.5" class="typ mut" text-anchor="end">TEXT</text>
+<text x="722" y="421.5" class="ttl">points</text>
+<text x="941" y="421.5" class="typ mut" text-anchor="end">TEXT</text>
+<rect class="alt" x="691" y="426" width="258" height="16"/>
+<text x="722" y="437.5" class="ttl">direction</text>
+<text x="941" y="437.5" class="typ mut" text-anchor="end">TEXT</text>
+<text x="722" y="453.5" class="ttl">confirm_seconds</text>
+<text x="941" y="453.5" class="typ mut" text-anchor="end">REAL</text>
+<rect class="alt" x="691" y="458" width="258" height="16"/>
+<text x="722" y="469.5" class="ttl">placed</text>
+<text x="941" y="469.5" class="typ mut" text-anchor="end">INTEGER</text>
+<text x="722" y="485.5" class="ttl">active</text>
+<text x="941" y="485.5" class="typ mut" text-anchor="end">INTEGER</text>
+<rect class="alt" x="691" y="490" width="258" height="16"/>
+<text x="722" y="501.5" class="ttl">created_at</text>
+<text x="941" y="501.5" class="typ mut" text-anchor="end">TEXT</text>
+<text x="722" y="517.5" class="ttl">updated_at</text>
+<text x="941" y="517.5" class="typ mut" text-anchor="end">TEXT</text>
+<text x="690" y="541" class="mut" font-size="9.5">one active zone per camera</text>
+</g>
+<g>
+<rect class="body" x="690" y="570" width="260" height="176" rx="7"/>
+<path d="M 690 577 a7 7 0 0 1 7 -7 h246 a7 7 0 0 1 7 7 v19 h-260 z" fill="#1F6F5C"/>
+<text x="700" y="588" font-size="12.5" font-weight="700" fill="#fff">zone_target</text>
+<text x="940" y="588" font-size="9" fill="#ffffff" fill-opacity=".72" text-anchor="end">3 rows</text>
+<text x="699" y="607.5" class="key" fill="var(--pk)">PK</text>
+<text x="722" y="607.5" class="ttl" font-weight="600">id</text>
+<text x="941" y="607.5" class="typ mut" text-anchor="end">TEXT</text>
+<rect class="alt" x="691" y="612" width="258" height="16"/>
+<text x="699" y="623.5" class="key" fill="var(--fk)">FK</text>
+<text x="722" y="623.5" class="ttl" font-weight="600">zone_id</text>
+<text x="941" y="623.5" class="typ mut" text-anchor="end">TEXT</text>
+<text x="699" y="639.5" class="key" fill="var(--fk)">FK</text>
+<text x="722" y="639.5" class="ttl" font-weight="600">camera_id</text>
+<text x="941" y="639.5" class="typ mut" text-anchor="end">TEXT</text>
+<rect class="alt" x="691" y="644" width="258" height="16"/>
+<text x="722" y="655.5" class="ttl">class</text>
+<text x="941" y="655.5" class="typ mut" text-anchor="end">TEXT</text>
+<text x="722" y="671.5" class="ttl">severity</text>
+<text x="941" y="671.5" class="typ mut" text-anchor="end">TEXT</text>
+<rect class="alt" x="691" y="676" width="258" height="16"/>
+<text x="722" y="687.5" class="ttl">action</text>
+<text x="941" y="687.5" class="typ mut" text-anchor="end">TEXT</text>
+<text x="722" y="703.5" class="ttl">priority</text>
+<text x="941" y="703.5" class="typ mut" text-anchor="end">INTEGER</text>
+<rect class="alt" x="691" y="708" width="258" height="16"/>
+<text x="722" y="719.5" class="ttl">created_at</text>
+<text x="941" y="719.5" class="typ mut" text-anchor="end">TEXT</text>
+<text x="722" y="735.5" class="ttl">updated_at</text>
+<text x="941" y="735.5" class="typ mut" text-anchor="end">TEXT</text>
+<text x="690" y="759" class="mut" font-size="9.5">per-class alert policy</text>
+</g>
+<g>
+<rect class="body" x="1020" y="120" width="260" height="176" rx="7"/>
+<path d="M 1020 127 a7 7 0 0 1 7 -7 h246 a7 7 0 0 1 7 7 v19 h-260 z" fill="#8A6116"/>
+<text x="1030" y="138" font-size="12.5" font-weight="700" fill="#fff">tracked_thing</text>
+<text x="1270" y="138" font-size="9" fill="#ffffff" fill-opacity=".72" text-anchor="end">1,464 rows</text>
+<text x="1029" y="157.5" class="key" fill="var(--pk)">PK</text>
+<text x="1052" y="157.5" class="ttl" font-weight="600">id</text>
+<text x="1271" y="157.5" class="typ mut" text-anchor="end">TEXT</text>
+<rect class="alt" x="1021" y="162" width="258" height="16"/>
+<text x="1052" y="173.5" class="ttl">org_id</text>
+<text x="1271" y="173.5" class="typ mut" text-anchor="end">TEXT</text>
+<text x="1029" y="189.5" class="key" fill="var(--fk)">FK</text>
+<text x="1052" y="189.5" class="ttl" font-weight="600">camera_id</text>
+<text x="1271" y="189.5" class="typ mut" text-anchor="end">TEXT</text>
+<rect class="alt" x="1021" y="194" width="258" height="16"/>
+<text x="1052" y="205.5" class="ttl">track_ref</text>
+<text x="1271" y="205.5" class="typ mut" text-anchor="end">TEXT</text>
+<text x="1052" y="221.5" class="ttl">class</text>
+<text x="1271" y="221.5" class="typ mut" text-anchor="end">TEXT</text>
+<rect class="alt" x="1021" y="226" width="258" height="16"/>
+<text x="1052" y="237.5" class="ttl">first_seen</text>
+<text x="1271" y="237.5" class="typ mut" text-anchor="end">TEXT</text>
+<text x="1052" y="253.5" class="ttl">last_seen</text>
+<text x="1271" y="253.5" class="typ mut" text-anchor="end">TEXT</text>
+<rect class="alt" x="1021" y="258" width="258" height="16"/>
+<text x="1052" y="269.5" class="ttl">path</text>
+<text x="1271" y="269.5" class="typ mut" text-anchor="end">TEXT</text>
+<text x="1029" y="285.5" class="key" fill="var(--fk)">FK</text>
+<text x="1052" y="285.5" class="ttl" font-weight="600">same_as</text>
+<text x="1271" y="285.5" class="typ mut" text-anchor="end">TEXT</text>
+<text x="1020" y="309" class="mut" font-size="9.5">one detector track</text>
+</g>
+<g>
+<rect class="body" x="1020" y="340" width="260" height="176" rx="7"/>
+<path d="M 1020 347 a7 7 0 0 1 7 -7 h246 a7 7 0 0 1 7 7 v19 h-260 z" fill="#8A6116"/>
+<text x="1030" y="358" font-size="12.5" font-weight="700" fill="#fff">clip</text>
+<text x="1270" y="358" font-size="9" fill="#ffffff" fill-opacity=".72" text-anchor="end">5 rows</text>
+<text x="1029" y="377.5" class="key" fill="var(--pk)">PK</text>
+<text x="1052" y="377.5" class="ttl" font-weight="600">id</text>
+<text x="1271" y="377.5" class="typ mut" text-anchor="end">TEXT</text>
+<rect class="alt" x="1021" y="382" width="258" height="16"/>
+<text x="1052" y="393.5" class="ttl">org_id</text>
+<text x="1271" y="393.5" class="typ mut" text-anchor="end">TEXT</text>
+<text x="1052" y="409.5" class="ttl">camera_id</text>
+<text x="1271" y="409.5" class="typ mut" text-anchor="end">TEXT</text>
+<rect class="alt" x="1021" y="414" width="258" height="16"/>
+<text x="1052" y="425.5" class="ttl">at</text>
+<text x="1271" y="425.5" class="typ mut" text-anchor="end">TEXT</text>
+<text x="1052" y="441.5" class="ttl">fps</text>
+<text x="1271" y="441.5" class="typ mut" text-anchor="end">REAL</text>
+<rect class="alt" x="1021" y="446" width="258" height="16"/>
+<text x="1052" y="457.5" class="ttl">frame_count</text>
+<text x="1271" y="457.5" class="typ mut" text-anchor="end">INTEGER</text>
+<text x="1052" y="473.5" class="ttl">bytes</text>
+<text x="1271" y="473.5" class="typ mut" text-anchor="end">INTEGER</text>
+<rect class="alt" x="1021" y="478" width="258" height="16"/>
+<text x="1052" y="489.5" class="ttl">simulated</text>
+<text x="1271" y="489.5" class="typ mut" text-anchor="end">INTEGER</text>
+<text x="1052" y="505.5" class="ttl">created_at</text>
+<text x="1271" y="505.5" class="typ mut" text-anchor="end">TEXT</text>
+<text x="1020" y="529" class="mut" font-size="9.5">evidence cut around a crossing</text>
+</g>
+<g>
+<rect class="body" x="1020" y="560" width="260" height="112" rx="7"/>
+<path d="M 1020 567 a7 7 0 0 1 7 -7 h246 a7 7 0 0 1 7 7 v19 h-260 z" fill="#8A6116"/>
+<text x="1030" y="578" font-size="12.5" font-weight="700" fill="#fff">clip_frame</text>
+<text x="1270" y="578" font-size="9" fill="#ffffff" fill-opacity=".72" text-anchor="end">610 rows</text>
+<text x="1029" y="597.5" class="key" fill="var(--pk)">PK</text>
+<text x="1052" y="597.5" class="ttl" font-weight="600">clip_id</text>
+<text x="1271" y="597.5" class="typ mut" text-anchor="end">TEXT</text>
+<rect class="alt" x="1021" y="602" width="258" height="16"/>
+<text x="1029" y="613.5" class="key" fill="var(--pk)">PK</text>
+<text x="1052" y="613.5" class="ttl" font-weight="600">seq</text>
+<text x="1271" y="613.5" class="typ mut" text-anchor="end">INTEGER</text>
+<text x="1052" y="629.5" class="ttl">offset_s</text>
+<text x="1271" y="629.5" class="typ mut" text-anchor="end">REAL</text>
+<rect class="alt" x="1021" y="634" width="258" height="16"/>
+<text x="1052" y="645.5" class="ttl">jpeg</text>
+<text x="1271" y="645.5" class="typ mut" text-anchor="end">TEXT</text>
+<text x="1052" y="661.5" class="ttl">boxes</text>
+<text x="1271" y="661.5" class="typ mut" text-anchor="end">TEXT</text>
+<text x="1020" y="685" class="mut" font-size="9.5">base64 JPEG at +/- offset_s</text>
+</g>
+<g>
+<rect class="body" x="1020" y="720" width="260" height="304" rx="7"/>
+<path d="M 1020 727 a7 7 0 0 1 7 -7 h246 a7 7 0 0 1 7 7 v19 h-260 z" fill="#5A4A8C"/>
+<text x="1030" y="738" font-size="12.5" font-weight="700" fill="#fff">plate_detection</text>
+<text x="1270" y="738" font-size="9" fill="#ffffff" fill-opacity=".72" text-anchor="end">0 rows</text>
+<text x="1029" y="757.5" class="key" fill="var(--pk)">PK</text>
+<text x="1052" y="757.5" class="ttl" font-weight="600">id</text>
+<text x="1271" y="757.5" class="typ mut" text-anchor="end">TEXT</text>
+<rect class="alt" x="1021" y="762" width="258" height="16"/>
+<text x="1052" y="773.5" class="ttl">org_id</text>
+<text x="1271" y="773.5" class="typ mut" text-anchor="end">TEXT</text>
+<text x="1029" y="789.5" class="key" fill="var(--fk)">FK</text>
+<text x="1052" y="789.5" class="ttl" font-weight="600">camera_id</text>
+<text x="1271" y="789.5" class="typ mut" text-anchor="end">TEXT</text>
+<rect class="alt" x="1021" y="794" width="258" height="16"/>
+<text x="1029" y="805.5" class="key" fill="var(--fk)">FK</text>
+<text x="1052" y="805.5" class="ttl" font-weight="600">zone_id</text>
+<text x="1271" y="805.5" class="typ mut" text-anchor="end">TEXT</text>
+<text x="1052" y="821.5" class="ttl">plate_number</text>
+<text x="1271" y="821.5" class="typ mut" text-anchor="end">TEXT</text>
+<rect class="alt" x="1021" y="826" width="258" height="16"/>
+<text x="1052" y="837.5" class="ttl">vehicle_type</text>
+<text x="1271" y="837.5" class="typ mut" text-anchor="end">TEXT</text>
+<text x="1052" y="853.5" class="ttl">confidence</text>
+<text x="1271" y="853.5" class="typ mut" text-anchor="end">REAL</text>
+<rect class="alt" x="1021" y="858" width="258" height="16"/>
+<text x="1052" y="869.5" class="ttl">plate_confidence</text>
+<text x="1271" y="869.5" class="typ mut" text-anchor="end">REAL</text>
+<text x="1029" y="885.5" class="key" fill="var(--fk)">FK</text>
+<text x="1052" y="885.5" class="ttl" font-weight="600">matched_watchlist_id</text>
+<text x="1271" y="885.5" class="typ mut" text-anchor="end">TEXT</text>
+<rect class="alt" x="1021" y="890" width="258" height="16"/>
+<text x="1052" y="901.5" class="ttl">match_status</text>
+<text x="1271" y="901.5" class="typ mut" text-anchor="end">TEXT</text>
+<text x="1052" y="917.5" class="ttl">severity</text>
+<text x="1271" y="917.5" class="typ mut" text-anchor="end">TEXT</text>
+<rect class="alt" x="1021" y="922" width="258" height="16"/>
+<text x="1052" y="933.5" class="ttl">bbox</text>
+<text x="1271" y="933.5" class="typ mut" text-anchor="end">TEXT</text>
+<text x="1052" y="949.5" class="ttl">plate_bbox</text>
+<text x="1271" y="949.5" class="typ mut" text-anchor="end">TEXT</text>
+<rect class="alt" x="1021" y="954" width="258" height="16"/>
+<text x="1052" y="965.5" class="ttl">image_snapshot</text>
+<text x="1271" y="965.5" class="typ mut" text-anchor="end">TEXT</text>
+<text x="1052" y="981.5" class="ttl">simulated</text>
+<text x="1271" y="981.5" class="typ mut" text-anchor="end">INTEGER</text>
+<rect class="alt" x="1021" y="986" width="258" height="16"/>
+<text x="1052" y="997.5" class="ttl">occurred_at</text>
+<text x="1271" y="997.5" class="typ mut" text-anchor="end">TEXT</text>
+<text x="1052" y="1013.5" class="ttl">created_at</text>
+<text x="1271" y="1013.5" class="typ mut" text-anchor="end">TEXT</text>
+<text x="1020" y="1037" class="mut" font-size="9.5">ANPR read</text>
+</g>
+<g>
+<rect class="body" x="1350" y="120" width="260" height="400" rx="7"/>
+<path d="M 1350 127 a7 7 0 0 1 7 -7 h246 a7 7 0 0 1 7 7 v19 h-260 z" fill="#9B3B2E"/>
+<text x="1360" y="138" font-size="12.5" font-weight="700" fill="#fff">event</text>
+<text x="1600" y="138" font-size="9" fill="#ffffff" fill-opacity=".72" text-anchor="end">1,999 rows</text>
+<text x="1359" y="157.5" class="key" fill="var(--pk)">PK</text>
+<text x="1382" y="157.5" class="ttl" font-weight="600">seq</text>
+<text x="1601" y="157.5" class="typ mut" text-anchor="end">INTEGER</text>
+<rect class="alt" x="1351" y="162" width="258" height="16"/>
+<text x="1382" y="173.5" class="ttl">id</text>
+<text x="1601" y="173.5" class="typ mut" text-anchor="end">TEXT</text>
+<text x="1382" y="189.5" class="ttl">org_id</text>
+<text x="1601" y="189.5" class="typ mut" text-anchor="end">TEXT</text>
+<rect class="alt" x="1351" y="194" width="258" height="16"/>
+<text x="1382" y="205.5" class="ttl">site_id</text>
+<text x="1601" y="205.5" class="typ mut" text-anchor="end">TEXT</text>
+<text x="1382" y="221.5" class="ttl">kind</text>
+<text x="1601" y="221.5" class="typ mut" text-anchor="end">TEXT</text>
+<rect class="alt" x="1351" y="226" width="258" height="16"/>
+<text x="1382" y="237.5" class="ttl">source_type</text>
+<text x="1601" y="237.5" class="typ mut" text-anchor="end">TEXT</text>
+<text x="1382" y="253.5" class="ttl">source_id</text>
+<text x="1601" y="253.5" class="typ mut" text-anchor="end">TEXT</text>
+<rect class="alt" x="1351" y="258" width="258" height="16"/>
+<text x="1382" y="269.5" class="ttl">simulated</text>
+<text x="1601" y="269.5" class="typ mut" text-anchor="end">INTEGER</text>
+<text x="1382" y="285.5" class="ttl">camera_id</text>
+<text x="1601" y="285.5" class="typ mut" text-anchor="end">TEXT</text>
+<rect class="alt" x="1351" y="290" width="258" height="16"/>
+<text x="1382" y="301.5" class="ttl">zone_id</text>
+<text x="1601" y="301.5" class="typ mut" text-anchor="end">TEXT</text>
+<text x="1382" y="317.5" class="ttl">tracked_thing_id</text>
+<text x="1601" y="317.5" class="typ mut" text-anchor="end">TEXT</text>
+<rect class="alt" x="1351" y="322" width="258" height="16"/>
+<text x="1382" y="333.5" class="ttl">class</text>
+<text x="1601" y="333.5" class="typ mut" text-anchor="end">TEXT</text>
+<text x="1382" y="349.5" class="ttl">direction</text>
+<text x="1601" y="349.5" class="typ mut" text-anchor="end">TEXT</text>
+<rect class="alt" x="1351" y="354" width="258" height="16"/>
+<text x="1382" y="365.5" class="ttl">rule</text>
+<text x="1601" y="365.5" class="typ mut" text-anchor="end">TEXT</text>
+<text x="1382" y="381.5" class="ttl">confidence</text>
+<text x="1601" y="381.5" class="typ mut" text-anchor="end">REAL</text>
+<rect class="alt" x="1351" y="386" width="258" height="16"/>
+<text x="1382" y="397.5" class="ttl">severity</text>
+<text x="1601" y="397.5" class="typ mut" text-anchor="end">TEXT</text>
+<text x="1382" y="413.5" class="ttl">alertable</text>
+<text x="1601" y="413.5" class="typ mut" text-anchor="end">INTEGER</text>
+<rect class="alt" x="1351" y="418" width="258" height="16"/>
+<text x="1382" y="429.5" class="ttl">suppressed_reason</text>
+<text x="1601" y="429.5" class="typ mut" text-anchor="end">TEXT</text>
+<text x="1382" y="445.5" class="ttl">occurred_at</text>
+<text x="1601" y="445.5" class="typ mut" text-anchor="end">TEXT</text>
+<rect class="alt" x="1351" y="450" width="258" height="16"/>
+<text x="1382" y="461.5" class="ttl">received_at</text>
+<text x="1601" y="461.5" class="typ mut" text-anchor="end">TEXT</text>
+<text x="1382" y="477.5" class="ttl">evidence</text>
+<text x="1601" y="477.5" class="typ mut" text-anchor="end">TEXT</text>
+<rect class="alt" x="1351" y="482" width="258" height="16"/>
+<text x="1382" y="493.5" class="ttl">incident_id</text>
+<text x="1601" y="493.5" class="typ mut" text-anchor="end">TEXT</text>
+<text x="1382" y="509.5" class="ttl">thumbnail</text>
+<text x="1601" y="509.5" class="typ mut" text-anchor="end">TEXT</text>
+<text x="1350" y="533" class="mut" font-size="9.5">the observation record</text>
+</g>
+<g>
+<rect class="body" x="1350" y="560" width="260" height="208" rx="7"/>
+<path d="M 1350 567 a7 7 0 0 1 7 -7 h246 a7 7 0 0 1 7 7 v19 h-260 z" fill="#9B3B2E"/>
+<text x="1360" y="578" font-size="12.5" font-weight="700" fill="#fff">incident</text>
+<text x="1600" y="578" font-size="9" fill="#ffffff" fill-opacity=".72" text-anchor="end">4 rows</text>
+<text x="1359" y="597.5" class="key" fill="var(--pk)">PK</text>
+<text x="1382" y="597.5" class="ttl" font-weight="600">id</text>
+<text x="1601" y="597.5" class="typ mut" text-anchor="end">TEXT</text>
+<rect class="alt" x="1351" y="602" width="258" height="16"/>
+<text x="1382" y="613.5" class="ttl">org_id</text>
+<text x="1601" y="613.5" class="typ mut" text-anchor="end">TEXT</text>
+<text x="1382" y="629.5" class="ttl">site_id</text>
+<text x="1601" y="629.5" class="typ mut" text-anchor="end">TEXT</text>
+<rect class="alt" x="1351" y="634" width="258" height="16"/>
+<text x="1382" y="645.5" class="ttl">camera_id</text>
+<text x="1601" y="645.5" class="typ mut" text-anchor="end">TEXT</text>
+<text x="1382" y="661.5" class="ttl">zone_id</text>
+<text x="1601" y="661.5" class="typ mut" text-anchor="end">TEXT</text>
+<rect class="alt" x="1351" y="666" width="258" height="16"/>
+<text x="1382" y="677.5" class="ttl">title</text>
+<text x="1601" y="677.5" class="typ mut" text-anchor="end">TEXT</text>
+<text x="1382" y="693.5" class="ttl">severity</text>
+<text x="1601" y="693.5" class="typ mut" text-anchor="end">TEXT</text>
+<rect class="alt" x="1351" y="698" width="258" height="16"/>
+<text x="1382" y="709.5" class="ttl">group_key</text>
+<text x="1601" y="709.5" class="typ mut" text-anchor="end">TEXT</text>
+<text x="1382" y="725.5" class="ttl">opened_at</text>
+<text x="1601" y="725.5" class="typ mut" text-anchor="end">TEXT</text>
+<rect class="alt" x="1351" y="730" width="258" height="16"/>
+<text x="1382" y="741.5" class="ttl">last_event_at</text>
+<text x="1601" y="741.5" class="typ mut" text-anchor="end">TEXT</text>
+<text x="1382" y="757.5" class="ttl">number</text>
+<text x="1601" y="757.5" class="typ mut" text-anchor="end">INTEGER</text>
+<text x="1350" y="781" class="mut" font-size="9.5">events grouped by group_key</text>
+</g>
+<g>
+<rect class="body" x="1350" y="810" width="260" height="160" rx="7"/>
+<path d="M 1350 817 a7 7 0 0 1 7 -7 h246 a7 7 0 0 1 7 7 v19 h-260 z" fill="#9B3B2E"/>
+<text x="1360" y="828" font-size="12.5" font-weight="700" fill="#fff">alert</text>
+<text x="1600" y="828" font-size="9" fill="#ffffff" fill-opacity=".72" text-anchor="end">1,361 rows</text>
+<text x="1359" y="847.5" class="key" fill="var(--pk)">PK</text>
+<text x="1382" y="847.5" class="ttl" font-weight="600">id</text>
+<text x="1601" y="847.5" class="typ mut" text-anchor="end">TEXT</text>
+<rect class="alt" x="1351" y="852" width="258" height="16"/>
+<text x="1359" y="863.5" class="key" fill="var(--fk)">FK</text>
+<text x="1382" y="863.5" class="ttl" font-weight="600">incident_id</text>
+<text x="1601" y="863.5" class="typ mut" text-anchor="end">TEXT</text>
+<text x="1382" y="879.5" class="ttl">channel</text>
+<text x="1601" y="879.5" class="typ mut" text-anchor="end">TEXT</text>
+<rect class="alt" x="1351" y="884" width="258" height="16"/>
+<text x="1382" y="895.5" class="ttl">severity</text>
+<text x="1601" y="895.5" class="typ mut" text-anchor="end">TEXT</text>
+<text x="1382" y="911.5" class="ttl">attempts</text>
+<text x="1601" y="911.5" class="typ mut" text-anchor="end">INTEGER</text>
+<rect class="alt" x="1351" y="916" width="258" height="16"/>
+<text x="1382" y="927.5" class="ttl">delivered_at</text>
+<text x="1601" y="927.5" class="typ mut" text-anchor="end">TEXT</text>
+<text x="1382" y="943.5" class="ttl">last_error</text>
+<text x="1601" y="943.5" class="typ mut" text-anchor="end">TEXT</text>
+<rect class="alt" x="1351" y="948" width="258" height="16"/>
+<text x="1382" y="959.5" class="ttl">created_at</text>
+<text x="1601" y="959.5" class="typ mut" text-anchor="end">TEXT</text>
+<text x="1350" y="983" class="mut" font-size="9.5">delivery attempt</text>
+</g>
+<g>
+<rect class="body" x="1680" y="120" width="260" height="128" rx="7" stroke-dasharray="5 4"/>
+<path d="M 1680 127 a7 7 0 0 1 7 -7 h246 a7 7 0 0 1 7 7 v19 h-260 z" fill="#4A5568"/>
+<text x="1690" y="138" font-size="12.5" font-weight="700" fill="#fff">incident_state</text>
+<text x="1930" y="138" font-size="9" fill="#ffffff" fill-opacity=".72" text-anchor="end">VIEW</text>
+<text x="1712" y="157.5" class="ttl">incident.*</text>
+<text x="1931" y="157.5" class="typ mut" text-anchor="end">every incident column</text>
+<rect class="alt" x="1681" y="162" width="258" height="16"/>
+<text x="1712" y="173.5" class="ttl">status</text>
+<text x="1931" y="173.5" class="typ mut" text-anchor="end">latest action verb</text>
+<text x="1712" y="189.5" class="ttl">event_count</text>
+<text x="1931" y="189.5" class="typ mut" text-anchor="end">COUNT(event)</text>
+<rect class="alt" x="1681" y="194" width="258" height="16"/>
+<text x="1712" y="205.5" class="ttl">kind</text>
+<text x="1931" y="205.5" class="typ mut" text-anchor="end">newest event kind</text>
+<text x="1712" y="221.5" class="ttl">classes</text>
+<text x="1931" y="221.5" class="typ mut" text-anchor="end">DISTINCT event.class</text>
+<rect class="alt" x="1681" y="226" width="258" height="16"/>
+<text x="1712" y="237.5" class="ttl">alertable</text>
+<text x="1931" y="237.5" class="typ mut" text-anchor="end">MAX(event.alertable)</text>
+<text x="1680" y="261" class="mut" font-size="9.5">VIEW over incident + event + action</text>
+</g>
+<g transform="translate(30,1102)">
+<text x="0" y="0" class="mut key">CONVENTIONS IN THIS SCHEMA</text>
+<text x="0" y="20" font-size="10.5" class="mut">&#8226; org_id / site_id ride on almost every table as tenancy columns; only some of them declare a FOREIGN KEY.</text>
+<text x="0" y="36" font-size="10.5" class="mut">&#8226; Timestamps are ISO-8601 TEXT in UTC. occurred_at is when it happened, received_at is when we got it.</text>
+<text x="0" y="52" font-size="10.5" class="mut">&#8226; JSON lives in TEXT columns: event.evidence, tracked_thing.path, zone_camera.points, clip_frame.boxes, action.before / after.</text>
+<text x="0" y="68" font-size="10.5" class="mut">&#8226; Images are base64 TEXT: event.thumbnail, clip_frame.jpeg, plate_detection.image_snapshot. clip_frame is nearly all of the 2.0 GB file.</text>
+<text x="0" y="84" font-size="10.5" class="mut">&#8226; event.evidence.clipId points at clip.id from inside the JSON; nothing in SQL enforces it.</text>
+<text x="0" y="100" font-size="10.5" class="mut">&#8226; incident.camera_id and zone_id are denormalised from the events that opened the incident; grouping is by group_key.</text>
+<text x="0" y="116" font-size="10.5" class="mut">&#8226; action is append-only and hash-chained (prev_hash to hash). An incident's status is read back from its newest incident.* verb.</text>
+<text x="0" y="132" font-size="10.5" class="mut">&#8226; camera.status is observed by the analysis engine (FULL to DEAD); camera.enabled is a person's decision. Two different facts.</text>
+</g>
+</svg>

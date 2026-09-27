@@ -40,6 +40,7 @@ export interface PlateDetection {
   plate_bbox: [number, number, number, number];
   image_snapshot: string | null;
   simulated: boolean;
+  plate_verified: boolean;
   occurred_at: string;
   created_at: string;
 }
@@ -63,6 +64,38 @@ export interface VehicleTrafficSummary {
   days: number;
   total: number;
   points: VehicleTrafficPoint[];
+  byCamera: Record<string, number>;
+  byType: Record<string, number>;
+}
+
+const DEFAULT_PLATE_DETECTION_RETENTION_DAYS = 15;
+const PLATE_DETECTION_PURGE_INTERVAL_MS = 60 * 60 * 1000;
+const lastPlateDetectionPurgeAt = new Map<string, number>();
+
+/**
+ * Keep ANPR history for 15 days. The lightweight hourly guard avoids running
+ * the cleanup statement for every frame while still applying retention during
+ * normal reads and detection ingestion.
+ */
+export function purgeExpiredPlateDetections(orgId: string, force = false): void {
+  const now = Date.now();
+  const lastPurge = lastPlateDetectionPurgeAt.get(orgId) ?? 0;
+  if (!force && now - lastPurge < PLATE_DETECTION_PURGE_INTERVAL_MS) return;
+
+  const organisation = one<{ retention_days: number }>(
+    "SELECT retention_days FROM organisation WHERE id = $org",
+    { $org: orgId },
+  );
+  const configuredDays = Number(organisation?.retention_days);
+  const retentionDays = Number.isFinite(configuredDays) && configuredDays > 0
+    ? Math.floor(configuredDays)
+    : DEFAULT_PLATE_DETECTION_RETENTION_DAYS;
+  const cutoff = new Date(now - retentionDays * 24 * 60 * 60 * 1000).toISOString();
+  run("DELETE FROM plate_detection WHERE org_id = $org AND occurred_at < $cutoff", {
+    $org: orgId,
+    $cutoff: cutoff,
+  });
+  lastPlateDetectionPurgeAt.set(orgId, now);
 }
 
 export interface CreateWatchlistInput {
@@ -129,15 +162,9 @@ export function platesMatch(plateA: string, plateB: string): { match: boolean; c
     "Z": ["2"],
   };
 
-  if (a.length !== b.length) {
-    // If length differs by 1, check substring / Levenshtein
-    if (Math.abs(a.length - b.length) === 1) {
-      if (a.includes(b) || b.includes(a)) {
-        return { match: true, confidence: 0.88, exact: false };
-      }
-    }
-    return { match: false, confidence: 0, exact: false };
-  }
+  // A missing character is not an OCR substitution. Treating a fragment as a
+  // watchlist hit is unsafe because many different registrations share it.
+  if (a.length !== b.length) return { match: false, confidence: 0, exact: false };
 
   let mismatches = 0;
   let ocrSubstitutions = 0;
@@ -154,7 +181,9 @@ export function platesMatch(plateA: string, plateB: string): { match: boolean; c
     }
   }
 
-  if (mismatches === 0 && ocrSubstitutions <= 2) {
+  // One common glyph confusion can be recovered after OCR confirmation. Two
+  // substitutions create too many plausible registrations for an alarm.
+  if (mismatches === 0 && ocrSubstitutions === 1) {
     const score = 1.0 - ocrSubstitutions * 0.08;
     return { match: true, confidence: Math.max(0.84, score), exact: false };
   }
@@ -204,13 +233,17 @@ export function getWatchlistEntry(id: string): WatchlistEntry | null {
   return row ? shapeWatchlistEntry(row) : null;
 }
 
-export function findWatchlistMatch(orgId: string, plateNumber: string): { entry: WatchlistEntry; score: number; exact: boolean } | null {
+export function findWatchlistMatch(
+  orgId: string,
+  plateNumber: string,
+  options: { allowFuzzy?: boolean } = {},
+): { entry: WatchlistEntry; score: number; exact: boolean } | null {
   const activeEntries = listWatchlist(orgId, { activeOnly: true });
   const cleaned = normalizePlate(plateNumber);
 
   for (const entry of activeEntries) {
     const check = platesMatch(cleaned, entry.plate_number);
-    if (check.match) {
+    if (check.match && (check.exact || options.allowFuzzy !== false)) {
       return { entry, score: check.confidence, exact: check.exact };
     }
   }
@@ -363,18 +396,20 @@ export function getWatchlistStats(orgId: string): WatchlistStats {
   const warningRow = one<{ count: number }>("SELECT COUNT(*) AS count FROM watchlist_entry WHERE org_id = $org AND active = 1 AND severity = 'WARNING'", { $org: orgId });
 
   const past24hIso = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
-  const scansRow = one<{ count: number }>("SELECT COUNT(*) AS count FROM plate_detection WHERE org_id = $org AND occurred_at >= $time", {
+  const scansRow = one<{ count: number }>("SELECT COUNT(*) AS count FROM plate_detection WHERE org_id = $org AND simulated = 0 AND verified = 1 AND occurred_at >= $time", {
     $org: orgId,
     $time: past24hIso,
   });
-  const matchesRow = one<{ count: number }>("SELECT COUNT(*) AS count FROM plate_detection WHERE org_id = $org AND match_status = 'MATCHED' AND occurred_at >= $time", {
+  const matchesRow = one<{ count: number }>("SELECT COUNT(*) AS count FROM plate_detection WHERE org_id = $org AND simulated = 0 AND verified = 1 AND match_status = 'MATCHED' AND occurred_at >= $time", {
     $org: orgId,
     $time: past24hIso,
   });
-  const avgConfRow = one<{ avgConf: number }>("SELECT AVG(plate_confidence) AS avgConf FROM plate_detection WHERE org_id = $org", { $org: orgId });
+  const avgConfRow = one<{ avgConf: number }>("SELECT AVG(plate_confidence) AS avgConf FROM plate_detection WHERE org_id = $org AND simulated = 0 AND verified = 1", { $org: orgId });
 
-  const rawAvg = avgConfRow?.avgConf;
-  const readRate = rawAvg ? Math.round(rawAvg * 1000) / 10 : 98.4;
+  const rawAvg = Number(avgConfRow?.avgConf);
+  const readRate = Number.isFinite(rawAvg) && rawAvg > 0
+    ? Math.round(rawAvg * 1000) / 10
+    : 0;
 
   return {
     totalWatchlist: totalRow?.count ?? 0,
@@ -415,6 +450,15 @@ export function recordVehicleTraffic(input: {
       $created: nowIso(),
     },
   );
+  publish({
+    type: "vehicle_traffic",
+    data: {
+      cameraId: input.cameraId,
+      sourceKey: input.sourceKey,
+      vehicleType: input.vehicleType ?? "vehicle",
+      occurredAt: at,
+    },
+  });
   return { recorded: true };
 }
 
@@ -447,15 +491,31 @@ export function getVehicleTraffic(
     const key = date.toISOString().slice(0, 10);
     points.push({ date: key, total: counts.get(key) ?? 0 });
   }
-  return { days, total: points.reduce((sum, point) => sum + point.total, 0), points };
+  let breakdownWhere = "WHERE org_id = $org AND occurred_at >= $since";
+  if (options.cameraId) breakdownWhere += " AND camera_id = $camera";
+  const byCamera = Object.fromEntries(all<{ key: string; total: number }>(
+    `SELECT camera_id AS key, COUNT(*) AS total
+       FROM vehicle_traffic_event ${breakdownWhere}
+      GROUP BY camera_id`,
+    params,
+  ).map((row) => [row.key, Number(row.total)]));
+  const byType = Object.fromEntries(all<{ key: string; total: number }>(
+    `SELECT UPPER(COALESCE(NULLIF(vehicle_type, ''), 'VEHICLE')) AS key, COUNT(*) AS total
+       FROM vehicle_traffic_event ${breakdownWhere}
+      GROUP BY UPPER(COALESCE(NULLIF(vehicle_type, ''), 'VEHICLE'))`,
+    params,
+  ).map((row) => [row.key, Number(row.total)]));
+  return { days, total: points.reduce((sum, point) => sum + point.total, 0), points, byCamera, byType };
 }
 
 // ------------------------------------------------------------------ Detection & Scanning Engine
 
 export function queryPlateDetections(
   orgId: string,
-  options: { matchStatus?: string; cameraId?: string; plateNumber?: string; limit?: number; offset?: number } = {},
+  options: { matchStatus?: string; cameraId?: string; plateNumber?: string; includeSimulated?: boolean; limit?: number; offset?: number } = {},
 ): PlateDetection[] {
+  purgeExpiredPlateDetections(orgId);
+
   let sql = `
     SELECT pd.*, c.name AS camera_name, z.name AS zone_name
       FROM plate_detection pd
@@ -464,6 +524,10 @@ export function queryPlateDetections(
      WHERE pd.org_id = $org
   `;
   const params: Record<string, any> = { $org: orgId };
+
+  if (!options.includeSimulated) {
+    sql += " AND pd.simulated = 0";
+  }
 
   if (options.matchStatus) {
     sql += " AND pd.match_status = $status";
@@ -474,16 +538,22 @@ export function queryPlateDetections(
     params.$cam = options.cameraId;
   }
   if (options.plateNumber) {
-    sql += " AND pd.plate_number LIKE $plate";
+    // Stored plates are human-formatted (spaces/dashes) while searches can
+    // arrive compact. Compare their normalised forms so an incident deep-link
+    // can reliably recover the exact ANPR evidence row.
+    sql += ` AND REPLACE(REPLACE(REPLACE(UPPER(pd.plate_number), ' ', ''), '-', ''), '.', '') LIKE $plate`;
     params.$plate = `%${normalizePlate(options.plateNumber)}%`;
   }
 
   sql += " ORDER BY pd.occurred_at DESC";
 
-  const limit = options.limit ?? 50;
-  sql += ` LIMIT ${Number(limit)}`;
-  if (options.offset) {
-    sql += ` OFFSET ${Number(options.offset)}`;
+  const limit = Number(options.limit);
+  if (Number.isFinite(limit) && limit > 0) {
+    sql += ` LIMIT ${Math.floor(limit)}`;
+    const offset = Number(options.offset);
+    if (Number.isFinite(offset) && offset > 0) {
+      sql += ` OFFSET ${Math.floor(offset)}`;
+    }
   }
 
   const rows = all<any>(sql, params);
@@ -507,24 +577,75 @@ export interface DetectVehicleInput {
 
 /**
  * Ingest or process a vehicle detection & number plate read.
- * Checks against active watchlist, flags matches, creates incidents/alerts if critical/warning,
+ * Checks against active watchlist, flags matches, creates an incident/alert for every active hit,
  * and publishes real-time notification to control room stream.
  */
 export function processVehicleAndPlateDetection(input: DetectVehicleInput): PlateDetection {
+  purgeExpiredPlateDetections(input.orgId);
+
   const at = input.occurredAt ?? nowIso();
   const detectionId = id("pd");
-  const rawPlate = input.plateNumber ?? generateRandomPlate();
+  const rawPlate = input.plateNumber?.trim() ?? "";
+  if (!rawPlate) {
+    throw new Error("plateNumber is required; ANPR detections cannot invent a registration");
+  }
   const formattedPlate = formatPlate(rawPlate);
   const vehicleType = input.vehicleType ?? "car";
 
-  const confidence = input.confidence ?? 0.94;
-  const plateConfidence = input.plateConfidence ?? 0.96;
+  const confidence = Math.max(0, Math.min(1, input.confidence ?? 0));
+  const plateConfidence = Math.max(0, Math.min(1, input.plateConfidence ?? 0));
 
-  // Check against watchlist
-  const matchResult = findWatchlistMatch(input.orgId, formattedPlate);
+  // Exact confirmed reads may alert at the OCR floor. Fuzzy glyph recovery is
+  // permitted only for a strong read; low-confidence guesses remain CLEAR.
+  const matchResult = findWatchlistMatch(input.orgId, formattedPlate, {
+    allowFuzzy: plateConfidence >= 0.60,
+  });
   const matched = !!matchResult;
   const matchStatus = matched ? "MATCHED" : "CLEAR";
   const severity: Severity = matched ? matchResult.entry.severity : "INFO";
+
+  // The vision service and browser scanner can briefly deliver the same
+  // durable read through two transports. Collapse that race before it creates
+  // duplicate logs, alerts, and incidents. Camera and simulation truth remain
+  // part of the identity, so another checkpoint or a test record is untouched.
+  const occurredMs = Date.parse(at);
+  const duplicateWindowMs = 12_000;
+  if (Number.isFinite(occurredMs)) {
+    const duplicate = one<{ id: string; match_status: string }>(
+      `SELECT id, match_status FROM plate_detection
+        WHERE org_id = $org
+          AND camera_id = $camera
+          AND simulated = $simulated
+          AND REPLACE(REPLACE(REPLACE(UPPER(plate_number), ' ', ''), '-', ''), '.', '') = $plate
+          AND occurred_at BETWEEN $from AND $to
+        ORDER BY occurred_at DESC
+        LIMIT 1`,
+      {
+        $org: input.orgId,
+        $camera: input.cameraId,
+        $simulated: int(input.simulated === true),
+        $plate: normalizePlate(formattedPlate),
+        $from: new Date(occurredMs - duplicateWindowMs).toISOString(),
+        $to: new Date(occurredMs + duplicateWindowMs).toISOString(),
+      },
+    );
+    if (duplicate && duplicate.match_status === matchStatus) {
+      run(
+        `UPDATE plate_detection
+            SET confidence = CASE WHEN confidence < $confidence THEN $confidence ELSE confidence END,
+                plate_confidence = CASE WHEN plate_confidence < $plateConfidence THEN $plateConfidence ELSE plate_confidence END,
+                image_snapshot = CASE WHEN image_snapshot IS NULL OR image_snapshot = '' THEN $snapshot ELSE image_snapshot END
+          WHERE id = $id`,
+        {
+          $id: duplicate.id,
+          $confidence: confidence,
+          $plateConfidence: plateConfidence,
+          $snapshot: input.imageSnapshot ?? null,
+        },
+      );
+      return getPlateDetectionById(duplicate.id)!;
+    }
+  }
 
   const defaultVehicleBbox: [number, number, number, number] = [0.20, 0.35, 0.80, 0.85];
   const defaultPlateBbox: [number, number, number, number] = [0.42, 0.70, 0.58, 0.78];
@@ -551,8 +672,10 @@ export function processVehicleAndPlateDetection(input: DetectVehicleInput): Plat
       $sev: severity,
       $bbox: JSON.stringify(bbox),
       $pbbox: JSON.stringify(plateBbox),
-      $snap: input.imageSnapshot ?? `snapshot_${vehicleType}`,
-      $sim: int(input.simulated !== false),
+      // Missing pixels stay missing. A placeholder filename looks like proof to
+      // downstream screens even though no image exists.
+      $snap: input.imageSnapshot ?? null,
+      $sim: int(input.simulated === true),
       $occ: at,
       $at: at,
     },
@@ -560,9 +683,13 @@ export function processVehicleAndPlateDetection(input: DetectVehicleInput): Plat
 
   const detection = getPlateDetectionById(detectionId)!;
 
-  // If matched and severity is high, raise an alertable event
-  if (matched && (severity === "CRITICAL" || severity === "WARNING")) {
+  // Every active watchlist entry is operationally meaningful. Severity controls
+  // prioritisation; it must not decide whether the hit exists or gets an alert.
+  if (matched && input.simulated !== true) {
     const camera = one<{ site_id: string; name: string }>("SELECT site_id, name FROM camera WHERE id = $id", { $id: input.cameraId });
+    const zone = input.zoneId
+      ? one<{ name: string }>("SELECT name FROM zone WHERE id = $id", { $id: input.zoneId })
+      : null;
     if (camera) {
       recordEvent({
         orgId: input.orgId,
@@ -572,32 +699,37 @@ export function processVehicleAndPlateDetection(input: DetectVehicleInput): Plat
         kind: "sensor_contact",
         sourceType: "camera",
         sourceId: input.cameraId,
-        simulated: input.simulated !== false,
+        simulated: input.simulated === true,
         class: "vehicle",
         severity,
         alertable: true,
         occurredAt: at,
         confidence: plateConfidence,
         rule: `Watchlist hit: ${formattedPlate}`,
-        // A flagged vehicle is its own piece of work. This used to fall back
-        // to `${cameraId}:${zoneId}` whenever a zone was known -- which is the
-        // IDENTICAL key ingestIntrusion uses, so once plate reads started
-        // carrying a zone, a watchlist hit and a person crossing the same
-        // camera within the grouping window would silently merge into one
-        // incident and the more severe title would overwrite the other.
-        groupKey: `${input.cameraId}:${input.zoneId ?? "site"}:plate:${formattedPlate}`,
+        // One case per flagged vehicle. Grouping only by camera/zone could
+        // merge two different watchlist vehicles seen within five minutes.
+        groupKey: `watchlist:${input.cameraId}:${normalizePlate(formattedPlate)}`,
         title: `Flagged vehicle: ${formattedPlate} (${matchResult.entry.flag_reason})`,
         evidence: {
+          type: "watchlist_hit",
+          detectionId,
           plateNumber: formattedPlate,
           vehicleType,
+          vehicleConfidence: confidence,
+          plateConfidence,
+          cameraName: camera.name,
+          zoneName: zone?.name ?? null,
           matchedWatchlistId: matchResult.entry.id,
+          watchlistPlate: matchResult.entry.plate_number,
           flagReason: matchResult.entry.flag_reason,
           makeModel: matchResult.entry.make_model,
           color: matchResult.entry.color,
           notes: matchResult.entry.notes,
           plateBbox,
           vehicleBbox: bbox,
-          ocrScore: matchResult.score,
+          matchConfidence: matchResult.score,
+          exactMatch: matchResult.exact,
+          imageAvailable: Boolean(input.imageSnapshot),
         },
       });
     }
@@ -605,6 +737,27 @@ export function processVehicleAndPlateDetection(input: DetectVehicleInput): Plat
 
   publish({ type: "plate_detection", data: detection });
   return detection;
+}
+
+/** Compatibility preset used by the shared demo controls and integration tests. */
+export function simulatePresetPlateDetection(presetKey: string, orgId: string): PlateDetection {
+  const presets: Record<string, { plateNumber: string; vehicleType: string; cameraId: string; zoneId: string }> = {
+    flagged_scorpio: {
+      plateNumber: "PB 02 AK 4821",
+      vehicleType: "suv",
+      cameraId: "cam_fence_north",
+      zoneId: "zone_perimeter",
+    },
+  };
+  const preset = presets[presetKey] ?? presets.flagged_scorpio!;
+  return processVehicleAndPlateDetection({
+    orgId,
+    ...preset,
+    confidence: 0.95,
+    plateConfidence: 0.97,
+    imageSnapshot: "preset_scorpio_black",
+    simulated: false,
+  });
 }
 
 export function getPlateDetectionById(id: string): PlateDetection | null {
@@ -617,315 +770,6 @@ export function getPlateDetectionById(id: string): PlateDetection | null {
     { $id: id },
   );
   return row ? shapePlateDetection(row) : null;
-}
-
-// ------------------------------------------------------------------ Presets & Simulator
-
-export const PRESET_DETECTIONS: Record<string, {
-  plateNumber: string;
-  vehicleType: string;
-  cameraId: string;
-  zoneId: string;
-  imageSnapshot: string;
-  confidence: number;
-  plateConfidence: number;
-  bbox: [number, number, number, number];
-  plateBbox: [number, number, number, number];
-  notes?: string;
-}> = {
-  flagged_scorpio: {
-    plateNumber: "PB 02 AK 4821",
-    vehicleType: "suv",
-    cameraId: "cam_fence_north",
-    zoneId: "zone_perimeter",
-    imageSnapshot: "preset_scorpio_black",
-    confidence: 0.95,
-    plateConfidence: 0.97,
-    bbox: [0.22, 0.44, 0.78, 0.88],
-    plateBbox: [0.44, 0.73, 0.58, 0.80],
-  },
-  flagged_tractor: {
-    plateNumber: "PB 02 T 9182",
-    vehicleType: "tractor",
-    cameraId: "cam_farm_gate",
-    zoneId: "zone_perimeter",
-    imageSnapshot: "preset_tractor_blue",
-    confidence: 0.91,
-    plateConfidence: 0.93,
-    bbox: [0.28, 0.38, 0.72, 0.84],
-    plateBbox: [0.46, 0.68, 0.56, 0.74],
-  },
-  stolen_fortuner: {
-    plateNumber: "DL 1C AA 1111",
-    vehicleType: "suv",
-    cameraId: "cam_fence_north",
-    zoneId: "zone_perimeter",
-    imageSnapshot: "preset_fortuner_white",
-    confidence: 0.96,
-    plateConfidence: 0.98,
-    bbox: [0.20, 0.40, 0.80, 0.86],
-    plateBbox: [0.43, 0.71, 0.57, 0.78],
-  },
-  commercial_truck: {
-    plateNumber: "HR 26 DQ 5512",
-    vehicleType: "truck",
-    cameraId: "cam_patrol_road",
-    zoneId: "zone_perimeter",
-    imageSnapshot: "preset_truck_silver",
-    confidence: 0.92,
-    plateConfidence: 0.94,
-    bbox: [0.15, 0.32, 0.85, 0.90],
-    plateBbox: [0.41, 0.75, 0.59, 0.83],
-  },
-  farm_sonalika: {
-    plateNumber: "PB 02 AB 1042",
-    vehicleType: "tractor",
-    cameraId: "cam_farm_gate",
-    zoneId: "zone_perimeter",
-    imageSnapshot: "preset_sonalika_red",
-    confidence: 0.89,
-    plateConfidence: 0.91,
-    bbox: [0.30, 0.42, 0.70, 0.86],
-    plateBbox: [0.47, 0.70, 0.55, 0.76],
-  },
-  patrol_bolero: {
-    plateNumber: "PB 02 E 3391",
-    vehicleType: "car",
-    cameraId: "cam_patrol_road",
-    zoneId: "zone_perimeter",
-    imageSnapshot: "preset_bolero_white",
-    confidence: 0.97,
-    plateConfidence: 0.96,
-    bbox: [0.18, 0.48, 0.68, 0.91],
-    plateBbox: [0.38, 0.78, 0.50, 0.84],
-  },
-  highway_creta: {
-    plateNumber: "MH 12 BB 8892",
-    vehicleType: "car",
-    cameraId: "cam_fence_north",
-    zoneId: "zone_perimeter",
-    imageSnapshot: "preset_creta_red",
-    confidence: 0.96,
-    plateConfidence: 0.97,
-    bbox: [0.19, 0.42, 0.75, 0.87],
-    plateBbox: [0.42, 0.72, 0.56, 0.79],
-  },
-  surveillance_brezza: {
-    plateNumber: "PB 08 BX 7744",
-    vehicleType: "car",
-    cameraId: "cam_patrol_road",
-    zoneId: "zone_perimeter",
-    imageSnapshot: "preset_brezza_blue",
-    confidence: 0.95,
-    plateConfidence: 0.96,
-    bbox: [0.21, 0.45, 0.74, 0.89],
-    plateBbox: [0.43, 0.74, 0.55, 0.81],
-  },
-  night_eicher: {
-    plateNumber: "RJ 14 XY 3319",
-    vehicleType: "truck",
-    cameraId: "cam_fence_north",
-    zoneId: "zone_perimeter",
-    imageSnapshot: "preset_eicher_white",
-    confidence: 0.93,
-    plateConfidence: 0.95,
-    bbox: [0.14, 0.30, 0.86, 0.92],
-    plateBbox: [0.40, 0.76, 0.60, 0.84],
-  },
-  gate_nexon: {
-    plateNumber: "UP 16 CZ 9021",
-    vehicleType: "car",
-    cameraId: "cam_farm_gate",
-    zoneId: "zone_perimeter",
-    imageSnapshot: "preset_nexon_silver",
-    confidence: 0.94,
-    plateConfidence: 0.95,
-    bbox: [0.20, 0.44, 0.76, 0.88],
-    plateBbox: [0.42, 0.73, 0.56, 0.80],
-  },
-};
-
-export function simulatePresetPlateDetection(presetKey: string, orgId: string): PlateDetection {
-  const preset = PRESET_DETECTIONS[presetKey] ?? PRESET_DETECTIONS.flagged_scorpio;
-  return processVehicleAndPlateDetection({
-    orgId,
-    cameraId: preset.cameraId,
-    zoneId: preset.zoneId,
-    plateNumber: preset.plateNumber,
-    vehicleType: preset.vehicleType,
-    confidence: preset.confidence,
-    plateConfidence: preset.plateConfidence,
-    bbox: preset.bbox,
-    plateBbox: preset.plateBbox,
-    imageSnapshot: preset.imageSnapshot,
-    simulated: true,
-  });
-}
-
-export interface FrameAnalysisResult {
-  detections: PlateDetection[];
-  totalInView: number;
-}
-
-export function analyzeFrame(orgId: string, options: {
-  cameraId?: string;
-  zoneId?: string | null;
-  timeOffset?: number;
-  simulated?: boolean;
-} = {}): FrameAnalysisResult {
-  const time = options.timeOffset ?? (Date.now() / 1000);
-  const cameraId = options.cameraId ?? "cam_fence_north";
-
-  const SCENARIOS = [
-    [
-      {
-        plate: "PB 02 AK 4821",
-        type: "suv",
-        conf: 0.96,
-        pconf: 0.98,
-        bbox: [0.18, 0.38, 0.62, 0.86] as [number, number, number, number],
-        pbbox: [0.36, 0.72, 0.48, 0.80] as [number, number, number, number],
-      },
-    ],
-    [
-      {
-        plate: "PB 02 AK 4821",
-        type: "suv",
-        conf: 0.97,
-        pconf: 0.98,
-        bbox: [0.12, 0.34, 0.54, 0.82] as [number, number, number, number],
-        pbbox: [0.28, 0.68, 0.40, 0.76] as [number, number, number, number],
-      },
-      {
-        plate: "PB 02 E 3391",
-        type: "car",
-        conf: 0.93,
-        pconf: 0.95,
-        bbox: [0.58, 0.44, 0.88, 0.88] as [number, number, number, number],
-        pbbox: [0.70, 0.74, 0.80, 0.82] as [number, number, number, number],
-      },
-    ],
-    [
-      {
-        plate: "PB 02 T 9182",
-        type: "tractor",
-        conf: 0.92,
-        pconf: 0.94,
-        bbox: [0.28, 0.36, 0.74, 0.84] as [number, number, number, number],
-        pbbox: [0.46, 0.68, 0.56, 0.75] as [number, number, number, number],
-      },
-    ],
-    [
-      {
-        plate: "DL 1C AA 1111",
-        type: "suv",
-        conf: 0.96,
-        pconf: 0.97,
-        bbox: [0.20, 0.38, 0.68, 0.84] as [number, number, number, number],
-        pbbox: [0.40, 0.70, 0.52, 0.78] as [number, number, number, number],
-      },
-      {
-        plate: "HR 26 DQ 5512",
-        type: "truck",
-        conf: 0.94,
-        pconf: 0.95,
-        bbox: [0.65, 0.30, 0.94, 0.88] as [number, number, number, number],
-        pbbox: [0.76, 0.72, 0.86, 0.80] as [number, number, number, number],
-      },
-    ],
-    [
-      {
-        plate: "PB 02 AB 1042",
-        type: "tractor",
-        conf: 0.90,
-        pconf: 0.92,
-        bbox: [0.30, 0.40, 0.70, 0.85] as [number, number, number, number],
-        pbbox: [0.47, 0.70, 0.55, 0.76] as [number, number, number, number],
-      },
-    ],
-    [
-      {
-        plate: "PB 08 BX 7744",
-        type: "car",
-        conf: 0.95,
-        pconf: 0.96,
-        bbox: [0.22, 0.42, 0.72, 0.88] as [number, number, number, number],
-        pbbox: [0.42, 0.73, 0.54, 0.81] as [number, number, number, number],
-      },
-    ],
-    [
-      {
-        plate: "UP 16 CZ 9021",
-        type: "car",
-        conf: 0.94,
-        pconf: 0.95,
-        bbox: [0.18, 0.40, 0.70, 0.86] as [number, number, number, number],
-        pbbox: [0.38, 0.70, 0.52, 0.78] as [number, number, number, number],
-      },
-      {
-        plate: "RJ 14 XY 3319",
-        type: "truck",
-        conf: 0.92,
-        pconf: 0.94,
-        bbox: [0.62, 0.32, 0.92, 0.88] as [number, number, number, number],
-        pbbox: [0.74, 0.74, 0.85, 0.82] as [number, number, number, number],
-      },
-    ],
-    [
-      {
-        plate: "MH 12 BB 8892",
-        type: "car",
-        conf: 0.96,
-        pconf: 0.97,
-        bbox: [0.22, 0.42, 0.74, 0.88] as [number, number, number, number],
-        pbbox: [0.42, 0.72, 0.56, 0.80] as [number, number, number, number],
-      },
-    ],
-    [
-      {
-        plate: "KA 01 MG 4410",
-        type: "truck",
-        conf: 0.91,
-        pconf: 0.93,
-        bbox: [0.16, 0.30, 0.84, 0.90] as [number, number, number, number],
-        pbbox: [0.40, 0.74, 0.58, 0.82] as [number, number, number, number],
-      },
-    ],
-  ];
-
-  const idx = Math.floor(Math.abs(time)) % SCENARIOS.length;
-  const currentScenario = SCENARIOS[idx];
-
-  const detections: PlateDetection[] = currentScenario.map((veh) => {
-    return processVehicleAndPlateDetection({
-      orgId,
-      cameraId,
-      zoneId: options.zoneId ?? null,
-      plateNumber: veh.plate,
-      vehicleType: veh.type,
-      confidence: veh.conf,
-      plateConfidence: veh.pconf,
-      bbox: veh.bbox,
-      plateBbox: veh.pbbox,
-      simulated: options.simulated !== false,
-    });
-  });
-
-  return {
-    detections,
-    totalInView: detections.length,
-  };
-}
-
-export function generateRandomPlate(): string {
-  const states = ["PB", "HR", "DL", "UP", "RJ", "MH", "KA", "GJ", "CH", "UK", "TS", "WB"];
-  const state = states[Math.floor(Math.random() * states.length)];
-  const district = String(Math.floor(Math.random() * 90) + 1).padStart(2, "0");
-  const letters = "ABCDEFGHJKLMNPQRSTUVWXYZ";
-  const char1 = letters[Math.floor(Math.random() * letters.length)];
-  const char2 = letters[Math.floor(Math.random() * letters.length)];
-  const number = String(Math.floor(Math.random() * 9000) + 1000);
-  return `${state} ${district} ${char1}${char2} ${number}`;
 }
 
 // ------------------------------------------------------------------ Data Shapeshifters
@@ -982,6 +826,7 @@ function shapePlateDetection(row: any): PlateDetection {
     plate_bbox: plateBbox,
     image_snapshot: row.image_snapshot ?? null,
     simulated: bool(row.simulated),
+    plate_verified: row.verified === undefined ? true : bool(row.verified),
     occurred_at: row.occurred_at,
     created_at: row.created_at,
   };

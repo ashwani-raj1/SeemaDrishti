@@ -425,6 +425,7 @@ CREATE TABLE IF NOT EXISTS plate_detection (
   plate_bbox           TEXT NOT NULL DEFAULT '[0,0,0,0]',
   image_snapshot       TEXT,
   simulated            INTEGER NOT NULL DEFAULT 0,
+  verified             INTEGER NOT NULL DEFAULT 1,
   occurred_at          TEXT NOT NULL,
   created_at           TEXT NOT NULL
 );

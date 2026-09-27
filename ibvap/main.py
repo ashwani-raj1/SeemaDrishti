@@ -167,7 +167,7 @@ class CameraWorker:
             run_id=self.run_id,
         )
 
-        interval = 1.0 / max(self.settings.target_fps, 0.1)
+        interval = 1.0 / max(self.settings.target_fps, 30)
         self.started_at = time.monotonic()
         frame_index = 0
         next_tick = time.monotonic()
@@ -424,6 +424,7 @@ async def refresh_zones(settings: Settings, workers: list[CameraWorker],
 async def broadcast_status(live: LiveChannel, durable: "DurableSink | None",
                            workers: list[CameraWorker], run_id: str,
                            started: float, stop: asyncio.Event,
+                           clips: "ClipSink | None",
                            every: float = 2.0) -> None:
     """
     Say out loud that this process is alive, and what it is managing.
@@ -539,7 +540,22 @@ async def amain(args) -> None:
             # handler still fires, and KeyboardInterrupt is caught below.
             signal.signal(sig, lambda *_: request_stop())
 
-    tasks = [asyncio.create_task(live.serve_forever(stop), name="live")]
+    live_task = asyncio.create_task(live.serve_forever(stop), name="live")
+    tasks = [live_task]
+
+    # Do not start detection until the live channel owns its port.  Previously
+    # a duplicate process could fail here in a background task but carry on
+    # posting durable vehicle/plate events, so one physical vehicle was counted
+    # twice while the UI still appeared connected to just one service.
+    ready_task = asyncio.create_task(live.ready.wait(), name="live-ready")
+    done, _ = await asyncio.wait(
+        {live_task, ready_task}, return_when=asyncio.FIRST_COMPLETED)
+    if live_task in done:
+        ready_task.cancel()
+        await live_task  # surface bind errors and terminate this process
+        raise RuntimeError("live channel stopped during startup")
+    ready_task.cancel()
+    await asyncio.gather(ready_task, return_exceptions=True)
     if durable:
         tasks.append(asyncio.create_task(durable.run_forever(stop), name="durable"))
     if clips:
