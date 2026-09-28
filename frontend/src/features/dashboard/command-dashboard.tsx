@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
-import { ActivityIcon, CameraIcon, CarFrontIcon, ExternalLinkIcon, FlameIcon, HeartPulseIcon, LayersIcon, MapPinIcon, RefreshCwIcon, ScanLineIcon, ShieldAlertIcon, SirenIcon, UserRoundIcon } from "lucide-react";
+import { ActivityIcon, CameraIcon, CarFrontIcon, CpuIcon, DatabaseIcon, ExternalLinkIcon, FlameIcon, HeartPulseIcon, LayersIcon, MapPinIcon, RefreshCwIcon, ScanLineIcon, ShieldAlertIcon, SirenIcon, UserRoundIcon } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -8,6 +8,7 @@ import { CameraFeed } from "@/components/ibvap/camera-feed";
 import { LiveDot } from "@/components/ibvap/live-dot";
 import { SectorMap, type MapTarget } from "@/components/ibvap/sector-map";
 import { SeverityBadge } from "@/components/ibvap/badges";
+import { useVisionStatus } from "@/components/ibvap/vision-status";
 import { useClient } from "@/client/context";
 import { api } from "@/lib/api";
 import { clockTime, humanise } from "@/lib/format";
@@ -28,7 +29,9 @@ const severityColour: Record<Severity, string> = { CRITICAL: "#ef4444", WARNING:
 export function DashboardScreen() {
   const navigate = useNavigate();
   const { cameras: configuredCameras, media } = useClient();
+  const vision = useVisionStatus();
   const [hubCameras, setHubCameras] = useState<HubCamera[]>([]);
+  const [hubReachable, setHubReachable] = useState<boolean | null>(null);
   const [incidents, setIncidents] = useState<Incident[]>([]);
   const [events, setEvents] = useState<IbvapEvent[]>([]);
   const [loading, setLoading] = useState(true);
@@ -48,7 +51,7 @@ export function DashboardScreen() {
       const [hub, incidentRows, eventRows] = await Promise.all([
         api.mediaCameras(), api.incidents({ limit: 200 }), api.events({ since, limit: 500 }),
       ]);
-      setHubCameras(hub.cameras); setIncidents(incidentRows); setEvents(eventRows);
+      setHubCameras(hub.cameras); setHubReachable(hub.hub.reachable); setIncidents(incidentRows); setEvents(eventRows);
     } catch (cause) {
       setDataError((cause as Error).message || "Dashboard data could not be loaded");
     } finally { setLoading(false); }
@@ -74,6 +77,9 @@ export function DashboardScreen() {
   const filteredEvents = events.filter((row) => matchesEventFilter(row, activityFilter));
   const incidentById = useMemo(() => new Map(incidents.map((row) => [row.id, row])), [incidents]);
   const connected = hubCameras.filter((camera) => camera.ready).length;
+  const recentEvents = events.filter((row) => Date.parse(row.occurredAt) >= Date.now() - 86_400_000);
+  const peopleDetected = distinctDetections(recentEvents.filter((row) => row.class === "person" || row.class === "human"));
+  const vehiclesDetected = distinctDetections(recentEvents.filter((row) => isVehicleClass(row.class?.toLowerCase() ?? "")));
   const openMapTarget = (target: MapTarget) => {
     if (target.kind === "incident") navigate(`/incidents/${target.id}`);
     if (target.kind === "camera") navigate(`/cameras/${target.id}`);
@@ -81,6 +87,17 @@ export function DashboardScreen() {
   };
 
   return <div className="flex min-w-0 flex-col gap-3 bg-slate-50/70 p-3 dark:bg-slate-950/30 sm:p-4">
+    <DashboardStats
+      connected={connected}
+      cameraCount={hubCameras.length}
+      openIncidents={openIncidents.length}
+      peopleDetected={peopleDetected}
+      vehiclesDetected={vehiclesDetected}
+      hubReachable={hubReachable}
+      visionUp={vision.up}
+      visionCameras={vision.status?.cameras.length ?? 0}
+      loading={loading}
+    />
     <div className="grid min-w-0 gap-3 xl:grid-cols-[minmax(0,2.15fr)_minmax(310px,0.85fr)]">
       <Card className="min-w-0 overflow-hidden shadow-sm">
         <CardHeader className="flex-row items-center justify-between space-y-0 border-b px-4 py-3">
@@ -164,6 +181,33 @@ export function DashboardScreen() {
   </div>;
 }
 
+function DashboardStats({ connected, cameraCount, openIncidents, peopleDetected, vehiclesDetected, hubReachable, visionUp, visionCameras, loading }: { connected: number; cameraCount: number; openIncidents: number; peopleDetected: number; vehiclesDetected: number; hubReachable: boolean | null; visionUp: boolean; visionCameras: number; loading: boolean }) {
+  return <section aria-label="Operational summary" className="grid grid-cols-2 gap-2 md:grid-cols-3 2xl:grid-cols-6">
+    <OperationalStat icon={CameraIcon} label="Live feeds" value={loading ? "—" : `${connected} / ${cameraCount}`} detail={cameraCount > 0 && connected === cameraCount ? "All cameras online" : `${Math.max(0, cameraCount - connected)} feed(s) offline`} tone={cameraCount > 0 && connected === cameraCount ? "good" : "warn"} to="/services/health" />
+    <OperationalStat icon={SirenIcon} label="Open incidents" value={loading ? "—" : String(openIncidents)} detail={openIncidents === 0 ? "No action pending" : "Require operator review"} tone={openIncidents > 0 ? "bad" : "good"} to="/incidents" />
+    <OperationalStat icon={UserRoundIcon} label="People detected" value={loading ? "—" : String(peopleDetected)} detail="Unique tracks · last 24h" tone="neutral" to="/services/people" />
+    <OperationalStat icon={CarFrontIcon} label="Vehicles detected" value={loading ? "—" : String(vehiclesDetected)} detail="Unique tracks · last 24h" tone="neutral" to="/watchlist" />
+    <OperationalStat icon={DatabaseIcon} label="Media hub" value={hubReachable === null ? "Checking" : hubReachable ? "Online" : "Offline"} detail={hubReachable ? `Streaming ${connected} feed(s)` : "Video service unavailable"} tone={hubReachable ? "good" : hubReachable === null ? "neutral" : "bad"} to="/services/health" />
+    <OperationalStat icon={CpuIcon} label="Vision service" value={visionUp ? "Running" : "Stopped"} detail={visionUp ? `Processing ${visionCameras} camera(s)` : "No detection heartbeat"} tone={visionUp ? "good" : "bad"} to="/services/health" />
+  </section>;
+}
+
+function OperationalStat({ icon: Icon, label, value, detail, tone, to }: { icon: typeof CameraIcon; label: string; value: string; detail: string; tone: "good" | "warn" | "bad" | "neutral"; to: string }) {
+  const colour = tone === "good" ? "text-emerald-600 bg-emerald-50 border-emerald-100 dark:bg-emerald-950/30" : tone === "warn" ? "text-amber-600 bg-amber-50 border-amber-100 dark:bg-amber-950/30" : tone === "bad" ? "text-red-600 bg-red-50 border-red-100 dark:bg-red-950/30" : "text-blue-600 bg-blue-50 border-blue-100 dark:bg-blue-950/30";
+  return <Link to={to} className="group min-w-0 rounded-lg border bg-card p-3 shadow-xs transition-colors hover:bg-muted/30">
+    <div className="flex items-start gap-3">
+      <span className={cn("grid size-9 shrink-0 place-items-center rounded-md border", colour)}><Icon className="size-4.5" /></span>
+      <span className="min-w-0 flex-1">
+        <span className="block truncate text-[11px] font-medium text-muted-foreground">{label}</span>
+        <span className="mt-0.5 block truncate text-xl font-semibold tracking-tight tabular-nums">{value}</span>
+        <span className={cn("mt-1 flex items-center gap-1 truncate text-[9px]", tone === "good" ? "text-emerald-600" : tone === "bad" ? "text-red-600" : tone === "warn" ? "text-amber-600" : "text-muted-foreground")}>
+          <i className={cn("size-1.5 shrink-0 rounded-full", tone === "good" ? "bg-emerald-500" : tone === "bad" ? "bg-red-500" : tone === "warn" ? "bg-amber-500" : "bg-slate-400")} />{detail}
+        </span>
+      </span>
+    </div>
+  </Link>;
+}
+
 function FilterTabs({ value, onChange }: { value: DetectionFilter; onChange: (value: DetectionFilter) => void }) {
   return <div className="flex gap-1 overflow-x-auto pt-2">{FILTERS.map((item) => <button key={item.id} type="button" onClick={() => onChange(item.id)} className={cn("whitespace-nowrap rounded-full px-2 py-1 text-[10px] font-medium", value === item.id ? "bg-slate-900 text-white dark:bg-slate-100 dark:text-slate-900" : "bg-muted text-muted-foreground hover:text-foreground")}>{item.label}</button>)}</div>;
 }
@@ -222,6 +266,7 @@ function EmptyState({ icon: Icon, label }: { icon: typeof SirenIcon; label: stri
 function EventIcon({ event }: { event: IbvapEvent }) { const Icon = event.kind.includes("plate") || event.class === "vehicle" ? CarFrontIcon : event.class === "person" ? UserRoundIcon : event.kind.includes("zone") ? LayersIcon : ActivityIcon; return <Icon className="size-4 text-blue-600" />; }
 function iconForIncident(incident: Incident) { if (incident.kind?.includes("plate") || incident.classes?.includes("vehicle")) return <CarFrontIcon className="size-5" />; if (incident.classes?.includes("person")) return <UserRoundIcon className="size-5" />; if (incident.kind?.includes("zone")) return <LayersIcon className="size-5" />; return <CameraIcon className="size-5" />; }
 function isVehicleClass(value: string) { return ["car", "bus", "truck", "vehicle", "motorcycle", "motorbike", "two_wheeler", "auto", "van", "commercial"].includes(value); }
+function distinctDetections(rows: IbvapEvent[]) { const keys = new Set(rows.map((row) => row.trackedThingId ?? row.evidence.trackRef ?? row.id)); return keys.size; }
 function matchesFilter(row: Incident, filter: DetectionFilter) { if (filter === "all") return true; const kind = row.kind?.toLowerCase() ?? ""; const classes = row.classes?.map((value) => value.toLowerCase()) ?? []; if (filter === "vehicle") return classes.some(isVehicleClass); if (filter === "person") return classes.some((value) => value === "person" || value === "human") || kind.includes("reidentification") || kind.includes("face"); if (filter === "plate") return kind.includes("plate") || kind.includes("anpr"); if (filter === "fence") return kind.includes("zone") || kind.includes("fence") || kind.includes("crossing"); return kind.includes("loiter") || kind.includes("dwell"); }
 function matchesEventFilter(row: IbvapEvent, filter: DetectionFilter) { if (filter === "all") return true; const kind = row.kind.toLowerCase(); const klass = row.class?.toLowerCase() ?? ""; if (filter === "vehicle") return isVehicleClass(klass); if (filter === "person") return klass === "person" || klass === "human" || kind.includes("reidentification") || kind.includes("face"); if (filter === "plate") return kind.includes("plate") || kind.includes("anpr"); if (filter === "fence") return kind.includes("zone") || kind.includes("fence") || kind.includes("crossing"); return kind.includes("loiter") || kind.includes("dwell"); }
 function trendMatches(row: IbvapEvent, kind: TrendKind) { if (kind === "people") return row.class === "person" || row.class === "human" || row.kind.includes("reidentification") || row.kind.includes("face"); if (kind === "plates") return row.kind.includes("plate") || row.kind.includes("anpr"); return isVehicleClass(row.class?.toLowerCase() ?? ""); }
