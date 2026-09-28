@@ -1,3 +1,1 @@
--- SQLite
-DELETE zone; 
-
+DROP TABLE alert;
