@@ -67,7 +67,6 @@ from core.payload import live_track
 from modules.base import FrameContext, VisionModule, register
 from modules.reid import HistogramReID
 from modules.watchlist_client import WatchlistClient
-from modules.target_client import TargetClient
 
 #: Resolved against THIS directory, not the current one -- the identical
 #: reason `config.py Settings.weights` resolves against `HERE`: a bare
@@ -244,21 +243,8 @@ class FaceModule(VisionModule):
             # every frame but only ALERTED once, not every face_every ticks.
             self._match: dict[str, dict] = {}
             self._alerted: dict[str, str] = {}
-            # Target search: an operator's one-off reference photo, polled
-            # from the same backend (backend/src/l3/target.ts). Appearance
-            # only -- see modules/target_client.py's own docstring for why
-            # this never touches the face embedder. Raw score per track,
-            # live-only, same as people_ai_service.py's /detect: confirming
-            # a "found" match is the viewer's job (TARGET_MATCH_THRESHOLD),
-            # not this module's.
-            self._target = TargetClient(
-                backend_url,
-                refresh_seconds=float(params.get("target_refresh_seconds", 3.0)),
-            )
-            self._target_scores: dict[str, float] = {}
         elif not backend_url:
             self._watchlist = None
-            self._target = None
 
     def process(self, frame, detections: list[dict], ctx: FrameContext):
         live: list[dict] = []
@@ -280,24 +266,10 @@ class FaceModule(VisionModule):
                     self.faces_seen += 1
                     self._best[ref] = found
 
-            if run_now and (self._watchlist is not None or self._target is not None):
-                # Computed once, shared by both comparisons -- watchlist's
-                # own appearance fallback and target search have always used
-                # the identical HistogramReID signature, so there is no
-                # reason to embed the same crop twice per tick.
-                appearance_embedding = self._appearance.embed(frame, person["bbox_px"])
-
-                if self._watchlist is not None:
-                    durable_item = self._match_watchlist(frame, person, ref, found, appearance_embedding)
-                    if durable_item:
-                        durable.append(durable_item)
-
-                if self._target is not None:
-                    score = self._target.score(appearance_embedding)
-                    if score is not None:
-                        self._target_scores[ref] = score
-                    else:
-                        self._target_scores.pop(ref, None)
+            if run_now and self._watchlist is not None:
+                durable_item = self._match_watchlist(frame, person, ref, found)
+                if durable_item:
+                    durable.append(durable_item)
 
             extra: dict[str, Any] = {"track_ref": ref}
             best = self._best.get(ref)
@@ -317,13 +289,6 @@ class FaceModule(VisionModule):
                     "score": round(match["score"], 3),
                     "signal": match["signal"],
                 }
-            target_score = self._target_scores.get(ref)
-            if target_score is not None:
-                # Raw score, unconfirmed -- the same "this websocket may draw
-                # a number, only the viewer decides what counts as found"
-                # rule people_ai_service.py's /detect already follows for
-                # this exact field.
-                extra["target_score"] = round(target_score, 4)
             live.append(live_track(person, extra))
 
         # Tracks that left frame keep no state here worth expiring on a timer
@@ -337,20 +302,16 @@ class FaceModule(VisionModule):
                 del self._match[ref]
             for ref in [r for r in self._alerted if r not in seen]:
                 del self._alerted[ref]
-        if self._target is not None:
-            for ref in [r for r in self._target_scores if r not in seen]:
-                del self._target_scores[ref]
 
         return live, durable
 
-    def _match_watchlist(self, frame, person: dict, ref: str, found: Optional[dict],
-                         appearance_embedding: Optional[list[float]]) -> Optional[dict]:
+    def _match_watchlist(self, frame, person: dict, ref: str, found: Optional[dict]) -> Optional[dict]:
         """
         One track's watchlist comparison for this tick. Face embedding only
         when a face was actually found THIS tick (re-embedding a stale crop
         from a previous tick would waste cycles for no new information);
-        `appearance_embedding` is the caller's shared computation (see
-        process()) -- the fallback for when no face is visible at all.
+        appearance is recomputed every tick regardless, since it is exactly
+        the fallback for when no face is visible at all.
 
         Returns a durable event dict when this track's match just CHANGED
         (became matched, or matched a different entry) -- self._alerted is
@@ -370,6 +331,7 @@ class FaceModule(VisionModule):
         if self._watchlist is None:
             return None
 
+        appearance_embedding = self._appearance.embed(frame, person["bbox_px"])
         match = self._watchlist.match(face_embedding, appearance_embedding)
 
         if not match:
