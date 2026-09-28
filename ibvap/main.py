@@ -171,7 +171,7 @@ class CameraWorker:
         self.reader = RTSPStream(camera.rtsp_url, name=camera.id, drop=True).start()
         self.detector = SharedDetector(
             weights=self.settings.weights,
-            imgsz=self.settings.imgsz,
+            imgsz=self.camera.imgsz or self.settings.imgsz,
             conf=self.settings.conf,
             run_id=self.run_id,
         )

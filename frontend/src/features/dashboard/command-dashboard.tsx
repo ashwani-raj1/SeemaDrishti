@@ -98,7 +98,7 @@ export function DashboardScreen() {
       visionCameras={vision.status?.cameras.length ?? 0}
       loading={loading}
     />
-    <div className="grid min-w-0 gap-3 xl:grid-cols-[minmax(0,2.15fr)_minmax(310px,0.85fr)]">
+    <div className="grid min-w-0 gap-3 xl:grid-cols-[minmax(0,1.8fr)_minmax(420px,1fr)]">
       <Card className="min-w-0 overflow-hidden shadow-sm">
         <CardHeader className="flex-row items-center justify-between space-y-0 border-b px-4 py-3">
           <CardTitle className="flex items-center gap-2 text-sm font-semibold"><LiveDot /> Live Cameras <span className="text-muted-foreground">({connected} Connected)</span></CardTitle>
@@ -113,15 +113,16 @@ export function DashboardScreen() {
           <div className={cn("grid gap-2", layout === 2 ? "sm:grid-cols-2" : "sm:grid-cols-2 lg:grid-cols-3")}>
             {hubCameras.slice(0, layout).map((camera) => <div key={camera.id} className="min-w-0 overflow-hidden rounded-lg border bg-card">
               <div className="flex h-8 items-center justify-between gap-2 px-2.5 text-[11px]"><span className="flex min-w-0 items-center gap-1.5 font-semibold"><CameraIcon className="size-3.5 shrink-0 text-muted-foreground" /><span className="truncate">{camera.name}</span></span><span className={cn("flex shrink-0 items-center gap-1 font-medium", camera.ready ? "text-emerald-600" : "text-red-500")}><span className={cn("size-1.5 rounded-full", camera.ready ? "bg-emerald-500" : "bg-red-500")} />{camera.ready ? "Live" : "Offline"}</span></div>
-              <CameraFeed cameraId={camera.id} streamPath={camera.id} whepBase={media?.whepBase} module={null} showBoxes={false} fit="cover" className="rounded-none border-x-0 border-b-0" />
+              <CameraFeed cameraId={camera.id} streamPath={camera.id} whepBase={media?.whepBase} module={null} showBoxes={false} fit="cover" className="aspect-[4/3] rounded-none border-x-0 border-b-0" />
             </div>)}
           </div>
         </CardContent>
       </Card>
 
-      <Card className="min-w-0 overflow-hidden shadow-sm">
+      <div className="min-h-0 xl:relative">
+      <Card className="flex h-full min-h-0 min-w-0 flex-col overflow-hidden shadow-sm xl:absolute xl:inset-0">
         <CardHeader className="border-b px-4 py-3"><div className="flex items-center justify-between gap-2"><CardTitle className="flex items-center gap-2 text-sm font-semibold"><FlameIcon className="size-4 text-red-500" /> Priority Detections</CardTitle><div className="flex items-center gap-1"><Badge variant="outline" className="font-mono text-[10px]">{filteredIncidents.length} need action</Badge><Button type="button" variant="ghost" size="icon" className="size-7" onClick={() => void load()} title="Refresh priority detections"><RefreshCwIcon className="size-3.5" /></Button></div></div><FilterTabs value={priorityFilter} onChange={setPriorityFilter} /></CardHeader>
-        <CardContent className="max-h-[430px] space-y-2 overflow-y-auto p-3">
+        <CardContent className="min-h-0 flex-1 space-y-2 overflow-y-auto p-3">
           {dataError && <DataError message={dataError} onRetry={load} />}
           {!loading && filteredIncidents.length === 0 && <EmptyState icon={ShieldAlertIcon} label="No active priority detections" />}
           {filteredIncidents.slice(0, 8).map((incident) => <Link key={incident.id} to={`/incidents/${incident.id}`} className="flex items-center gap-2.5 rounded-lg border p-2.5 hover:bg-muted/60">
@@ -131,6 +132,7 @@ export function DashboardScreen() {
           </Link>)}
         </CardContent>
       </Card>
+      </div>
     </div>
 
     <div className="grid min-w-0 gap-3 xl:grid-cols-[minmax(0,1.6fr)_minmax(360px,1fr)]">
@@ -182,7 +184,7 @@ export function DashboardScreen() {
 }
 
 function DashboardStats({ connected, cameraCount, openIncidents, peopleDetected, vehiclesDetected, hubReachable, visionUp, visionCameras, loading }: { connected: number; cameraCount: number; openIncidents: number; peopleDetected: number; vehiclesDetected: number; hubReachable: boolean | null; visionUp: boolean; visionCameras: number; loading: boolean }) {
-  return <section aria-label="Operational summary" className="grid grid-cols-2 gap-2 md:grid-cols-3 2xl:grid-cols-6">
+  return <section aria-label="Operational summary" className="grid grid-cols-2 gap-2 md:grid-cols-3 lg:grid-cols-6">
     <OperationalStat icon={CameraIcon} label="Live feeds" value={loading ? "—" : `${connected} / ${cameraCount}`} detail={cameraCount > 0 && connected === cameraCount ? "All cameras online" : `${Math.max(0, cameraCount - connected)} feed(s) offline`} tone={cameraCount > 0 && connected === cameraCount ? "good" : "warn"} to="/services/health" />
     <OperationalStat icon={SirenIcon} label="Open incidents" value={loading ? "—" : String(openIncidents)} detail={openIncidents === 0 ? "No action pending" : "Require operator review"} tone={openIncidents > 0 ? "bad" : "good"} to="/incidents" />
     <OperationalStat icon={UserRoundIcon} label="People detected" value={loading ? "—" : String(peopleDetected)} detail="Unique tracks · last 24h" tone="neutral" to="/services/people" />
@@ -209,7 +211,7 @@ function OperationalStat({ icon: Icon, label, value, detail, tone, to }: { icon:
 }
 
 function FilterTabs({ value, onChange }: { value: DetectionFilter; onChange: (value: DetectionFilter) => void }) {
-  return <div className="flex gap-1 overflow-x-auto pt-2">{FILTERS.map((item) => <button key={item.id} type="button" onClick={() => onChange(item.id)} className={cn("whitespace-nowrap rounded-full px-2 py-1 text-[10px] font-medium", value === item.id ? "bg-slate-900 text-white dark:bg-slate-100 dark:text-slate-900" : "bg-muted text-muted-foreground hover:text-foreground")}>{item.label}</button>)}</div>;
+  return <div className="flex flex-wrap gap-1 pt-2">{FILTERS.map((item) => <button key={item.id} type="button" onClick={() => onChange(item.id)} className={cn("whitespace-nowrap rounded-full px-2 py-1 text-[10px] font-medium", value === item.id ? "bg-slate-900 text-white dark:bg-slate-100 dark:text-slate-900" : "bg-muted text-muted-foreground hover:text-foreground")}>{item.label}</button>)}</div>;
 }
 
 function AnalyticsPanel({ incidents, events, cameras, trendKind, onTrendKind }: { incidents: Incident[]; events: IbvapEvent[]; cameras: HubCamera[]; trendKind: TrendKind; onTrendKind: (kind: TrendKind) => void }) {

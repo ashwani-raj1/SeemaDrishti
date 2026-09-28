@@ -122,6 +122,9 @@ class PlateReader:
         regions = [
             cls.plate_region(bbox_px, frame_shape, lower_frac=0.26, center_w_frac=0.76),
             cls.plate_region(bbox_px, frame_shape, lower_frac=0.40, center_w_frac=0.88),
+            # Detector boxes are not always tight around close vehicles. A
+            # wider lower-body crop keeps high-mounted plates in the OCR area.
+            cls.plate_region(bbox_px, frame_shape, lower_frac=0.56, center_w_frac=0.96),
         ]
         # Avoid paying for the same crop twice on very small vehicle boxes.
         return list(dict.fromkeys(regions))
@@ -160,13 +163,19 @@ class PlateReader:
             enlarged = cv2.resize(crop, None, fx=scale, fy=scale,
                                   interpolation=cv2.INTER_CUBIC)
             gray = cv2.cvtColor(enlarged, cv2.COLOR_BGR2GRAY)
+            denoised = cv2.bilateralFilter(gray, 7, 45, 45)
             enhanced = cv2.createCLAHE(clipLimit=3.0,
-                                       tileGridSize=(8, 8)).apply(gray)
+                                       tileGridSize=(8, 8)).apply(denoised)
+            blurred = cv2.GaussianBlur(enhanced, (0, 0), 1.2)
+            sharpened = cv2.addWeighted(enhanced, 1.8, blurred, -0.8, 0)
             _, thresholded = cv2.threshold(
-                enhanced, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)
+                sharpened, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)
             inverted = cv2.bitwise_not(thresholded)
+            adaptive = cv2.adaptiveThreshold(
+                sharpened, 255, cv2.ADAPTIVE_THRESH_GAUSSIAN_C,
+                cv2.THRESH_BINARY, 31, 7)
 
-            for prepared in (enhanced, thresholded, inverted):
+            for prepared in (enhanced, sharpened, thresholded, inverted, adaptive):
                 readings = self.reader.readtext(
                     prepared, detail=1, allowlist=self.ALLOWLIST,
                     decoder="beamsearch", beamWidth=5)
@@ -285,11 +294,9 @@ class GeminiPlateEstimator:
                 )
                 if result:
                     result = dict(result)
-                    # The prompt is constrained to a cropped detected vehicle
-                    # and rejects UNKNOWN/non-plate strings. Treat the first
-                    # deterministic Gemini fallback as usable; exact watchlist
-                    # matching downstream remains conservative.
-                    result["verified"] = confirmations >= 1
+                    # Display the first answer as a hint, but require an exact
+                    # repeat from a later frame before watchlist processing.
+                    result["verified"] = confirmations >= 2
                 self._cache[track_ref] = {
                     "attempted": now,
                     "area": max(1, (bbox_px[2] - bbox_px[0]) *
@@ -331,11 +338,19 @@ class GeminiPlateEstimator:
         crop = frame[py1:py2, px1:px2]
         if crop is None or crop.size == 0 or crop.shape[1] < 24 or crop.shape[0] < 12:
             return None
-        scale = max(3.0, min(8.0, 220.0 / max(1, crop.shape[0])))
+        scale = max(3.0, min(8.0, 280.0 / max(1, crop.shape[0])))
         crop = cv2.resize(crop, None, fx=scale, fy=scale,
                           interpolation=cv2.INTER_CUBIC)
+        lab = cv2.cvtColor(crop, cv2.COLOR_BGR2LAB)
+        light, channel_a, channel_b = cv2.split(lab)
+        light = cv2.createCLAHE(clipLimit=3.0,
+                                tileGridSize=(8, 8)).apply(light)
+        crop = cv2.cvtColor(cv2.merge((light, channel_a, channel_b)),
+                            cv2.COLOR_LAB2BGR)
+        soft = cv2.GaussianBlur(crop, (0, 0), 1.0)
+        crop = cv2.addWeighted(crop, 1.65, soft, -0.65, 0)
         ok, encoded = cv2.imencode(
-            ".jpg", crop, [int(cv2.IMWRITE_JPEG_QUALITY), 90])
+            ".jpg", crop, [int(cv2.IMWRITE_JPEG_QUALITY), 97])
         if not ok:
             return None
         prompt = (
@@ -654,6 +669,9 @@ class AnprModule(VisionModule):
     def _snapshot(frame, bbox_px, plate=False) -> Optional[str]:
         x1, y1, x2, y2 = (int(value) for value in bbox_px)
         height, width = frame.shape[:2]
+        pad_x = max(4, int((x2 - x1) * (0.08 if plate else 0.05)))
+        pad_y = max(3, int((y2 - y1) * (0.18 if plate else 0.05)))
+        x1, y1, x2, y2 = x1 - pad_x, y1 - pad_y, x2 + pad_x, y2 + pad_y
         x1, y1 = max(0, x1), max(0, y1)
         x2, y2 = min(width, x2), min(height, y2)
         if x2 <= x1 or y2 <= y1:
@@ -661,13 +679,13 @@ class AnprModule(VisionModule):
         crop = frame[y1:y2, x1:x2]
         if crop is None or crop.size == 0:
             return None
-        target_width = 480 if not plate else 320
-        scale = min(3.0 if plate else 1.0, target_width / max(1, crop.shape[1]))
+        target_width = 960 if not plate else 640
+        scale = min(4.0 if plate else 2.0, target_width / max(1, crop.shape[1]))
         if scale != 1.0:
             crop = cv2.resize(crop, None, fx=scale, fy=scale,
                               interpolation=cv2.INTER_CUBIC if scale > 1 else cv2.INTER_AREA)
         ok, encoded = cv2.imencode(
-            ".jpg", crop, [int(cv2.IMWRITE_JPEG_QUALITY), 88])
+            ".jpg", crop, [int(cv2.IMWRITE_JPEG_QUALITY), 97])
         if not ok:
             return None
         return "data:image/jpeg;base64," + base64.b64encode(encoded).decode("ascii")

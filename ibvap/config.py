@@ -212,6 +212,9 @@ class CameraConfig:
     #: explicitly mark an approved replay feed operational; source transport
     #: alone must not silently discard its ANPR records.
     simulated: bool
+    #: Optional per-camera detector resolution. Plate-facing gates can retain
+    #: more detail without forcing every camera worker onto the same CPU cost.
+    imgsz: int | None = None
     modules: dict[str, dict] = field(default_factory=dict)
 
     def module_params(self, name: str) -> dict:
@@ -283,6 +286,7 @@ def load_cameras(settings: Settings | None = None) -> list[CameraConfig]:
             label=merged.get("label", merged["id"]),
             rtsp_url=settings.rtsp_url(merged["id"]),
             simulated=bool(merged.get("simulated", kind == "file")),
+            imgsz=(int(merged["imgsz"]) if merged.get("imgsz") else None),
             modules=_modules_for(merged.get("modules", defaults.get("modules"))),
         ))
     return out
