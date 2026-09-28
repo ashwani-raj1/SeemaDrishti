@@ -282,8 +282,8 @@ def llm_plate_fallback(image: np.ndarray, vehicle_bbox, track_key: str,
         return cached.get("result") if cached else None
 
     px1, py1, px2, py2 = reader.plate_region(vehicle_bbox, image.shape,
-                                              lower_frac=0.32,
-                                              center_w_frac=0.72)
+                                              lower_frac=0.56,
+                                              center_w_frac=0.96)
     crop = image[py1:py2, px1:px2]
     if crop is None or crop.size == 0 or crop.shape[1] < 24 or crop.shape[0] < 12:
         LLM_READS[track_key] = {
@@ -301,8 +301,10 @@ def llm_plate_fallback(image: np.ndarray, vehicle_bbox, track_key: str,
                                 tileGridSize=(8, 8)).apply(l_channel)
     enlarged = cv2.cvtColor(cv2.merge((l_channel, a_channel, b_channel)),
                             cv2.COLOR_LAB2BGR)
+    soft = cv2.GaussianBlur(enlarged, (0, 0), 1.0)
+    enlarged = cv2.addWeighted(enlarged, 1.65, soft, -0.65, 0)
     ok, encoded = cv2.imencode(".jpg", enlarged,
-                               [int(cv2.IMWRITE_JPEG_QUALITY), 90])
+                               [int(cv2.IMWRITE_JPEG_QUALITY), 97])
     if not ok:
         return None
 

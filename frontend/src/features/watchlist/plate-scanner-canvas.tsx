@@ -745,14 +745,17 @@ export function PlateScannerCanvas({
       // Keep registration characters readable in saved evidence and in the
       // enlarged preview. YOLO resizes internally, so this only preserves the
       // source pixels supplied to OCR/Gemini and the snapshot crop.
-      const scale = Math.min(1, 1280 / videoElement.videoWidth);
+      // Preserve considerably more source detail for ANPR.  Plates are often
+      // only a few dozen pixels wide; shrinking a 1080p/4K feed to 1280px
+      // before sending it to OCR permanently removes character strokes.
+      const scale = Math.min(1, 2560 / videoElement.videoWidth);
       canvas.width = Math.round(videoElement.videoWidth * scale);
       canvas.height = Math.round(videoElement.videoHeight * scale);
       canvas.getContext("2d")?.drawImage(videoElement, 0, 0, canvas.width, canvas.height);
       const response = await fetch("http://localhost:8001/detect", {
         method: "POST", headers: { "content-type": "application/json" },
         body: JSON.stringify({
-          image: canvas.toDataURL("image/jpeg", 0.94),
+          image: canvas.toDataURL("image/jpeg", 0.98),
           source_id: sourceMode === "camera" ? selectedCameraId : "local-live-camera",
         }),
       });
@@ -760,10 +763,16 @@ export function PlateScannerCanvas({
       const result = await response.json() as { detections: Array<{ track_id?: number | null; track_key?: string; vehicle_type: string; confidence: number; bbox: [number, number, number, number]; plate?: { text: string; confidence: number; bbox: [number, number, number, number]; source?: "ocr" | "llm"; verified?: boolean; model?: string | null } }> };
       const at = new Date().toISOString();
       const snapshotFor = (bbox: [number, number, number, number]) => {
-        const x1 = Math.max(0, Math.floor(bbox[0] * canvas.width));
-        const y1 = Math.max(0, Math.floor(bbox[1] * canvas.height));
-        const x2 = Math.min(canvas.width, Math.ceil(bbox[2] * canvas.width));
-        const y2 = Math.min(canvas.height, Math.ceil(bbox[3] * canvas.height));
+        const rawX1 = Math.floor(bbox[0] * canvas.width);
+        const rawY1 = Math.floor(bbox[1] * canvas.height);
+        const rawX2 = Math.ceil(bbox[2] * canvas.width);
+        const rawY2 = Math.ceil(bbox[3] * canvas.height);
+        const paddingX = Math.max(8, Math.round((rawX2 - rawX1) * 0.05));
+        const paddingY = Math.max(6, Math.round((rawY2 - rawY1) * 0.05));
+        const x1 = Math.max(0, rawX1 - paddingX);
+        const y1 = Math.max(0, rawY1 - paddingY);
+        const x2 = Math.min(canvas.width, rawX2 + paddingX);
+        const y2 = Math.min(canvas.height, rawY2 + paddingY);
         if (x2 <= x1 || y2 <= y1) return null;
         const sourceWidth = x2 - x1;
         const sourceHeight = y2 - y1;
@@ -776,7 +785,7 @@ export function PlateScannerCanvas({
         context.imageSmoothingEnabled = true;
         context.imageSmoothingQuality = "high";
         context.drawImage(canvas, x1, y1, sourceWidth, sourceHeight, 0, 0, crop.width, crop.height);
-        return crop.toDataURL("image/jpeg", 0.95);
+        return crop.toDataURL("image/jpeg", 0.98);
       };
       const detections: PlateDetection[] = result.detections
         .filter((item) => item.confidence >= 0.45)

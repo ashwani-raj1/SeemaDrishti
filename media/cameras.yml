@@ -133,3 +133,22 @@ cameras:
       kind: file
       path: clips/virtual_fence.mp4
       # url: https://youtu.be/gz8N0kc90uU
+
+  - id: cam_border_gate
+    label: Border Gate
+    detect: true
+    # This replay contains real monitoring footage and is the approved ANPR
+    # demo source. Keep its detections in the operational 12-hour capture list.
+    simulated: false
+    # Vehicles are too small for the shared CPU-friendly 384px detector at
+    # their first readable approach. Raise only this plate-facing camera.
+    imgsz: 640
+    # Keep the source resolution for vehicle crops and number-plate OCR. The
+    # detector still controls its own inference size, so this does not force
+    # every YOLO pass to process the full source resolution.
+    height: null
+    modules: [fence, anpr, multi_human]
+    source:
+      kind: file
+      path: clips/border_gate.mp4
+      # url: https://youtu.be/dP1UQ59d0Vw

@@ -161,12 +161,12 @@ function SidebarItem({
       className={cn(
         "rounded-lg font-medium text-xs transition-colors",
         active
-          ? "bg-blue-600 text-white font-bold hover:bg-blue-700 hover:text-white dark:bg-blue-600 dark:text-white"
+          ? "bg-blue-600! text-white! font-bold hover:bg-blue-700! hover:text-white! data-[active=true]:bg-blue-600! data-[active=true]:text-white! dark:bg-blue-600! dark:text-white!"
           : "text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800"
       )}
     >
       <NavLink to={section.path}>
-        <Icon className={cn("size-4", active && "text-white")} />
+        <Icon className={cn("size-4", active && "text-white!")} />
         <span className={locked ? "text-muted-foreground" : undefined}>{section.label}</span>
       </NavLink>
     </SidebarMenuButton>
