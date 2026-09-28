@@ -84,6 +84,30 @@ export interface FaceExtra {
     bbox: [number, number, number, number];
     score: number;
   };
+  /**
+   * Set when this track matched a person_watchlist entry -- computed by
+   * modules/watchlist_client.py against the backend's list, face signal
+   * preferred over appearance (see that module's own docstring). Unlike
+   * `face` above, THIS is an identity claim, and every alertable durable
+   * event it produces is also recorded server-side (backend/src/l3/
+   * person_watchlist.ts), so a match is never something only this live
+   * overlay ever knew about.
+   */
+  watchlist_match?: {
+    name: string;
+    score: number;
+    signal: "face" | "appearance";
+  } | null;
+  /**
+   * Raw cosine similarity against the operator's current one-off target
+   * search (backend/src/l3/target.ts, modules/target_client.py), or absent
+   * when nobody has set one. UNCONFIRMED on purpose, same as `face` above:
+   * this is appearance-only colour matching, never a face or a name, and
+   * the viewer decides what counts as "found" (people.tsx's own
+   * TARGET_MATCH_THRESHOLD) -- this field is never gated on a threshold
+   * before it reaches here.
+   */
+  target_score?: number | null;
 }
 
 /** What the multi_human module puts in `extra`. */

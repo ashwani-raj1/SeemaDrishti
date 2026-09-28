@@ -453,3 +453,49 @@ CREATE INDEX IF NOT EXISTS vehicle_traffic_by_time
 CREATE INDEX IF NOT EXISTS vehicle_traffic_by_camera
   ON vehicle_traffic_event(camera_id, occurred_at DESC);
 
+-- ---------------------------------------------------------------- person watchlist (face + appearance)
+--
+-- The plate watchlist's sibling for people, not a copy of its shape: a plate
+-- is compared by string edit-distance (platesMatch, above); a person is
+-- compared by embedding cosine similarity, computed once by the vision
+-- service's own models (ibvap/modules/face.py) and stored here as plain JSON
+-- float arrays -- this table holds vectors, never photos, and never runs a
+-- model itself. Both signals are optional and independent: a close-up photo
+-- yields a face embedding (strong), a photo with no usable face still yields
+-- an appearance embedding (weak, colour-based) so enrolment never silently
+-- fails just because a face was not visible.
+--
+-- The single source of truth for TWO different processes: ibvap/main.py's
+-- live per-camera pipeline and ibvap/people_ai_service.py's upload/webcam
+-- endpoint both poll this table (GET /api/watchlist/people) on a timer and
+-- match against their own cached copy, the same pattern zones already use
+-- (see media/cameras.yml's comment on zone_refresh_seconds) -- so an
+-- enrolment reaches every camera without restarting a worker.
+-- `address` and `owned_plates` are DELIBERATELY MOCK -- there is no
+-- registry of residence or vehicle ownership feeding this system, and
+-- pretending otherwise would be a false claim of capability the same way
+-- claude.md §7 forbids for an accuracy number. They exist so the person
+-- dossier page (routes/person_watchlist.ts's :name/dossier) has SOMETHING
+-- to show beyond a bare sighting log, seeded by an operator the same way a
+-- plate gets added to the vehicle watchlist. `owned_plates` is the one
+-- genuinely internal connection to ANPR: it is compared against REAL rows
+-- in `plate_detection` (an actual OCR read, actually seen by a camera), so
+-- a dossier's vehicle history is real detections cross-referenced against a
+-- mock ownership claim, and the dossier UI must say so, not blur the two.
+CREATE TABLE IF NOT EXISTS person_watchlist (
+  id                   TEXT PRIMARY KEY,
+  org_id               TEXT NOT NULL REFERENCES organisation(id),
+  name                 TEXT NOT NULL,
+  face_embedding       TEXT,                 -- JSON float array, or NULL
+  appearance_embedding TEXT,                 -- JSON float array, or NULL
+  notes                TEXT,
+  address              TEXT,                 -- mock, operator-entered
+  owned_plates         TEXT,                 -- mock, JSON array of plate strings
+  active               INTEGER NOT NULL DEFAULT 1,
+  added_by             TEXT,
+  created_at           TEXT NOT NULL,
+  updated_at           TEXT NOT NULL,
+  UNIQUE(org_id, name)
+);
+
+CREATE INDEX IF NOT EXISTS person_watchlist_by_org ON person_watchlist(org_id, active);

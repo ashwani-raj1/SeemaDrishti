@@ -527,8 +527,8 @@ export function PlateScannerCanvas({
         const plate = normalizedPlate(extra.plate?.text);
         // This websocket carries live, explicitly unconfirmed OCR observations.
         // It may draw text, but only the durable backend plate_read is allowed
-        // to match a watchlist or raise an alarm.
-        const matched = null;
+        // to match a watchlist or raise an alarm -- so this is never a match,
+        // by design, not a placeholder for logic that got skipped.
         return {
           id: extra.track_ref ?? `${camera.id}:${track.track_id ?? index}`,
           org_id: "org_bsf",
@@ -540,11 +540,11 @@ export function PlateScannerCanvas({
           confidence: track.confidence,
           plate_confidence: extra.plate?.confidence ?? 0,
           plate_source: extra.plate?.source ?? "ocr",
-          matched_watchlist_id: matched?.id ?? null,
-          matched_entry: matched,
+          matched_watchlist_id: null,
+          matched_entry: null,
           plate_verified: false,
-          match_status: "UNVERIFIED",
-          severity: matched?.severity ?? "INFO",
+          match_status: "UNVERIFIED" as const,
+          severity: "INFO" as const,
           bbox: track.bbox,
           plate_bbox: extra.plate?.bbox ?? [0, 0, 0, 0],
           image_snapshot: extra.plate?.image_snapshot ?? extra.image_snapshot ?? null,
@@ -798,7 +798,7 @@ export function PlateScannerCanvas({
           plate_verified: verified,
           matched_watchlist_id: matchedEntry?.id ?? null,
           matched_entry: matchedEntry,
-          match_status: matchedEntry ? "MATCHED" : "UNVERIFIED",
+          match_status: matchedEntry ? ("MATCHED" as const) : ("UNVERIFIED" as const),
           severity: matchedEntry?.severity ?? "INFO",
           bbox: item.bbox, plate_bbox: item.plate?.bbox ?? [0, 0, 0, 0],
         // Captured Vehicles represents the vehicle. Keep the full vehicle crop
@@ -1583,7 +1583,14 @@ export function PlateScannerCanvas({
                       <div className="truncate font-medium">{vehicleTypeLabel(veh.vehicle_type)}</div>
                     </div>
                     <div className="hidden items-center sm:flex">
-                      {isDisplayableSnapshot(veh.image_snapshot) ? (
+                      {(() => {
+                        // Captured into a local so the type guard's narrowing
+                        // survives into the onClick closure below -- TS does
+                        // not carry a predicate's narrowing through a nested
+                        // property access (veh.image_snapshot) across a
+                        // function boundary, only through a plain variable.
+                        const snapshot = veh.image_snapshot;
+                        return isDisplayableSnapshot(snapshot) ? (
                         <button
                           type="button"
                           className="shrink-0 rounded focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-500"
@@ -1591,11 +1598,11 @@ export function PlateScannerCanvas({
                           aria-label="Enlarge captured vehicle image"
                           onClick={(event) => {
                             event.stopPropagation();
-                            setEnlargedSnapshot(veh.image_snapshot);
+                            setEnlargedSnapshot(snapshot);
                           }}
                         >
                           <img
-                            src={veh.image_snapshot}
+                            src={snapshot}
                             alt="Captured vehicle"
                             className="h-9 w-12 rounded-md border border-slate-700 object-cover transition-colors hover:border-cyan-400"
                           />
@@ -1604,7 +1611,8 @@ export function PlateScannerCanvas({
                         <div className="flex h-9 w-12 shrink-0 items-center justify-center rounded-md border border-slate-800 bg-slate-900">
                           <CarIcon className="h-4 w-4 text-slate-500" />
                         </div>
-                      )}
+                        );
+                      })()}
                     </div>
                     <div className="w-full justify-self-end text-right">
                       {hit ? (

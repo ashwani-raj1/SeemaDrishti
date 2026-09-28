@@ -13,7 +13,9 @@ export type StreamMessage =
   | { type: "action"; data: unknown }
   | { type: "camera"; data: unknown }
   | { type: "watchlist_change"; data: unknown }
+  | { type: "person_watchlist_change"; data: unknown }
   | { type: "plate_detection"; data: unknown }
+  | { type: "vehicle_traffic"; data: unknown }
   | { type: "hello"; data: unknown }
   | { type: "heartbeat"; data: unknown };
 

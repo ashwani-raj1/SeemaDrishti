@@ -88,10 +88,11 @@ function describe(module: string, track: LiveTrack): { status: string; pending: 
   if (module === "multi_human") {
     const extra = track.extra as PeopleExtra;
     const age = extra.age_seconds ? `${extra.age_seconds.toFixed(0)}s in frame` : "new track";
-    // `matched_ref` says which earlier TRACK this resembles. It is never an
-    // identity, and the wording here must not imply one.
+    // `person_id` ("P1", "P2", ...) is multi_human's own stable label for one
+    // appearance-matched span of tracks -- colour-based re-association, never
+    // an identity, and the wording here must not imply one.
     return {
-      status: extra.matched_ref ? `${age} · resembles ${extra.matched_ref}` : age,
+      status: extra.person_id ? `${age} · ${extra.person_id}` : age,
       pending: false,
     };
   }

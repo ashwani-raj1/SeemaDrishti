@@ -5,6 +5,7 @@ import { recordEvent, shapeEvent } from "../l3/events";
 import { zonesForCamera, isProvisional, PROVISIONAL_SUPPRESSION } from "../l3/zones";
 import { setCameraStatus } from "../l3/cameras";
 import { processVehicleAndPlateDetection, recordVehicleTraffic } from "../l3/watchlist";
+import { getPersonWatchlistEntry, recordPersonWatchlistMatch } from "../l3/person_watchlist";
 import { BadRequest } from "./hooks";
 
 /**
@@ -44,7 +45,7 @@ export interface VisionEvent {
   simulated: boolean;
 }
 
-const KNOWN_EVENTS = new Set(["intrusion", "vehicle_detection", "plate_read", "camera_health", "reidentification"]);
+const KNOWN_EVENTS = new Set(["intrusion", "vehicle_detection", "plate_read", "camera_health", "reidentification", "watchlist_match"]);
 
 function requireString(value: unknown, field: string): string {
   if (typeof value !== "string" || !value.trim()) throw new BadRequest(`${field} is required`);
@@ -470,6 +471,43 @@ function ingestReidentification(event: VisionEvent, context: CameraContext) {
   });
 }
 
+// ------------------------------------------------------------------ person watchlist
+
+/**
+ * A tracked person matched against the person watchlist, by face (preferred)
+ * or clothing-colour appearance (fallback) -- see l3/person_watchlist.ts's
+ * recordPersonWatchlistMatch for why only a face match is alertable.
+ *
+ * The vision service sends the watchlist id it matched (data.matched_id): it
+ * already holds the full entry, pulled from GET /api/watchlist/people on its
+ * own refresh timer (modules/watchlist_client.py), so this file only has to
+ * look the id back up to confirm it is real and get the name for the title --
+ * it never re-runs the comparison the vision service already did.
+ */
+function ingestWatchlistMatch(event: VisionEvent, context: CameraContext) {
+  const matchedId = requireString(event.data.matched_id, "data.matched_id");
+  const entry = getPersonWatchlistEntry(matchedId);
+  if (!entry) throw new BadRequest(`unknown watchlist entry ${matchedId}`);
+
+  const signal = event.data.signal === "appearance" ? "appearance" : "face";
+  const score = typeof event.data.score === "number" ? event.data.score : 0;
+  const bbox = bboxOf(event.data.bbox) ?? [0, 0, 0, 0];
+
+  return recordPersonWatchlistMatch({
+    orgId: context.orgId,
+    siteId: context.siteId,
+    cameraId: event.cameraId,
+    cameraName: context.cameraName,
+    entry,
+    signal,
+    score,
+    trackRef: typeof event.data.track_ref === "string" ? event.data.track_ref : "",
+    bbox,
+    simulated: event.simulated,
+    occurredAt: event.occurredAt,
+  });
+}
+
 // ------------------------------------------------------------------ the door
 
 export function ingestVisionEvent(event: VisionEvent) {
@@ -486,6 +524,8 @@ export function ingestVisionEvent(event: VisionEvent) {
       return { event: shapeEvent(ingestCameraHealth(event, context)) };
     case "reidentification":
       return { event: shapeEvent(ingestReidentification(event, context)) };
+    case "watchlist_match":
+      return { event: shapeEvent(ingestWatchlistMatch(event, context)) };
     default:
       // parseVisionEvent already rejected anything else; this is here so that
       // adding an event type without handling it fails loudly rather than

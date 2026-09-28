@@ -119,7 +119,11 @@ def main():
     ap.add_argument("--modules", default="multi_human",
                     help=f"comma-separated, from: {', '.join(sorted(REGISTRY) or ['(import modules first)'])}")
     ap.add_argument("--weights", default="yolo11n.pt")
-    ap.add_argument("--imgsz", type=int, default=480)
+    ap.add_argument("--imgsz", type=int, default=640,
+                    help="inference resolution; 480 is main.py's multi-camera "
+                         "default, 640 costs ~34%% more detector time on this "
+                         "machine (measured: core/detection.py) and finds "
+                         "more/tighter boxes on a single stream")
     ap.add_argument("--conf", type=float, default=0.35)
     ap.add_argument("--face-model", default=None,
                     help="overrides the face module's default weights path")

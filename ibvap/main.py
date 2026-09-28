@@ -99,13 +99,22 @@ class CameraWorker:
 
         self.reader: RTSPStream | None = None
         self.detector: SharedDetector | None = None
-        # `face` gets its weights path from Settings, same as the shared
-        # detector's own `weights` -- unless a camera's own `face: {model:
-        # ...}` already says so, which wins.
+        # `face` gets its weights path and the backend address from Settings,
+        # same as the shared detector's own `weights` -- unless a camera's own
+        # `face: {...}` params already say so, which win (setdefault, not
+        # overwrite). The backend address is how the watchlist reaches this
+        # module: see modules/watchlist_client.py.
+        def _module_params(name: str, params: dict) -> dict:
+            if name != "face":
+                return params
+            merged = dict(params)
+            merged.setdefault("model", settings.face_model)
+            merged.setdefault("backend_url", settings.backend_url)
+            merged.setdefault("watchlist_refresh_seconds", settings.watchlist_refresh_seconds)
+            return merged
+
         self.modules = [
-            build(name, camera.id,
-                 {**params, "model": settings.face_model}
-                 if name == "face" and "model" not in params else params)
+            build(name, camera.id, _module_params(name, params))
             for name, params in camera.modules.items()
         ]
 
