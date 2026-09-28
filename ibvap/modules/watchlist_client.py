@@ -108,11 +108,16 @@ class WatchlistClient:
         return best
 
     def enroll(self, name: str, face_embedding: Optional[list[float]] = None,
-               appearance_embedding: Optional[list[float]] = None) -> dict:
+               appearance_embedding: Optional[list[float]] = None,
+               address: Optional[str] = None, owned_plates: Optional[list[str]] = None,
+               govt_id: Optional[str] = None) -> dict:
         body = json.dumps({
             "name": name,
             "faceEmbedding": face_embedding,
             "appearanceEmbedding": appearance_embedding,
+            "address": address,
+            "ownedPlates": owned_plates,
+            "govtId": govt_id,
         }).encode("utf-8")
         request = urllib.request.Request(
             f"{self.backend_url}/api/watchlist/people", data=body, method="POST",

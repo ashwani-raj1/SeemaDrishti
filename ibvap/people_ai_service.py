@@ -106,6 +106,12 @@ class Frame(BaseModel):
 class WatchlistEntry(BaseModel):
     name: str
     image: str
+    # All three MOCK -- see backend/src/db/schema.sql's own note on
+    # address/owned_plates/govt_id. Optional so the People page's existing
+    # simple enrol flow (name + photo only) keeps working unchanged.
+    address: str | None = None
+    owned_plates: list[str] | None = None
+    govt_id: str | None = None
 
 
 class _Models:
@@ -289,7 +295,10 @@ def enroll_watchlist(entry: WatchlistEntry):
         raise HTTPException(400, "could not extract any appearance or face signature from the photo")
 
     try:
-        state.watchlist.enroll(entry.name, face_embedding=face, appearance_embedding=appearance)
+        state.watchlist.enroll(
+            entry.name, face_embedding=face, appearance_embedding=appearance,
+            address=entry.address, owned_plates=entry.owned_plates, govt_id=entry.govt_id,
+        )
     except (urllib.error.URLError, OSError) as error:
         raise HTTPException(502, f"could not reach the edge node to store this entry: {error}") from error
     return {

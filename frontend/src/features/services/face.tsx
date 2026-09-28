@@ -5,7 +5,10 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
-import { InfoIcon, ScanFaceIcon, ShieldAlertIcon, XIcon } from "lucide-react";
+import {
+  ArrowRightIcon, CircleCheckIcon, InfoIcon, RadarIcon, ScanFaceIcon, ShieldAlertIcon, XIcon,
+} from "lucide-react";
+import { onLive, type FaceExtra } from "@/lib/live";
 import { ServiceShell } from "./service-shell";
 
 /**
@@ -28,16 +31,27 @@ import { ServiceShell } from "./service-shell";
  *           identity claim -- weaker evidence than a human confirming it,
  *           but real evidence, not a guess.
  *
- * THE SEARCH WIDGET BELOW IS A DELIBERATE EXCEPTION to ServiceShell's own
- * "no action button near the live feed" rule (see that file's docstring):
- * an operator who wants to search for a face lands on THIS page looking
- * for it, and pointing them at a different page for the one thing they
- * came here to do is worse UX than the shell's usual read-only posture.
- * It is the SAME enrolment `people_ai_service.py` already exposes (POST
- * /watchlist) -- not a second implementation, not a separate list. Add
- * someone here or on the People page's Watchlist card and it is the one
- * watchlist either way, matched on every camera, including whichever one
- * is selected above.
+ * THE TWO-BLOCK LAYOUT BELOW (Reference photo | Live face scan) IS A
+ * DELIBERATE EXCEPTION to ServiceShell's own "no action button near the
+ * live feed" rule (see that file's docstring): an operator who wants to
+ * search for a face lands on THIS page looking for it, and pointing them
+ * at a different page for the one thing they came here to do is worse UX
+ * than the shell's usual read-only posture.
+ *
+ * WHY IT IS TWO BLOCKS, NOT A SINGLE SEARCH BOX: this is the same
+ * enrolment `people_ai_service.py` already exposes (POST /watchlist), and
+ * enrolment is inherently a STANDING comparison, not a one-shot lookup --
+ * there is no endpoint that compares an uploaded photo against only
+ * "whoever happens to be in frame right now" and forgets it afterwards.
+ * So the left block is the input (upload a reference photo under a name)
+ * and the right block is its live effect (every face this module currently
+ * sees on the selected camera, and whether it matches), reading the SAME
+ * `face` live channel camera-feed.tsx already draws boxes from -- not a
+ * second detector, just that channel surfaced as its own list instead of
+ * only as an overlay. No face crop is shown in either block: the live
+ * channel carries coordinates and scores, never pixels (see lib/live.ts's
+ * own docstring on why), so a "scanning" slot is a score and a status, not
+ * an invented thumbnail.
  */
 
 const PEOPLE_AI_BASE = "http://127.0.0.1:8002";
@@ -48,7 +62,7 @@ interface WatchlistEntry {
   hasAppearance: boolean;
 }
 
-function FaceSearch() {
+function ReferencePhotoBlock() {
   const [watchlist, setWatchlist] = useState<WatchlistEntry[]>([]);
   const [name, setName] = useState("");
   const [busy, setBusy] = useState(false);
@@ -74,6 +88,13 @@ function FaceSearch() {
   }, []);
 
   useEffect(() => { void loadWatchlist(); }, [loadWatchlist]);
+  // The live-scan block matches against this exact list -- refresh it
+  // whenever an enrolment lands anywhere else (People page included), so
+  // the two blocks never show different rosters.
+  useEffect(() => {
+    const timer = window.setInterval(() => void loadWatchlist(), 8000);
+    return () => window.clearInterval(timer);
+  }, [loadWatchlist]);
 
   const upload = useCallback(async (file?: File) => {
     const trimmed = name.trim();
@@ -119,15 +140,19 @@ function FaceSearch() {
   }, []);
 
   return (
-    <Card>
+    <Card className="flex flex-col">
       <CardHeader className="pb-3">
         <CardTitle className="flex items-center gap-2 text-base">
-          <ScanFaceIcon className="size-4" /> Search by face
+          <ScanFaceIcon className="size-4" /> Reference photo
         </CardTitle>
       </CardHeader>
-      <CardContent className="space-y-3">
+      <CardContent className="flex flex-1 flex-col space-y-3">
         <input ref={fileRef} type="file" accept="image/*" className="hidden"
           onChange={(event) => { void upload(event.target.files?.[0]); event.target.value = ""; }} />
+        <p className="text-sm text-muted-foreground">
+          Name someone and upload a clear photo of their face. From that moment, every face this
+          camera sees is compared against it, live -- watch the result appear on the right.
+        </p>
         <div className="flex flex-wrap items-center gap-2">
           <Input value={name} onChange={(event) => setName(event.target.value)}
             placeholder="Name this person" className="max-w-[220px]" disabled={busy} />
@@ -141,29 +166,111 @@ function FaceSearch() {
         {lastResult && !error && (
           <p className="text-sm text-muted-foreground">
             {lastResult.hasFace
-              ? `${lastResult.name} enrolled with a real face signature -- watch for an amber box on any camera.`
+              ? `${lastResult.name} enrolled with a real face signature -- look for them on the right.`
               : `${lastResult.name} enrolled, but no face was found in that photo -- only clothing colour will be compared, which is far weaker (see the legend below).`}
           </p>
         )}
-        {watchlist.length === 0 ? (
-          <p className="text-sm text-muted-foreground">
-            Nobody enrolled yet. Name someone and upload a clear photo of their
-            face -- they are then compared against every tracked person, on
-            every camera, live.
-          </p>
+        <div className="mt-auto pt-1">
+          <p className="mb-1.5 text-xs text-muted-foreground">Enrolled ({watchlist.length})</p>
+          {watchlist.length === 0 ? (
+            <p className="text-sm text-muted-foreground">Nobody enrolled yet.</p>
+          ) : (
+            <div className="flex flex-wrap gap-2">
+              {watchlist.map((entry) => (
+                <Badge key={entry.name} variant="secondary" className="gap-1.5 py-1 pl-2.5 pr-1">
+                  {entry.name}
+                  <span className="text-[10px] text-muted-foreground">
+                    {entry.hasFace ? "face" : entry.hasAppearance ? "clothing only" : "no signature"}
+                  </span>
+                  <button type="button" onClick={() => void remove(entry.name)}
+                    className="ml-1 rounded-full p-0.5 hover:bg-muted-foreground/20" aria-label={`Remove ${entry.name}`}>
+                    <XIcon className="size-3" />
+                  </button>
+                </Badge>
+              ))}
+            </div>
+          )}
+        </div>
+      </CardContent>
+    </Card>
+  );
+}
+
+interface LiveFace {
+  key: string;
+  score: number;
+  watchlistMatch: { name: string; score: number; signal: "face" | "appearance" } | null;
+}
+
+function LiveFaceScanBlock({ cameraId }: { cameraId: string }) {
+  const [faces, setFaces] = useState<LiveFace[]>([]);
+
+  useEffect(() => {
+    setFaces([]);
+    // Each tick carries the FULL current set of tracks for this
+    // camera/module (see lib/live.ts's own docstring) -- so replacing the
+    // list wholesale is correct, not a delta merge, and a face that left
+    // frame simply stops appearing on the next tick with no pruning timer
+    // needed.
+    return onLive(cameraId, "face", (observation) => {
+      const next: LiveFace[] = [];
+      observation.tracks.forEach((track, index) => {
+        const extra = track.extra as FaceExtra;
+        if (!extra.face) return;
+        next.push({
+          key: extra.track_ref ?? `${cameraId}:${track.track_id ?? index}`,
+          score: extra.face.score,
+          watchlistMatch: extra.watchlist_match ?? null,
+        });
+      });
+      setFaces(next);
+    });
+  }, [cameraId]);
+
+  const matched = faces.filter((f) => f.watchlistMatch);
+  const scanning = faces.filter((f) => !f.watchlistMatch);
+
+  return (
+    <Card className="flex flex-col">
+      <CardHeader className="pb-3">
+        <CardTitle className="flex items-center justify-between gap-2 text-base">
+          <span className="flex items-center gap-2"><RadarIcon className="size-4" /> Live face scan</span>
+          <Badge variant={matched.length ? "destructive" : "secondary"} className="gap-1">
+            {faces.length} in view
+          </Badge>
+        </CardTitle>
+      </CardHeader>
+      <CardContent className="flex-1">
+        {faces.length === 0 ? (
+          <div className="flex h-full min-h-[140px] flex-col items-center justify-center gap-2 text-center text-sm text-muted-foreground">
+            <ScanFaceIcon className="size-8 opacity-40" />
+            <p>No faces in view on this camera right now.</p>
+          </div>
         ) : (
-          <div className="flex flex-wrap gap-2">
-            {watchlist.map((entry) => (
-              <Badge key={entry.name} variant="secondary" className="gap-1.5 py-1 pl-2.5 pr-1">
-                {entry.name}
+          <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
+            {/* Matches first -- the one thing an operator glancing at this
+                block needs to catch immediately, not buried among plain
+                detections. */}
+            {matched.map((face) => (
+              <div key={face.key}
+                className="flex flex-col items-center gap-1.5 rounded-md border-2 p-3 text-center"
+                style={{ borderColor: "#f59e0b", backgroundColor: "#f59e0b1a" }}>
+                <CircleCheckIcon className="size-6" style={{ color: "#f59e0b" }} />
+                <span className="text-xs font-semibold">{face.watchlistMatch!.name}</span>
                 <span className="text-[10px] text-muted-foreground">
-                  {entry.hasFace ? "face" : entry.hasAppearance ? "clothing only" : "no signature"}
+                  {(face.watchlistMatch!.score * 100).toFixed(0)}%
+                  {face.watchlistMatch!.signal === "appearance" ? " (clothing)" : " (face)"}
                 </span>
-                <button type="button" onClick={() => void remove(entry.name)}
-                  className="ml-1 rounded-full p-0.5 hover:bg-muted-foreground/20" aria-label={`Remove ${entry.name}`}>
-                  <XIcon className="size-3" />
-                </button>
-              </Badge>
+              </div>
+            ))}
+            {scanning.map((face) => (
+              <div key={face.key}
+                className="flex flex-col items-center gap-1.5 rounded-md border-2 border-dashed p-3 text-center"
+                style={{ borderColor: "#a3e635" }}>
+                <ScanFaceIcon className="size-6 animate-pulse" style={{ color: "#a3e635" }} />
+                <span className="text-xs text-muted-foreground">Scanning…</span>
+                <span className="text-[10px] text-muted-foreground">{(face.score * 100).toFixed(0)}%</span>
+              </div>
             ))}
           </div>
         )}
@@ -180,9 +287,17 @@ export function FaceScreen() {
       module="face"
       eventKinds={["watchlist_match"]}
     >
-      {() => (
+      {(camera) => (
         <div className="space-y-4">
-          <FaceSearch />
+          <div className="flex items-center gap-2 text-sm text-muted-foreground">
+            <span className="font-medium text-foreground">Reference photo</span>
+            <ArrowRightIcon className="size-3.5" />
+            <span className="font-medium text-foreground">compared live against {camera.name}</span>
+          </div>
+          <div className="grid gap-4 lg:grid-cols-2">
+            <ReferencePhotoBlock />
+            <LiveFaceScanBlock cameraId={camera.id} />
+          </div>
 
           <div className="grid gap-4 lg:grid-cols-2">
             <Alert>
