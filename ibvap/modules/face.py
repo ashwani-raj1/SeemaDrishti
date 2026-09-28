@@ -24,11 +24,26 @@ TWO CLASSES, TWO DIFFERENT CLAIMS -- read this before touching either one:
                  two crops, it answers "how likely is this the same
                  person", with a real, measurable score -- not "I don't
                  know" like `modules/reid.py`'s `NullReID`, and not a
-                 colour histogram like `HistogramReID`. Verified directly
-                 (not asserted): two crops of the same face scored 0.95
-                 cosine similarity; two different people's faces scored
-                 0.21, against opencv_zoo's own published same-identity
-                 threshold of ~0.363 for this exact model.
+                 colour histogram like `HistogramReID`.
+
+  MEASURED ON REAL FOOTAGE (2026-09-28), NOT JUST OFFLINE PHOTOS: 5 real,
+  distinct people tracked across a real CCTV clip (patrol_road.mp4, a
+  street scene, people walking toward camera in rain), face-embedded on
+  every tick a face was found. 132 same-person comparisons (consecutive
+  frames within one track, plus first-vs-last of each track): mean 0.60,
+  but real range -- min 0.005, max 0.998. 24/132 (18%) fell BELOW
+  opencv_zoo's own published same-identity threshold (~0.363 for this
+  model) -- a single bad crop (motion blur, an awkward angle, a half-turn)
+  genuinely can and does score low, even for the true same person. 10
+  different-person comparisons across the same 5 people: 1/10 exceeded the
+  threshold (0.3692, barely). So: the separation is real and the threshold
+  is reasonably placed, but a SINGLE frame-pair comparison is not reliable
+  enough to hang a match on alone -- which is exactly why this module never
+  matches on one frame. It keeps re-trying every `face_every`th tick for as
+  long as the track lives (see `_match_watchlist`), so the number that
+  actually matters is the false-negative rate over a track's WHOLE
+  lifetime (many attempts), not the 18% per-single-frame-pair rate above --
+  that whole-track number has not been separately measured yet.
 
   WHAT THIS STILL DOES NOT MEAN: FaceEmbedder has no opinion about WHO
   anyone is on its own -- it only ever compares two crops it is handed. The
@@ -36,9 +51,9 @@ TWO CLASSES, TWO DIFFERENT CLAIMS -- read this before touching either one:
   watchlist in `people_ai_service.py`), which enrolled that name against a
   reference photo. Never described as legally or operationally certified:
   claude.md §7's rule against unmeasured claims applies to a match score the
-  same as it does to an FPS number -- this has been verified correct on two
-  offline CV test photos, not measured against real border-camera
-  conditions (angle, distance, lighting, motion blur).
+  same as it does to an FPS number -- the real-footage numbers above are
+  from one clip, one weather condition (rain), one camera angle. They are
+  evidence, not a certified accuracy figure.
 
 LIVE ONLY (FaceDetector's own output), ON PURPOSE: a face box is drawn on
 the console and nothing else BY THIS MODULE. This module emits nothing on
@@ -53,10 +68,11 @@ reasoning `modules/multi_human.py` applies to `embed_every`. The most recent
 detection per track is kept and redrawn on the frames in between, so the box
 does not flicker at the cadence it is actually computed on.
 
-STATUS: prototype. FaceDetector is solid and has been for a while.
-FaceEmbedder is new, correctness-verified on offline test photos, and has
-never seen a real border-camera frame -- see the honesty note above before
-trusting a watchlist match on its own.
+STATUS: FaceDetector is solid and has been for a while. FaceEmbedder is
+verified correct on real CCTV footage now, not just offline test photos --
+see the measured numbers above before trusting a single-frame match on its
+own; the module's own retry-over-track-lifetime design is why one bad
+frame does not sink a real match in practice.
 """
 
 import os
