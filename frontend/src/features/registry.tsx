@@ -25,7 +25,7 @@ import {
 } from "lucide-react";
 import { canUse, GROUP_ORDER, selectEnabled, type SectionGroup, type SectionMeta } from "./sections";
 
-import { DashboardScreen } from "./dashboard/screen";
+import { DashboardScreen } from "./dashboard/command-dashboard";
 import { IncidentsScreen } from "./incidents/screen";
 import { IncidentPage } from "./incidents/page";
 import { HistoryScreen } from "./history/screen";

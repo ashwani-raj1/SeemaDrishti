@@ -188,6 +188,8 @@ def build(values, cameras, problems):
         vision = (ROOT / "ibvap" / "main.py").resolve().as_posix()
         paths[launcher["id"]]["runOnReady"] = (
             f'"{python}" "{vision}" '
+            # Individual plate-facing cameras can override this in cameras.yml
+            # without making all six workers pay the higher inference cost.
             "--cameras all --imgsz 384 --target-fps 2"
         )
         # If the detector crashes while the media path remains healthy,

@@ -25,6 +25,11 @@ const CAMERAS = [
   // unknown camera, and the worker looked like it was running fine while
   // producing nothing. It is also the one camera pointed at real footage.
   { id: "cam_garden", name: "BOP-05 Garden" },
+  // Same gap as cam_garden's own comment above, inherited from upstream's
+  // own cameras.yml addition: declared there with no matching row here, so
+  // every detection from it was being silently rejected as an unknown
+  // camera before this merge added it.
+  { id: "cam_border_gate", name: "Border Gate" },
 ];
 
 interface TargetSeed {
