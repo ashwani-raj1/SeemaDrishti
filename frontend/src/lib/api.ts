@@ -8,7 +8,7 @@
 import type {
   Action, CameraDetail, CameraIncidents, ChainVerdict, ClipManifest, ClipUsage,
   CreateWatchlistInput, Decision, DetectVehicleInput, Health, HubCameraList,
-  IbvapEvent, Incident, IncidentDetail, MonitoringZone, NodeSettings, PlateDetection,
+  IbvapEvent, Incident, IncidentDetail, MonitoringZone, NodeSettings, PersonDossier, PlateDetection,
   Point, ResetCounts, ServerConfig, SimStatus,
   UpdateWatchlistInput, WatchlistEntry, WatchlistStats,
   VehicleTrafficSummary,
@@ -342,6 +342,16 @@ export const api = {
   plateDetections: (params: { match_status?: string; camera_id?: string; plate?: string; limit?: number } = {}) =>
     request<PlateDetection[]>(`/api/watchlist/detections${qs(params)}`),
   detectVehicleAndPlate: (body: DetectVehicleInput) => post<PlateDetection>("/api/watchlist/detect", body),
+
+  // ---- identity lookup: face + ANPR + mock government registry, joined ----
+  // Supervisor-gated and audited on the backend (routes/person_watchlist.ts);
+  // a 403 here means "not signed in as a supervisor", not "not found".
+  personDossierByName: (name: string) =>
+    request<PersonDossier>(`/api/watchlist/people/${encodeURIComponent(name)}/dossier`),
+  personDossierByGovtId: (govtId: string) =>
+    request<PersonDossier>(`/api/watchlist/people/lookup/by-govt-id/${encodeURIComponent(govtId)}/dossier`),
+  personDossierByPlate: (plate: string) =>
+    request<PersonDossier>(`/api/watchlist/people/lookup/by-plate/${encodeURIComponent(plate)}/dossier`),
 };
 
 

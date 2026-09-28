@@ -3,7 +3,7 @@ import { Badge } from "@/components/ui/badge";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import {
-  onLive, onLiveState, type AnprExtra, type FenceExtra, type LiveState,
+  onLive, onLiveState, type AnprExtra, type FaceExtra, type FenceExtra, type LiveState,
   type LiveTrack, type PeopleExtra,
 } from "@/lib/live";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
@@ -68,6 +68,25 @@ function describe(module: string, track: LiveTrack): { detail: string; pending: 
       };
     }
     return { detail: `${extra.vehicle_type ?? "vehicle"} · no readable plate`, pending: false };
+  }
+
+  if (module === "face") {
+    const extra = track.extra as FaceExtra;
+    // A watchlist match is the one thing on this feed that IS an identity
+    // claim, not a bare detection -- surfaced here too, not just as a box
+    // on the picture, because an operator reading this terminal feed while
+    // glancing between camera tiles should not have to catch it visually.
+    if (extra.watchlist_match) {
+      const { name, score, signal } = extra.watchlist_match;
+      return {
+        detail: `matched: ${name} (${(score * 100).toFixed(0)}%, ${signal})`,
+        pending: false,
+      };
+    }
+    if (extra.face) {
+      return { detail: `face ${(extra.face.score * 100).toFixed(0)}%`, pending: false };
+    }
+    return { detail: "no face in view", pending: false };
   }
 
   if (module === "multi_human") {

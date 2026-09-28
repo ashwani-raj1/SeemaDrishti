@@ -551,21 +551,14 @@ export function PeopleScreen() {
           </div>
         </CardHeader>
         <CardContent className="space-y-3">
-          {mode === "media" && targetPhoto && !targetBusy && !targetError && (
-            // Cameras mode has no single "tracks in view" list to summarise
-            // (each grid tile runs its own CameraFeed independently, and a
-            // single-camera view is just one tile) -- the match itself is
-            // real, computed by modules/target_client.py against the same
-            // backend/src/l3/target.ts this photo was pushed to, and drawn
-            // directly on whichever tile it fires on (a red TARGET box), so
-            // this just says where to look rather than repeating a summary
-            // this component cannot compute for a wall of tiles.
+          {mode === "media" ? (
             <p className="text-sm text-muted-foreground">
-              Searching live: a match on any camera draws a red <strong>TARGET</strong> box
-              directly on that camera's tile, single view or grid alike.
+              Target search works on <strong>Live camera</strong> and <strong>Upload video</strong>
+              {" "}-- switch source to use it. The shared camera view reads tracks the vision
+              service already computed, which does not include a target comparison.
             </p>
-          )}
-          <div className="flex flex-wrap items-center gap-4">
+          ) : (
+            <div className="flex flex-wrap items-center gap-4">
               <button type="button" onClick={() => targetFileRef.current?.click()}
                 className="flex h-20 w-20 flex-none items-center justify-center overflow-hidden rounded-md border-2 border-dashed text-muted-foreground hover:border-primary hover:text-primary">
                 {targetPhoto ? (
@@ -587,22 +580,20 @@ export function PeopleScreen() {
                         </span>
                       )}
                     </p>
-                    {mode !== "media" && (
-                      <p className="text-muted-foreground">
-                        {bestMatch
-                          ? bestMatchConfirmed
-                            // The match score and multi_human's own "P<n>" label
-                            // are two different confirmations -- an 83% target
-                            // match is real evidence on its own, even while the
-                            // track's stable identity is still in its own
-                            // confirmation window. Never word this as if a high
-                            // score were somehow provisional because of that.
-                            ? `Best match in view: ${((bestMatch.targetScore ?? 0) * 100).toFixed(0)}%` +
-                              (bestMatch.personId ? ` -- tracked as ${bestMatch.personId}` : " -- track id not yet confirmed")
-                            : `Closest candidate: ${((bestMatch.targetScore ?? 0) * 100).toFixed(0)}% -- below the ${(TARGET_MATCH_THRESHOLD * 100).toFixed(0)}% match threshold`
-                          : "No one currently in view to compare."}
-                      </p>
-                    )}
+                    <p className="text-muted-foreground">
+                      {bestMatch
+                        ? bestMatchConfirmed
+                          // The match score and multi_human's own "P<n>" label
+                          // are two different confirmations -- an 83% target
+                          // match is real evidence on its own, even while the
+                          // track's stable identity is still in its own
+                          // confirmation window. Never word this as if a high
+                          // score were somehow provisional because of that.
+                          ? `Best match in view: ${((bestMatch.targetScore ?? 0) * 100).toFixed(0)}%` +
+                            (bestMatch.personId ? ` -- tracked as ${bestMatch.personId}` : " -- track id not yet confirmed")
+                          : `Closest candidate: ${((bestMatch.targetScore ?? 0) * 100).toFixed(0)}% -- below the ${(TARGET_MATCH_THRESHOLD * 100).toFixed(0)}% match threshold`
+                        : "No one currently in view to compare."}
+                    </p>
                   </>
                 )}
                 {!targetBusy && !targetError && !targetPhoto && (
@@ -613,7 +604,8 @@ export function PeopleScreen() {
                   </p>
                 )}
               </div>
-          </div>
+            </div>
+          )}
         </CardContent>
       </Card>
 
@@ -622,7 +614,13 @@ export function PeopleScreen() {
           <CardTitle className="flex items-center gap-2 text-base"><ShieldAlertIcon className="size-4" /> Watchlist</CardTitle>
         </CardHeader>
         <CardContent className="space-y-3">
-          <>
+          {mode === "media" ? (
+            <p className="text-sm text-muted-foreground">
+              The watchlist works on <strong>Live camera</strong> and <strong>Upload video</strong>
+              {" "}-- same reason target search does (see above).
+            </p>
+          ) : (
+            <>
               <div className="flex flex-wrap items-center gap-2">
                 <Input value={enrollName} onChange={(event) => setEnrollName(event.target.value)}
                   placeholder="Name this person" className="max-w-[200px]" disabled={enrollBusy} />
@@ -657,6 +655,7 @@ export function PeopleScreen() {
                 </div>
               )}
             </>
+          )}
         </CardContent>
       </Card>
 

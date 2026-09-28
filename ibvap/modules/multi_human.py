@@ -80,9 +80,38 @@ job stops at handing the node a correct, stable `person_id` to key that
 history on; building the history view itself is a separate, later piece of
 work.
 
-STATUS: prototype. Within-camera tracking and short-occlusion recovery are
-solid; HistogramReID is real but weak -- see its docstring before trusting it
-across similar-coloured clothing or a lighting change.
+STATUS: within-camera tracking and short-occlusion recovery are solid, and
+now MEASURED on real footage, not just believed to be: a 300-frame stress
+test (2026-09-28, patrol_road.mp4 -- a genuinely hard real scene: rain,
+multiple pedestrians in similar dark rain gear, umbrellas causing real
+occlusion) minted 14 identities, correctly reidentified 6 short
+occlusions/gaps, and every swap/collision that occurred was resolved the
+way this docstring says it should be -- confirmed from the run's own log,
+not assumed:
+  - Two tracks claiming the same identity in one frame: resolved by
+    tenure, the earlier claim kept it, the later one demoted back to
+    pending (`_settle_collisions`) -- e.g. "P7 claimed by both dbg:14 and
+    dbg:53 ... dbg:53 has the weaker claim, demoting it back to pending".
+  - A track whose appearance drifted from its own identity: correctly
+    re-minted a new identity rather than silently keeping a stale label --
+    e.g. "P2 no longer matches its own recent appearance ... minting P14".
+  - An over-eager mint later recognised as an existing identity once
+    better evidence arrived: correctly relabelled and merged rather than
+    left as a duplicate -- e.g. "P14 no longer matches ... but matches P7
+    (0.964) -- relabelling".
+14 identities for a scene that likely had fewer real distinct people is
+the expected, SAFER failure mode of this design (mint a new identity you
+did not need over merging two different people), not a bug -- see
+`_plausible()`'s own reasoning above. HistogramReID is real but weak
+against similar-coloured clothing, which is exactly the condition this
+test ran under (everyone in dark rain gear) and exactly why it erred
+toward over-minting rather than wrongly merging. Full annotated output and
+a screenshot of every mint: `ibvap/data/trackcheck/` (not committed --
+regenerate with `debug_view.py --source <clip> --modules multi_human
+--dump-dir <dir> --save <path>`). Throughput on this run (0.85 FPS) was
+measured while a second, unrelated CPU-heavy test ran concurrently and
+should not be read as this module's real per-frame cost; re-measure
+in isolation before quoting a number.
 """
 
 from typing import Any

@@ -491,6 +491,10 @@ CREATE TABLE IF NOT EXISTS person_watchlist (
   notes                TEXT,
   address              TEXT,                 -- mock, operator-entered
   owned_plates         TEXT,                 -- mock, JSON array of plate strings
+  -- MOCK -- see schema.sql's own person_watchlist comment above (address,
+  -- owned_plates). Stands in for a government ID registry this system does
+  -- not have access to; unique so "look someone up by ID" has one answer.
+  govt_id              TEXT,
   active               INTEGER NOT NULL DEFAULT 1,
   added_by             TEXT,
   created_at           TEXT NOT NULL,

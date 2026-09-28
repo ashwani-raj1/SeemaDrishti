@@ -26,6 +26,8 @@ export interface PersonWatchlistEntry {
    * vocabulary (formatPlate's own shape), the claim that this person owns
    * them is not. */
   owned_plates: string[];
+  /** MOCK -- stands in for a government ID registry, see schema.sql. */
+  govt_id: string | null;
   active: boolean;
   added_by: string | null;
   created_at: string;
@@ -46,6 +48,7 @@ export interface UpsertPersonWatchlistInput {
   notes?: string | null;
   address?: string | null;
   ownedPlates?: string[] | null;
+  govtId?: string | null;
 }
 
 export function listPersonWatchlist(orgId: string, options: { activeOnly?: boolean } = {}): PersonWatchlistEntry[] {
@@ -69,6 +72,31 @@ export function getPersonWatchlistByName(orgId: string, name: string): PersonWat
   return row ? shapePersonWatchlistEntry(row) : null;
 }
 
+/** MOCK lookup -- see schema.sql's own note on govt_id. */
+export function getPersonWatchlistByGovtId(orgId: string, govtId: string): PersonWatchlistEntry | null {
+  const row = one<any>(
+    "SELECT * FROM person_watchlist WHERE org_id = $org AND govt_id = $id",
+    { $org: orgId, $id: govtId },
+  );
+  return row ? shapePersonWatchlistEntry(row) : null;
+}
+
+/**
+ * "Whose vehicle is this" -- the reverse of personDossier's own plate
+ * cross-reference. Filtered in JS over a bounded active set (the org's
+ * whole watchlist, realistically small -- see personDossier's own comment
+ * on why this is fine at demo-post scale), normalizing both sides the same
+ * way personDossier does, for the same reason: comparing a raw plate
+ * string against formatPlate()-shaped owned_plates would miss real matches
+ * on spacing alone.
+ */
+export function getPersonWatchlistByPlate(orgId: string, plate: string): PersonWatchlistEntry | null {
+  const normalized = normalizePlate(plate);
+  if (!normalized) return null;
+  const entries = listPersonWatchlist(orgId, { activeOnly: true });
+  return entries.find((entry) => entry.owned_plates.some((p) => normalizePlate(p) === normalized)) ?? null;
+}
+
 /**
  * Enrolling the same name twice overwrites the entry -- matching how the
  * People page's own UI has always treated a re-added name (see
@@ -87,6 +115,7 @@ export function upsertPersonWatchlistEntry(input: UpsertPersonWatchlistInput, ac
               notes = $notes,
               address = $address,
               owned_plates = $plates,
+              govt_id = $govtId,
               active = 1,
               updated_at = $at
         WHERE id = $id`,
@@ -99,6 +128,7 @@ export function upsertPersonWatchlistEntry(input: UpsertPersonWatchlistInput, ac
         $plates: input.ownedPlates !== undefined
           ? JSON.stringify(input.ownedPlates ?? [])
           : JSON.stringify(existing.owned_plates),
+        $govtId: input.govtId !== undefined ? input.govtId : existing.govt_id,
         $at: at,
       },
     );
@@ -116,8 +146,8 @@ export function upsertPersonWatchlistEntry(input: UpsertPersonWatchlistInput, ac
   const entryId = id("pw");
   run(
     `INSERT INTO person_watchlist
-       (id, org_id, name, face_embedding, appearance_embedding, notes, address, owned_plates, active, added_by, created_at, updated_at)
-     VALUES ($id, $org, $name, $face, $appearance, $notes, $address, $plates, 1, $added_by, $at, $at)`,
+       (id, org_id, name, face_embedding, appearance_embedding, notes, address, owned_plates, govt_id, active, added_by, created_at, updated_at)
+     VALUES ($id, $org, $name, $face, $appearance, $notes, $address, $plates, $govtId, 1, $added_by, $at, $at)`,
     {
       $id: entryId,
       $org: input.orgId,
@@ -127,6 +157,7 @@ export function upsertPersonWatchlistEntry(input: UpsertPersonWatchlistInput, ac
       $notes: input.notes ?? null,
       $address: input.address ?? null,
       $plates: JSON.stringify(input.ownedPlates ?? []),
+      $govtId: input.govtId ?? null,
       $added_by: actor.name,
       $at: at,
     },
@@ -153,18 +184,19 @@ export function upsertPersonWatchlistEntry(input: UpsertPersonWatchlistInput, ac
 export function updatePersonProfile(
   orgId: string,
   name: string,
-  patch: { address?: string | null; ownedPlates?: string[] },
+  patch: { address?: string | null; ownedPlates?: string[]; govtId?: string | null },
   actor: Actor,
 ): PersonWatchlistEntry {
   const existing = getPersonWatchlistByName(orgId, name);
   if (!existing) throw new Error(`no watchlist entry ${name}`);
   const at = nowIso();
   run(
-    `UPDATE person_watchlist SET address = $address, owned_plates = $plates, updated_at = $at WHERE id = $id`,
+    `UPDATE person_watchlist SET address = $address, owned_plates = $plates, govt_id = $govtId, updated_at = $at WHERE id = $id`,
     {
       $id: existing.id,
       $address: patch.address !== undefined ? patch.address : existing.address,
       $plates: JSON.stringify(patch.ownedPlates !== undefined ? patch.ownedPlates : existing.owned_plates),
+      $govtId: patch.govtId !== undefined ? patch.govtId : existing.govt_id,
       $at: at,
     },
   );
@@ -173,7 +205,7 @@ export function updatePersonProfile(
     actor, orgId, verb: "person_watchlist.update_profile",
     targetType: "person_watchlist", targetId: existing.id,
     reason: "Profile details edited",
-    detail: { name, address: patch.address, ownedPlates: patch.ownedPlates },
+    detail: { name, address: patch.address, ownedPlates: patch.ownedPlates, govtId: patch.govtId },
   });
   publish({ type: "person_watchlist_change", data: { action: "update", entry: updated } });
   return updated;
@@ -333,6 +365,7 @@ function shapePersonWatchlistEntry(row: any): PersonWatchlistEntry {
     notes: row.notes ?? null,
     address: row.address ?? null,
     owned_plates: row.owned_plates ? JSON.parse(row.owned_plates) : [],
+    govt_id: row.govt_id ?? null,
     active: bool(row.active),
     added_by: row.added_by ?? null,
     created_at: row.created_at,

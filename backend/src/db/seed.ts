@@ -25,6 +25,11 @@ const CAMERAS = [
   // unknown camera, and the worker looked like it was running fine while
   // producing nothing. It is also the one camera pointed at real footage.
   { id: "cam_garden", name: "BOP-05 Garden" },
+  // Same gap as cam_garden's own comment above, inherited from upstream's
+  // own cameras.yml addition: declared there with no matching row here, so
+  // every detection from it was being silently rejected as an unknown
+  // camera before this merge added it.
+  { id: "cam_border_gate", name: "Border Gate" },
 ];
 
 interface TargetSeed {
@@ -424,9 +429,54 @@ export function seed(): void {
     );
   }
 
+  // Mock government-ID/vehicle-ownership records (schema.sql's own
+  // person_watchlist comment explains why address/owned_plates/govt_id are
+  // mock): seeded with NO embeddings, because a fabricated float vector
+  // would never genuinely match a face and claiming otherwise would be
+  // exactly the false capability claim claude.md §7 forbids. What IS real:
+  // plate_number here is the exact string pd_seed_01/pd_seed_02 above and
+  // WATCHLIST_SEEDS' own flagged plates already carry, so a dossier lookup
+  // by name, govt ID or plate surfaces those real detections immediately --
+  // an operator later enrolling a photo of the same name (People or Face
+  // Detection page) adds the live-recognition half without touching this.
+  const PERSON_WATCHLIST_SEEDS = [
+    {
+      id: "pw_karamjit_singh",
+      name: "Karamjit Singh",
+      govt_id: "IND-PB-2291-04821",
+      address: "Village Rajatal, Amritsar Rural, Punjab",
+      owned_plates: ["PB 02 AK 4821"], // wl_scorpio_4821 / pd_seed_01 -- CRITICAL
+    },
+    {
+      id: "pw_ranjit_kaur",
+      name: "Ranjit Kaur",
+      govt_id: "IND-PB-1187-09182",
+      address: "Gate 4 Colony, Amritsar Rural, Punjab",
+      owned_plates: ["PB 02 T 9182"], // wl_tractor_9182 / pd_seed_02 -- WARNING
+    },
+  ];
+
+  for (const person of PERSON_WATCHLIST_SEEDS) {
+    run(
+      `INSERT OR IGNORE INTO person_watchlist
+         (id, org_id, name, face_embedding, appearance_embedding, notes, address, owned_plates, govt_id, active, added_by, created_at, updated_at)
+       VALUES ($id, $org, $name, NULL, NULL, NULL, $address, $plates, $govtId, 1, $addedBy, $at, $at)`,
+      {
+        $id: person.id,
+        $org: ORG,
+        $name: person.name,
+        $address: person.address,
+        $plates: JSON.stringify(person.owned_plates),
+        $govtId: person.govt_id,
+        $addedBy: "Government ID Registry (mock)",
+        $at: at,
+      },
+    );
+  }
+
   const bindings = ZONES.reduce((total, zone) => total + zone.cameras.length, 0);
   console.log(
-    `seeded ${CAMERAS.length} cameras, ${ZONES.length} zones (${bindings} camera bindings), ${USERS.length} users, ${WATCHLIST_SEEDS.length} watchlist plates`,
+    `seeded ${CAMERAS.length} cameras, ${ZONES.length} zones (${bindings} camera bindings), ${USERS.length} users, ${WATCHLIST_SEEDS.length} watchlist plates, ${PERSON_WATCHLIST_SEEDS.length} person registry records`,
   );
 }
 

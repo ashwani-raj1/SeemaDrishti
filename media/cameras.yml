@@ -76,47 +76,48 @@ cameras:
 
   - id: cam_farm_gate
     label: BOP-02 Farm Gate
-    # Real traffic/plate footage (2026-09-28), replacing the borrowed
-    # fence_north.mp4 placeholder -- this is the camera to demo ANPR from.
-    # face/multi_human stay on too: a gate has people as well as vehicles,
-    # and this is still one of the multi-camera watchlist grid's 5 tiles.
+    # Temporarily pointed at the same real people footage as cam_fence_north
+    # (2026-09-25, multi-camera watchlist grid) -- there is no second real
+    # clip yet, and a 5-tile grid with 4 empty placeholder tiles proves
+    # nothing about cross-camera matching. anpr stays configured (it is
+    # harmless, just idle -- fence_north.mp4 has no plates) so this camera
+    # reverts to being the ANPR demo the instant it gets its own footage
+    # back; nothing about ITS identity changes, only what it is fed.
     modules: [fence, anpr, multi_human, face]
     detect: true
     source:
       kind: file
-      path: clips/farm_gate.mp4
-      # url: https://youtu.be/eO19UTm93GQ
+      path: clips/fence_north.mp4
+      # url: https://www.youtube.com/watch?v=...
 
   - id: cam_patrol_road
     label: BOP-03 Patrol Road
-    # Real footage (2026-09-28), replacing the borrowed placeholder.
+    # Same as cam_farm_gate above: real footage borrowed for now.
     modules: [fence, anpr, multi_human, face]
     detect: true
     source:
       kind: file
-      path: clips/patrol_road.mp4
-      # url: https://youtu.be/GJNjaRJWVP8
+      path: clips/fence_north.mp4
+      # url: https://www.youtube.com/watch?v=...
 
   - id: cam_waterline
     label: BOP-04 Waterline
     detect: true
-    # A capture off a real live stream (2026-09-28, ~2 minutes, see
-    # media/fetch.py's own reasoning on trimming), replacing the borrowed
-    # placeholder -- resolved with `yt-dlp -f 231 -g` and piped straight
-    # into ffmpeg rather than downloaded whole, since it never ends.
+    # Same as cam_farm_gate above: real footage borrowed for now.
     modules: [fence, anpr, multi_human, face]
     source:
       kind: file
-      path: clips/waterline.mp4
-      # url: https://www.youtube.com/live/zMCea32gpmg
+      path: clips/fence_north.mp4
+      # url: https://www.youtube.com/watch?v=...
 
   - id: cam_garden
     label: BOP-05 Garden
     detect: true
-    # Real footage, refreshed 2026-09-28 (virtual_fence.mp4 keeps its
-    # original filename -- only the content changed). ANPR is on because
-    # what is in frame is vehicles. face is on too, alongside anpr, for the
-    # same multi-camera watchlist grid every other camera got face added for.
+    # Real footage (a car park), unlike the synthetic test patterns on the
+    # other paths -- so this is the one camera where detections actually
+    # appear. ANPR is on because what is in frame is vehicles. face is on
+    # too, alongside anpr, for the same multi-camera watchlist grid every
+    # other camera got face added for.
     #
     # `clips` keeps a short ring of processed frames and cuts the seconds
     # either side of a confirmed crossing out of it, so an incident arrives

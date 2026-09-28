@@ -234,6 +234,7 @@ export function migrateAfter(db: Database): void {
   addColumn(db, "camera", "updated_at", "TEXT");
   addColumn(db, "person_watchlist", "address", "TEXT");
   addColumn(db, "person_watchlist", "owned_plates", "TEXT");
+  addColumn(db, "person_watchlist", "govt_id", "TEXT");
   // The frame a crossing was judged on. Nullable with no default, so every
   // event already on disk keeps its meaning: "no picture was ever taken",
   // which is exactly what was true before the vision service started sending

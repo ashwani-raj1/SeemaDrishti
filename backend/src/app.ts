@@ -7,7 +7,6 @@ import { zoneRoutes } from "./routes/zones";
 import { cameraRoutes } from "./routes/cameras";
 import { watchlistRoutes } from "./routes/watchlist";
 import { personWatchlistRoutes } from "./routes/person_watchlist";
-import { targetRoutes } from "./routes/target";
 import { mediaRoutes } from "./routes/media";
 import { ingressRoutes } from "./routes/ingress";
 import { simRoutes } from "./routes/sim";
@@ -58,7 +57,6 @@ export function createApp(): Express {
   // plate id never matches anything in this router, so it still falls
   // through to watchlistRoutes exactly as before.
   app.use(personWatchlistRoutes);
-  app.use(targetRoutes);
   app.use(watchlistRoutes);
   app.use(mediaRoutes);
   app.use(settingsRoutes);

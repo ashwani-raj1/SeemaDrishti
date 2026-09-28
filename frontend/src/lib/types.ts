@@ -554,6 +554,50 @@ export interface VehicleTrafficSummary {
   byType: Record<string, number>;
 }
 
+// ---- person watchlist / dossier -- the face+ANPR+mock-registry cross-link --
+
+export interface PersonWatchlistEntry {
+  id: string;
+  org_id: string;
+  name: string;
+  face_embedding: number[] | null;
+  appearance_embedding: number[] | null;
+  notes: string | null;
+  /** MOCK -- operator/registry-entered, never derived. */
+  address: string | null;
+  /** MOCK ownership claim over otherwise-real plate strings. */
+  owned_plates: string[];
+  /** MOCK -- stands in for a government ID registry. */
+  govt_id: string | null;
+  active: boolean;
+  added_by: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface PersonDossierSighting {
+  cameraId: string | null;
+  cameraName: string;
+  signal: "face" | "appearance";
+  score: number;
+  occurredAt: string;
+}
+
+export interface PersonDossierVehicleSighting {
+  plateNumber: string;
+  cameraId: string;
+  cameraName?: string;
+  confidence: number;
+  matchStatus: string;
+  occurredAt: string;
+}
+
+export interface PersonDossier {
+  profile: PersonWatchlistEntry;
+  sightings: PersonDossierSighting[];
+  vehicleSightings: PersonDossierVehicleSighting[];
+}
+
 export interface CreateWatchlistInput {
   plateNumber: string;
   vehicleType?: string;
