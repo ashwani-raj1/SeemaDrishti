@@ -20,67 +20,46 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import { useClient } from "@/client/context";
+import { useClient, useZones } from "@/client/context";
+import { useConsoleStore } from "@/client/console-store";
 
-interface ZoneOption {
-  name: string;
-  bop: string;
-  sector: string;
-  subtitle: string;
-}
-
-const ZONE_OPTIONS: ZoneOption[] = [
-  {
-    name: "Attari",
-    bop: "BOP Attari",
-    sector: "IB Sector",
-    subtitle: "Surveillance • Real-time Monitoring • Securing Borders",
-  },
-  {
-    name: "Hussainiwala",
-    bop: "BOP Hussainiwala",
-    sector: "IB Sector",
-    subtitle: "Surveillance • Real-time Monitoring • Securing Borders",
-  },
-  {
-    name: "Uri",
-    bop: "BOP Uri",
-    sector: "LoC Sector",
-    subtitle: "Surveillance • Real-time Monitoring • Securing Borders",
-  },
-  {
-    name: "Poonch",
-    bop: "BOP Poonch",
-    sector: "LoC Sector",
-    subtitle: "Surveillance • Real-time Monitoring • Securing Borders",
-  },
-  {
-    name: "Rajouri",
-    bop: "BOP Rajouri",
-    sector: "LoC Sector",
-    subtitle: "Surveillance • Real-time Monitoring • Securing Borders",
-  },
-  {
-    name: "Abohar",
-    bop: "BOP Abohar",
-    sector: "IB Sector",
-    subtitle: "Surveillance • Real-time Monitoring • Securing Borders",
-  },
-  {
-    name: "All Zones",
-    bop: "BOP Attari",
-    sector: "IB Sector",
-    subtitle: "Surveillance • Real-time Monitoring • Securing Borders",
-  },
-];
+/**
+ * The zone filter.
+ *
+ * This used to be a hardcoded list of six BOPs -- Attari, Hussainiwala, Uri,
+ * Poonch, Rajouri, Abohar -- labelled "Zone". Three things were wrong with it
+ * and they compounded:
+ *
+ *   1. They were POSTS, not zones. A zone is a shape drawn on one camera's
+ *      picture; a BOP is a site. The console already overloads "sector", and
+ *      this made a third word mean two things.
+ *   2. The node serves exactly ONE site (`/api/config` returns `site`, and the
+ *      seed creates one), so five of the six named nothing that exists.
+ *   3. `selectedZone` was read nowhere outside this file. Choosing one changed
+ *      a label and a tick mark. No request carried it, no screen filtered on
+ *      it.
+ *
+ * It now lists the zones the node actually has, and the choice is kept in
+ * `client/console-store.ts` so it survives a refresh. Screens read it from
+ * there -- the zones screen does today; anything else that should honour it
+ * reads `zoneFilter` and filters on the id.
+ *
+ * Deliberately a ZONE ID, not a name: names are editable, and a filter that
+ * silently stops matching because somebody renamed a zone is a filter that
+ * lies about what it is showing.
+ */
+const ALL_ZONES = "__all__";
 
 export function CommandHeader() {
   const { theme, setTheme } = useTheme();
   const { config, site, cameras, actor, users, chooseActor } = useClient();
   const navigate = useNavigate();
 
-  // Zone filter state defaulting to Attari
-  const [selectedZone, setSelectedZone] = useState("Attari");
+  // The zones the node actually has, and the filter this seat last chose.
+  // Both outlive a refresh; neither is invented here.
+  const zones = useZones();
+  const zoneFilter = useConsoleStore((state) => state.zoneFilter);
+  const setZoneFilter = useConsoleStore((state) => state.setZoneFilter);
 
   // Real-time live clock
   const [currentTime, setCurrentTime] = useState("");
@@ -113,8 +92,17 @@ export function CommandHeader() {
     return () => clearInterval(timer);
   }, []);
 
-  const currentZoneConfig =
-    ZONE_OPTIONS.find((z) => z.name === selectedZone) ?? ZONE_OPTIONS[0]!;
+  // Deduplicated: `useZones()` flattens every camera's zones, so a zone
+  // watched by three cameras arrives three times.
+  const zoneOptions = Array.from(
+    new Map(zones.filter((zone) => zone.active).map((zone) => [zone.id, zone])).values(),
+  ).sort((a, b) => a.name.localeCompare(b.name));
+
+  // A remembered id can name a zone that has since been deleted. Falling back
+  // to "all zones" is the honest reading -- showing its stale name would claim
+  // the console is filtered to something that no longer exists.
+  const selected = zoneOptions.find((zone) => zone.id === zoneFilter) ?? null;
+  const selectedLabel = selected?.name ?? "All zones";
 
   return (
     <header className="relative sticky top-0 z-20 flex h-13 w-full shrink-0 items-center justify-between gap-2 overflow-hidden border-b border-slate-200/90 bg-white px-2.5 dark:border-slate-800 dark:bg-[#14130d] sm:px-4">
@@ -136,14 +124,22 @@ export function CommandHeader() {
         {/* Sector Name & Operational Posture */}
         <div className="flex min-w-0 flex-col text-left">
           <div className="flex min-w-0 items-center gap-1.5 text-xs font-bold text-slate-800 dark:text-slate-200">
-            <span className="truncate">{currentZoneConfig.bop}</span>
-            <span className="text-slate-400 font-normal">|</span>
-            <span className="hidden shrink-0 font-semibold text-blue-600 dark:text-blue-400 sm:inline">
-              {currentZoneConfig.sector}
-            </span>
+            {/* The post this console is the face of, from `/api/config`.
+                It was a field on the fake zone list, so it changed when the
+                dropdown changed -- a console that appeared to move between
+                posts it had never been connected to. */}
+            <span className="truncate">{site?.name ?? config.brand.name}</span>
+            {config.brand.subSector && (
+              <>
+                <span className="text-slate-400 font-normal">|</span>
+                <span className="hidden shrink-0 font-semibold text-blue-600 dark:text-blue-400 sm:inline">
+                  {config.brand.subSector}
+                </span>
+              </>
+            )}
           </div>
           <span className="hidden truncate text-[10px] font-medium text-slate-500 dark:text-slate-400 lg:block">
-            {currentZoneConfig.subtitle}
+            {config.brand.tagline}
           </span>
         </div>
       </div>
@@ -158,29 +154,44 @@ export function CommandHeader() {
                 Zone
               </span>
               <div className="flex w-full items-center justify-between gap-2 text-xs font-bold text-slate-800 dark:text-slate-100 mt-0.5">
-                <span className="truncate">{selectedZone}</span>
+                <span className="truncate">{selectedLabel}</span>
                 <ChevronDownIcon className="size-3.5 shrink-0 text-slate-400" />
               </div>
             </button>
           </DropdownMenuTrigger>
           <DropdownMenuContent align="start" className="w-56 sm:w-64">
             <DropdownMenuLabel className="text-[10px] font-bold uppercase tracking-wider text-slate-400">
-              Border Surveillance Zones
+              Monitoring zones
             </DropdownMenuLabel>
             <DropdownMenuSeparator />
-            {ZONE_OPTIONS.map((zone) => (
+            <DropdownMenuItem
+              onSelect={() => setZoneFilter(null)}
+              className={`flex items-center justify-between py-1.5 cursor-pointer ${
+                zoneFilter === null
+                  ? "bg-blue-50 font-bold text-blue-700 dark:bg-blue-950/50 dark:text-blue-300"
+                  : ""
+              }`}
+            >
+              <span>All zones</span>
+            </DropdownMenuItem>
+            {zoneOptions.length === 0 && (
+              <DropdownMenuItem disabled className="py-1.5">
+                <span className="text-slate-400">No zones yet</span>
+              </DropdownMenuItem>
+            )}
+            {zoneOptions.map((zone) => (
               <DropdownMenuItem
-                key={zone.name}
-                onSelect={() => setSelectedZone(zone.name)}
+                key={zone.id}
+                onSelect={() => setZoneFilter(zone.id)}
                 className={`flex items-center justify-between py-1.5 cursor-pointer ${
-                  selectedZone === zone.name
+                  zoneFilter === zone.id
                     ? "bg-blue-50 font-bold text-blue-700 dark:bg-blue-950/50 dark:text-blue-300"
                     : ""
                 }`}
               >
-                <span>{zone.name}</span>
+                <span className="truncate">{zone.name}</span>
                 <span className="text-[10px] font-mono text-slate-400">
-                  {zone.sector}
+                  {zone.kind}
                 </span>
               </DropdownMenuItem>
             ))}
