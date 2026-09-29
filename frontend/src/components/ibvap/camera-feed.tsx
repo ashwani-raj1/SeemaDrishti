@@ -44,6 +44,11 @@ const SEVERITY_COLOUR: Record<Severity, string> = {
 const TRAIL_MAX_POINTS = 50;
 const TRAIL_STALE_SECONDS = 3;
 
+/** Must match people.tsx's own TARGET_MATCH_THRESHOLD and
+ * modules/target_client.py's TARGET_MATCH_THRESHOLD -- three independent
+ * readers of the same score, all deciding "found" the same way. */
+const TARGET_MATCH_THRESHOLD = 0.75;
+
 /**
  * A stable key for one tracked subject.
  *
@@ -129,6 +134,8 @@ export function CameraFeed({
   // see the observations effect below for why blending it into tracksRef's
   // per-message overwrite would make the alert ring flicker at that cadence.
   const matchesRef = useRef<Map<string, { name: string; score: number; signal: string; mono: number }>>(new Map());
+  // Same decoupling reasoning as matchesRef, same source module (face).
+  const targetScoresRef = useRef<Map<string, { score: number; mono: number }>>(new Map());
   const [feed, setFeed] = useState<FeedState>("connecting");
   const [detail, setDetail] = useState<string>();
   // React state (not a ref) ON PURPOSE, unlike tracksRef/trailsRef above:
@@ -162,6 +169,7 @@ export function CameraFeed({
       tracksRef.current = [];
       trailsRef.current.clear();
       matchesRef.current.clear();
+      targetScoresRef.current.clear();
       setWatchlistNames([]);
       return;
     }
@@ -181,9 +189,19 @@ export function CameraFeed({
         } else if (observation.module === "face") {
           matchesRef.current.delete(key);
         }
+
+        const targetScore = (track.extra as FaceExtra | undefined)?.target_score;
+        if (typeof targetScore === "number") {
+          targetScoresRef.current.set(key, { score: targetScore, mono: observation.frame_ts });
+        } else if (observation.module === "face") {
+          targetScoresRef.current.delete(key);
+        }
       }
       for (const [key, match] of matchesRef.current) {
         if (observation.frame_ts - match.mono > TRAIL_STALE_SECONDS) matchesRef.current.delete(key);
+      }
+      for (const [key, target] of targetScoresRef.current) {
+        if (observation.frame_ts - target.mono > TRAIL_STALE_SECONDS) targetScoresRef.current.delete(key);
       }
       const names = [...new Set([...matchesRef.current.values()].map((m) => m.name))].sort();
       setWatchlistNames((prev) => {
@@ -309,6 +327,20 @@ export function CameraFeed({
         context.stroke();
       }
 
+      // Target search only ever highlights the SINGLE best-scoring track in
+      // view, not every track above the threshold -- the same "one match,
+      // not a crowd of maybes" rule people.tsx's own bestMatch/
+      // bestMatchConfirmed applies. Computed once per frame, not per track.
+      let bestTargetKey: string | null = null;
+      let bestTargetScore = 0;
+      for (const [key, target] of targetScoresRef.current) {
+        if (target.score > bestTargetScore) {
+          bestTargetScore = target.score;
+          bestTargetKey = key;
+        }
+      }
+      const bestTargetConfirmed = bestTargetKey !== null && bestTargetScore >= TARGET_MATCH_THRESHOLD;
+
       // Boxes are neutral by design. The vision service reports that a subject
       // crossed; it does not decide what that is worth -- severity follows the
       // zone's operator-editable targets, one layer up. So a box says "a person
@@ -320,31 +352,37 @@ export function CameraFeed({
         const py = y1 * height;
         const pw = (x2 - x1) * width;
         const ph = (y2 - y1) * height;
+        const key = keyOf(track);
 
         // Read from matchesRef, not track.extra directly: this tick may be a
         // plain multi_human observation with no watchlist_match field at
         // all, while the match itself is still current (see the
         // observations effect above for why the two are decoupled).
-        const match = matchesRef.current.get(keyOf(track));
+        const match = matchesRef.current.get(key);
+        const isTargetMatch = bestTargetConfirmed && key === bestTargetKey;
 
-        // The one box on this tile that IS an alarm, not a neutral report:
-        // a watchlist hit is an operator-enrolled identity claim, not an
-        // automated severity judgement, so it earns its own colour rather
-        // than reusing a zone's amber -- see displayFor() in people.tsx for
-        // the same priority rule applied to the People page's own view.
-        context.strokeStyle = match ? "#f59e0b" : "#38bdf8";
-        context.lineWidth = match ? 3 : 2;
+        // Priority order -- watchlist, then target, then plain tracking --
+        // matches displayFor() in people.tsx exactly, so the same footage
+        // reads the same way in both views. A watchlist hit is an
+        // operator-enrolled identity claim; a target match is a colour
+        // guess against a one-off photo, weaker evidence, so it never
+        // outranks a watchlist name.
+        const colour = match ? "#f59e0b" : isTargetMatch ? "#ef4444" : "#38bdf8";
+        context.strokeStyle = colour;
+        context.lineWidth = match || isTargetMatch ? 3 : 2;
         context.strokeRect(px, py, pw, ph);
 
         const personId = (track.extra as PeopleExtra | undefined)?.person_id;
         const label = match
           ? `${match.name} ${(match.score * 100).toFixed(0)}%${match.signal === "appearance" ? " (clothing)" : ""}`
+          : isTargetMatch
+          ? `TARGET ${(bestTargetScore * 100).toFixed(0)}%`
           : `${personId ?? track.class} ${(track.confidence * 100).toFixed(0)}%`;
         context.font = "11px ui-monospace, monospace";
         const textWidth = context.measureText(label).width;
-        context.fillStyle = match ? "#f59e0b" : "#38bdf8";
+        context.fillStyle = colour;
         context.fillRect(px, Math.max(0, py - 15), textWidth + 8, 15);
-        context.fillStyle = match ? "#451a03" : "#0c223a";
+        context.fillStyle = match ? "#451a03" : isTargetMatch ? "#450a0a" : "#0c223a";
         context.fillText(label, px + 4, Math.max(11, py - 4));
 
         // A live plate guess, when the ANPR module supplied one. Drawn in a
