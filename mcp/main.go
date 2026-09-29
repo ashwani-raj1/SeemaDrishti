@@ -46,6 +46,7 @@ func main() {
 	tools.RegisterCameraTools(api, mcpServer)
 	tools.RegisterClipTools(api, mcpServer)
 	tools.RegisterWatchlistTools(api, mcpServer)
+	tools.RegisterPersonTools(api, mcpServer)
 
 	httpServer := server.NewStreamableHTTPServer(
 		mcpServer,
