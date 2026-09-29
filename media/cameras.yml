@@ -172,9 +172,9 @@ cameras:
     detect: true
     modules:
       fence: { clips: true }
-      anpr: {}
-      multi_human: {}
-      face: {}
+      # anpr: {}
+      # multi_human: {}
+      # face: {}
     source:
       kind: file
       path: clips/virtual_fence.mp4
