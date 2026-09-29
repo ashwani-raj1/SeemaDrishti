@@ -40,7 +40,7 @@ requires a human to stare at it continuously.
 truth and operator decisions.** That sentence decides every argument about where
 a piece of logic belongs.
 
-`ibvap/` therefore DOES evaluate fence geometry — a crossing has to be judged
+`vision-service/` therefore DOES evaluate fence geometry — a crossing has to be judged
 against the frame it happened in, at the rate frames arrive, and shipping every
 box to another process to be judged would be both slower and less accurate. What
 it does **not** do is decide what a crossing *means*. Severity, whether a human
@@ -376,7 +376,7 @@ python main.py --imgsz 384 --target-fps 4
 **`ai_service.py`** — local HTTP plate scanner for the console. `GET /health`,
 `POST /detect` with `{"image": "<data URL or base64 JPEG>"}`. CORS is open only
 to `localhost:3000`. It imports `core.*` and `modules.*` as siblings, so it
-**must** be launched from inside `ibvap/`:
+**must** be launched from inside `vision-service/`:
 
 ```powershell
 .\run-anpr.ps1                           # installs deps, then uvicorn on :8001
@@ -390,7 +390,7 @@ python media/fetch.py --synthetic      # or point cameras.yml at real footage
 python media/configure.py
 media/bin/mediamtx.exe media/mediamtx.yml   # terminal 1 — media hub
 bun run dev                                  # terminal 2 — node + console
-python ibvap/main.py                         # terminal 3 — vision service
+python vision-service/main.py                         # terminal 3 — vision service
 ```
 
 Start the node **before** the vision service when you can: zones come from

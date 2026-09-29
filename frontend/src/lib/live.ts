@@ -20,7 +20,7 @@
  * and zone sides; the ANPR page wants live plate guesses; the people page wants
  * trajectories. Those live in each module's `extra`, and a single merged box
  * stream would have to flatten them into one shape that suits none of the three.
- * The vision service already sends them apart (ibvap/core/payload.py); this
+ * The vision service already sends them apart (vision-service/core/payload.py); this
  * keeps them apart all the way to the component that draws them.
  */
 

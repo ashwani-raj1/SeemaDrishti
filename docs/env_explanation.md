@@ -14,7 +14,7 @@ media/cameras.yml = what cameras exist
   Used by:
 
   - media/configure.py
-  - ibvap/config.py
+  - vision-service/config.py
   - backend /api/config, through backend/src/core/env.ts
 
   Meaning:
@@ -95,7 +95,7 @@ media/cameras.yml = what cameras exist
   IBVAP_WORKER_CAMERAS=cam_fence_north
   IBVAP_WORKER_CAMERAS=cam_farm_gate,cam_patrol_road
 
-  Verified in ibvap/config.py:239. If you name a camera that does not exist in media/cameras.yml, the vision service exits loudly.
+  Verified in vision-service/config.py:239. If you name a camera that does not exist in media/cameras.yml, the vision service exits loudly.
 
   CPU / AI Budget
 

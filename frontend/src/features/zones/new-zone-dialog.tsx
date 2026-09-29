@@ -39,7 +39,7 @@ import { STAGES, undrawn, useWizardStore, type WizardStage } from "./wizard-stor
  * separate errand afterwards. That is not a neutral default: an undrawn shape
  * is still judged by the detector, and the node records every crossing of it
  * with `alertable = 0` and `suppressed_reason = "zone_not_placed"`
- * (`ibvap/CLAUDE.md` §15). So a zone left half-finished did not sit quiet --
+ * (`vision-service/CLAUDE.md` §15). So a zone left half-finished did not sit quiet --
  * it silently logged intrusions nobody was told about, looking for all the
  * world like coverage. Drawing here makes the normal path produce a zone that
  * actually alerts.

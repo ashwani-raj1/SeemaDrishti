@@ -106,7 +106,7 @@ did not need over merging two different people), not a bug -- see
 against similar-coloured clothing, which is exactly the condition this
 test ran under (everyone in dark rain gear) and exactly why it erred
 toward over-minting rather than wrongly merging. Full annotated output and
-a screenshot of every mint: `ibvap/data/trackcheck/` (not committed --
+a screenshot of every mint: `vision-service/data/trackcheck/` (not committed --
 regenerate with `debug_view.py --source <clip> --modules multi_human
 --dump-dir <dir> --save <path>`). Throughput on this run (0.85 FPS) was
 measured while a second, unrelated CPU-heavy test ran concurrently and

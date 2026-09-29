@@ -8,7 +8,7 @@
  *
  * Bun loads a `.env` next to the package it runs from, which would be
  * `backend/.env` and would mean a second copy to keep in sync. This reads the
- * root one instead, matching what ibvap/core/settings.py and
+ * root one instead, matching what vision-service/core/settings.py and
  * media/configure.py do. Real environment variables still win, so a one-off
  * override on the command line works everywhere.
  */

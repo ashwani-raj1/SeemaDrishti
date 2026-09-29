@@ -28,7 +28,7 @@ WHY CLIPS ARE TRIMMED BY DEFAULT: a two-hour source is gigabytes on disk for
 footage that loops anyway. Two minutes of the right camera angle demonstrates
 more than two hours of the wrong one.
 
-ON SOURCING (see ibvap/claude.md §3): no real Indian border footage exists
+ON SOURCING (see vision-service/claude.md §3): no real Indian border footage exists
 publicly and it never will. Legitimate proxies are VIRAT Ground (closest
 geometric match — fixed, high-mounted, person heights 10–200 px), MOT17/20
 (ground-truth IDs, so ID switches become measurable), PETS2009, and

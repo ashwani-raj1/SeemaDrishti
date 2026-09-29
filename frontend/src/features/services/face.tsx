@@ -19,10 +19,10 @@ import { ServiceShell } from "./service-shell";
  * TELLING THEM APART -- see the legend below, and `camera-feed.tsx`'s own
  * draw loop for where these colours are chosen:
  *
- *   lime    YuNet (`ibvap/modules/face.py`'s FaceDetector) found a face.
+ *   lime    YuNet (`vision-service/modules/face.py`'s FaceDetector) found a face.
  *           A box and a score, nothing else -- it cannot tell one face
  *           from another. This is the precondition for a later match, the
- *           same way `ibvap/modules/anpr.py` localises a vehicle before
+ *           same way `vision-service/modules/anpr.py` localises a vehicle before
  *           OCR ever runs on it.
  *
  *   amber   That face was compared against the watchlist (SFace, real

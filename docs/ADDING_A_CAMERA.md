@@ -111,7 +111,7 @@ incident ever opens. The console flags it, but nothing else will.
 ## 4. Restart the vision service
 
 ```powershell
-python ibvap\main.py
+python vision-service\main.py
 ```
 
 It reads `media/cameras.yml` at startup, so a new camera needs a restart. Zones

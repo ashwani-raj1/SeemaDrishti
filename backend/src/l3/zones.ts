@@ -228,7 +228,7 @@ function hydrate(zone: ZoneRow, binding: BindingRow): Zone {
  * nobody chose that place. Drawing the shape turns the alarm on, by itself,
  * within one zone-refresh interval.
  *
- * ibvap/CLAUDE.md section 15: "a fence judging against geometry nobody drew is
+ * vision-service/CLAUDE.md section 15: "a fence judging against geometry nobody drew is
  * worse than a fence that says out loud it has none."
  */
 export const PROVISIONAL_SUPPRESSION = "zone_not_placed";
@@ -360,7 +360,7 @@ export interface CreateZoneInput {
  * That path is unchanged and still the right one: a camera with no picture
  * cannot be drawn on, and refusing it would make a dead feed block the zone.
  * The flag is what stops the detector alerting on a shape nobody chose
- * (`ibvap/config.py` sends it as `provisional`; `l4/vision.ts` suppresses with
+ * (`vision-service/config.py` sends it as `provisional`; `l4/vision.ts` suppresses with
  * `zone_not_placed`).
  */
 export function createZone(input: CreateZoneInput): string {

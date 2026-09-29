@@ -510,7 +510,7 @@ ul.tight li, ol.tight li { margin-bottom: 8px; }
             <div class="rtbox t-proc">
               <div class="rth"><span class="rtn">vision service</span><span class="rtt">python</span></div>
               <div class="rtm">
-                <i><b>ibvap/</b> — decode → detect → track</i>
+                <i><b>vision-service/</b> — decode → detect → track</i>
                 <i>stateless; crash and restart freely</i>
                 <i>drop-oldest queue, never buffers</i>
                 <i>emits <b>2 channels</b>, one hot one cold</i>
@@ -773,7 +773,7 @@ ul.tight li, ol.tight li { margin-bottom: 8px; }
           <tr><th>&nbsp;</th><th>Vision service</th><th>Edge node</th></tr>
         </thead>
         <tbody>
-          <tr><td class="k">code</td><td class="k">ibvap/ · Python</td><td class="k">backend/ · Bun + TS</td></tr>
+          <tr><td class="k">code</td><td class="k">vision-service/ · Python</td><td class="k">backend/ · Bun + TS</td></tr>
           <tr><td class="k">knows about</td><td>Pixels, boxes, track identity</td><td>Zones, direction, severity, people</td></tr>
           <tr><td class="k">answers</td><td>"There is a person at (0.48, 0.74)"</td><td>"That person crossed the fence inbound, and it matters"</td></tr>
           <tr><td class="k">state</td><td>Tracker state in RAM only</td><td>Fence memory in RAM; everything else in SQLite</td></tr>
@@ -1066,7 +1066,7 @@ ul.tight li, ol.tight li { margin-bottom: 8px; }
     <div class="col">
       <ul class="tight">
         <li><strong>Edge hardware</strong> — CPU-only x86, or Jetson / discrete GPU? Sets how many streams decode in parallel and whether 8 fps across four cameras is comfortable or marginal.</li>
-        <li><strong>Model choice</strong> — this paper assumes a single-stage detector plus a lightweight tracker, which is what <code>ibvap/core/person.py</code> implies. Worth confirming before the fps budget above means anything.</li>
+        <li><strong>Model choice</strong> — this paper assumes a single-stage detector plus a lightweight tracker, which is what <code>vision-service/core/person.py</code> implies. Worth confirming before the fps budget above means anything.</li>
         <li><strong>Console location</strong> — same LAN as the edge box, always? If the console might ever run off-site, WebRTC needs STUN/TURN and the topology grows a hop.</li>
         <li><strong>Tile count</strong> — how many cameras visible at once on one screen? Four tiles of WHEP is unremarkable; sixteen needs thought about decode load in the browser.</li>
       </ul>

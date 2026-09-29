@@ -21,7 +21,7 @@ The defects matter more than the features:
    a stock placeholder shape with `placed = 0` (`l3/zones.ts:59-68`). That flag is not in
    `/api/config` and is checked nowhere in judgement, so an undrawn placeholder is served to the
    detector and produces fully **alertable** intrusions against geometry no operator drew.
-   `ibvap/CLAUDE.md` §15 and `ibvap/config.py:267-271` forbid exactly this. Python keeps the
+   `vision-service/CLAUDE.md` §15 and `vision-service/config.py:267-271` forbid exactly this. Python keeps the
    promise; the node breaks it. **Labelling it is simultaneously the bug fix and the "default
    region" you asked for** — no new mechanism required.
 2. **A geometry bug silently swallows crossings** (reproduced; details in step 1).
@@ -138,11 +138,11 @@ binding, so every existing fence test is unaffected.*
 
 ### A3. Carry `provisional` through Python — and do not act on it there
 
-- `ibvap/config.py:283-296` — `"provisional": bool(zone.get("provisional", False))`. Default
+- `vision-service/config.py:283-296` — `"provisional": bool(zone.get("provisional", False))`. Default
   `False` when absent: an older node has the unlabelled-placeholder bug anyway, and defaulting to
   `True` would mark every drawn zone provisional. `fetch_zones` keeps raising; its docstring stays
   true word for word.
-- `ibvap/modules/fence.py` — carry it in `configure()`, into `_intrusion()`'s `data` (the node puts
+- `vision-service/modules/fence.py` — carry it in `configure()`, into `_intrusion()`'s `data` (the node puts
   it in `evidence`; no schema change), and into `process()`'s `zone_states` so the live overlay can
   mark it without waiting for a durable event. Mirror in `FenceExtra` (`frontend/src/lib/live.ts:52-59`).
 - `stats()` — add `provisional_zones`. The run summary is the project's only measurement surface
@@ -361,7 +361,7 @@ Keep `fetch_zones`'s promise literally intact — it still raises and still neve
 shape. The cache lives in the caller:
 
 - `main.py:refresh_zones` writes the last-good zone map to disk on every successful fetch, keyed by
-  backend URL so pointing at a different node can't reuse it. Add the file to `ibvap/.gitignore`.
+  backend URL so pointing at a different node can't reuse it. Add the file to `vision-service/.gitignore`.
 - On a failed fetch **at startup only**, load it and apply with every zone marked `stale: true`
   plus a wall-clock `cached_at`. On a mid-run failure, change nothing — the modules already hold
   live zones, which are fresher than the cache.
@@ -372,7 +372,7 @@ shape. The cache lives in the caller:
   have been edited during the outage and the node cannot know which.
 - State the 512-event `DurableSink` bound in the run summary.
 
-**Rewrite `ibvap/CLAUDE.md` §15** in the same commit. The rule becomes: *never judge silently
+**Rewrite `vision-service/CLAUDE.md` §15** in the same commit. The rule becomes: *never judge silently
 against geometry it cannot verify — a cached shape is used only at startup, only when the node is
 unreachable, and every event it produces is marked stale and never alerted.* The audit guarantee
 §15 was protecting survives; what changes is that a blind detector degrades to a recording one
@@ -405,19 +405,19 @@ The honest v2, if ever wanted: nullable `zone_id` meaning *NULL = everywhere* pl
 **E2. The pytest suite.** §11 names `geometry.py` and `fence.py` as the two worth testing first;
 both are pure arithmetic and `FenceModule.process()` never dereferences `frame`, so
 `process(None, detections, ctx)` runs with no OpenCV, no network, no weights. Add
-`ibvap/tests/test_geometry.py` (ground point is bottom-centre; on-edge counts as inside; the
+`vision-service/tests/test_geometry.py` (ground point is bottom-centre; on-edge counts as inside; the
 tri-state; inbound/outbound for a line drawn both ways; polyline kink; polygon enter/leave;
-`direction_wanted`) and `ibvap/tests/test_fence.py` (clean walk confirms once; genuine flicker
+`direction_wanted`) and `vision-service/tests/test_fence.py` (clean walk confirms once; genuine flicker
 still rejected; cooldown suppresses a repeat in the same direction and **not** the opposite;
 `direction` filtering; too-few-points zone skipped; `provisional` in the payload; track lost
 mid-crossing). **Both files carry the side-0 regression, named as such** — today it yields
 `confirmed=0, rejected_flicker=1` and must yield `1, 0`.
 
 §9 forbids a new `requirements.txt` line without justification, and a demo laptop should never
-install a test runner the night before submission: put pytest in a new `ibvap/requirements-dev.txt`
+install a test runner the night before submission: put pytest in a new `vision-service/requirements-dev.txt`
 and add a line to the existing "NOT listed, on purpose" section saying where it lives and why.
 
-**E3. `ibvap/CLAUDE.md` corrections.** §12 task 2, §14's "Migration shim" and §10's LAYOUT all
+**E3. `vision-service/CLAUDE.md` corrections.** §12 task 2, §14's "Migration shim" and §10's LAYOUT all
 describe `frontend/src/lib/boxes.ts` as live; it was deleted in `297ce5c` and replaced by
 `lib/live.ts`. A source-of-truth document asserting a deleted file exists is one nobody trusts on
 the second read. Mark task 2 done in place (do not renumber), strike the shim paragraph, fix the
@@ -435,13 +435,13 @@ detection-rate claim.
 
 1. **Backend** — `cd backend && bun test`. All 79 must stay green (five need the Phase C fix). New:
    `events.test.ts`, plus additions to `zones.test.ts` and `watchlist.test.ts`.
-2. **Python** — `cd ibvap && python -m pytest tests/`. Under a second on a Ryzen 3, no network, no
+2. **Python** — `cd vision-service && python -m pytest tests/`. Under a second on a Ryzen 3, no network, no
    model download.
 3. **End to end**, three terminals from the repo root (§11):
    ```powershell
    media/bin/mediamtx.exe media/mediamtx.yml
    bun run dev
-   python ibvap/main.py --seconds 60
+   python vision-service/main.py --seconds 60
    ```
    - Create a zone with one camera. **Before drawing**, walk the clip: the tile shows the amber
      provisional zone, the events page shows the crossing recorded-not-alerted with reason

@@ -62,7 +62,7 @@ export const clipRoutes = Router();
  * A clip arrives, seconds after the event it belongs to.
  *
  * The delay is by design: the event goes the instant a crossing confirms,
- * and the clip waits for its post-roll (`ibvap/core/clip.py`). So this route
+ * and the clip waits for its post-roll (`vision-service/core/clip.py`). So this route
  * is never on the path of telling somebody an intrusion happened -- it is
  * only ever attaching the picture afterwards.
  *

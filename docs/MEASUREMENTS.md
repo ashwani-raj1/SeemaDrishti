@@ -7,8 +7,8 @@ and date. **If a number is not in this file, it may not go in the PPT.**
 Reproduce any row with:
 
 ```powershell
-python ibvap/service.py --seconds 40            # all cameras in .env
-python ibvap/service.py --cameras cam_fence_north --seconds 30
+python vision-service/service.py --seconds 40            # all cameras in .env
+python vision-service/service.py --cameras cam_fence_north --seconds 30
 ```
 
 ---

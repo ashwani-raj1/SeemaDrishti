@@ -654,7 +654,7 @@ export function PlateScannerCanvas({
       } catch {
         if (mounted) {
           setModelOnline(false);
-          setModelMessage("Model offline — run ibvap\\run-anpr.ps1, then refresh this page.");
+          setModelMessage("Model offline — run vision-service\\run-anpr.ps1, then refresh this page.");
         }
       }
     };
@@ -904,7 +904,7 @@ export function PlateScannerCanvas({
     } catch (error) {
       console.warn("ANPR frame analysis failed", error);
       setModelOnline(false);
-      setModelMessage("Model offline or unavailable — run ibvap\\run-anpr.ps1, then refresh this page.");
+      setModelMessage("Model offline or unavailable — run vision-service\\run-anpr.ps1, then refresh this page.");
     } finally {
       analysisInFlightRef.current = false;
     }

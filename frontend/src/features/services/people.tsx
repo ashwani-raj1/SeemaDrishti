@@ -136,7 +136,7 @@ function displayFor(
  * itself, over HTTP, against `people_ai_service.py` (port 8002) -- the
  * people equivalent of the ANPR page's local scanner, kept in its own file
  * for the same reason people_run.py and run.py always have been (see
- * ibvap/README.md): a shared entry point between the two domains is how one
+ * vision-service/README.md): a shared entry point between the two domains is how one
  * silently loses its detector to the other.
  *
  * TARGET SEARCH: an operator can upload a reference photo of one person and
@@ -989,7 +989,7 @@ export function PeopleScreen() {
           )}
           {!modelOnline && mode !== "media" && (
             <p className="text-xs text-muted-foreground">
-              Run <code>ibvap\run-people-ai.ps1</code>, then refresh this page.
+              Run <code>vision-service\run-people-ai.ps1</code>, then refresh this page.
             </p>
           )}
         </CardContent>

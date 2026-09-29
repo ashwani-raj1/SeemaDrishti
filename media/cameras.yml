@@ -2,7 +2,7 @@
 #
 # Read by:  media/configure.py  (writes media/mediamtx.yml — the hub paths)
 #           media/fetch.py      (downloads / re-encodes clips)
-#           ibvap/config.py     (the vision service — which cameras, which modules)
+#           vision-service/config.py     (the vision service — which cameras, which modules)
 # NOT read by the backend. The backend's `camera` table is a separate list
 # (see `id` below), and the console shows the table's `name`, not `label`.
 #
@@ -11,7 +11,7 @@
 # written here — they are drawn in the console and pulled from the node.
 #
 # After editing: python media/configure.py, restart mediamtx, restart
-# ibvap/main.py. (Careful: `fetch.py --url` rewrites this file and drops every
+# vision-service/main.py. (Careful: `fetch.py --url` rewrites this file and drops every
 # comment in it.)
 
 # ═══════════════════════════════════════════════════════════════════════
@@ -42,7 +42,7 @@
 #
 #   detect      true | false. Whether the vision service runs on this camera.
 #               false = video only (live tile, no boxes).
-#               ALWAYS WRITE IT. If omitted, ibvap treats it as false, while
+#               ALWAYS WRITE IT. If omitted, vision-service treats it as false, while
 #               configure.py treats it as true when picking launcher cameras —
 #               the two disagree.
 #
@@ -122,7 +122,7 @@
 #
 # ── ORDER MATTERS ───────────────────────────────────────────────────────
 #
-#   configure.py hangs the vision service (ibvap/main.py) off the FIRST
+#   configure.py hangs the vision service (vision-service/main.py) off the FIRST
 #   camera with detect: true, and the plate-scanner API (ai_service, :8001)
 #   off the SECOND. They start when that camera's path becomes ready — so if
 #   the first camera's clip is missing, the vision service never starts.

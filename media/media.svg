@@ -1,0 +1,44 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="760" height="200" viewBox="0 0 760 200" font-family="Segoe UI, Helvetica, Arial, sans-serif">
+  <defs>
+    <marker id="a" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M0,0 L10,5 L0,10 z" fill="#475569"/>
+    </marker>
+  </defs>
+  <rect width="760" height="200" rx="12" fill="#ffffff" stroke="#e2e8f0"/>
+
+  <!-- Sources -->
+  <rect x="20" y="20" width="150" height="46" rx="10" fill="#f1f5f9" stroke="#94a3b8"/>
+  <text x="95" y="40" text-anchor="middle" font-size="13" font-weight="600" fill="#0f172a">IP camera</text>
+  <text x="95" y="56" text-anchor="middle" font-size="10" fill="#475569">RTSP, H.264</text>
+  <rect x="20" y="77" width="150" height="46" rx="10" fill="#f1f5f9" stroke="#94a3b8"/>
+  <text x="95" y="97" text-anchor="middle" font-size="13" font-weight="600" fill="#0f172a">Looping clip</text>
+  <text x="95" y="113" text-anchor="middle" font-size="10" fill="#475569">clips/*.mp4 via ffmpeg -re</text>
+  <rect x="20" y="134" width="150" height="46" rx="10" fill="#f1f5f9" stroke="#94a3b8"/>
+  <text x="95" y="154" text-anchor="middle" font-size="13" font-weight="600" fill="#0f172a">Webcam</text>
+  <text x="95" y="170" text-anchor="middle" font-size="10" fill="#475569">local device</text>
+
+  <!-- Hub -->
+  <rect x="240" y="30" width="260" height="140" rx="10" fill="#eef2ff" stroke="#6366f1"/>
+  <text x="370" y="56" text-anchor="middle" font-size="14" font-weight="600" fill="#312e81">MediaMTX hub</text>
+  <text x="370" y="74" text-anchor="middle" font-size="11" fill="#4338ca">pulls each source ONCE</text>
+  <rect x="256" y="86" width="228" height="24" rx="5" fill="#ffffff" stroke="#c7d2fe"/>
+  <text x="370" y="102" text-anchor="middle" font-size="11" fill="#334155">cameras.yml + .env → configure.py</text>
+  <rect x="256" y="116" width="228" height="24" rx="5" fill="#ffffff" stroke="#c7d2fe"/>
+  <text x="370" y="132" text-anchor="middle" font-size="11" fill="#334155">→ mediamtx.yml (generated)</text>
+  <text x="370" y="158" text-anchor="middle" font-size="10" fill="#64748b">API :9997 · also launches vision + ANPR</text>
+
+  <!-- Readers -->
+  <rect x="570" y="35" width="170" height="56" rx="10" fill="#fdf4ff" stroke="#c026d3"/>
+  <text x="655" y="59" text-anchor="middle" font-size="13" font-weight="600" fill="#701a75">Vision service</text>
+  <text x="655" y="77" text-anchor="middle" font-size="11" fill="#86198f">RTSP :8554 · detection</text>
+  <rect x="570" y="109" width="170" height="56" rx="10" fill="#ecfdf5" stroke="#059669"/>
+  <text x="655" y="133" text-anchor="middle" font-size="13" font-weight="600" fill="#064e3b">Browser console</text>
+  <text x="655" y="151" text-anchor="middle" font-size="11" fill="#047857">WHEP/WebRTC :8889 · picture</text>
+
+  <!-- Arrows -->
+  <line x1="170" y1="43" x2="238" y2="80" stroke="#475569" stroke-width="1.6" marker-end="url(#a)"/>
+  <line x1="170" y1="100" x2="238" y2="100" stroke="#475569" stroke-width="1.6" marker-end="url(#a)"/>
+  <line x1="170" y1="157" x2="238" y2="120" stroke="#475569" stroke-width="1.6" marker-end="url(#a)"/>
+  <line x1="500" y1="85" x2="568" y2="65" stroke="#475569" stroke-width="1.6" marker-end="url(#a)"/>
+  <line x1="500" y1="115" x2="568" y2="135" stroke="#475569" stroke-width="1.6" marker-end="url(#a)"/>
+</svg>

@@ -86,7 +86,7 @@ export interface EventRow {
    *
    * The base64 itself is NEVER selected into a row. A list of fifty events
    * would otherwise carry a megabyte of pictures nobody asked for, over a link
-   * section 8 of ibvap/CLAUDE.md promises to keep small. The image is fetched
+   * section 8 of vision-service/CLAUDE.md promises to keep small. The image is fetched
    * one at a time by `/api/events/:id/thumbnail`, which is also what lets the
    * browser cache it like any other image.
    */

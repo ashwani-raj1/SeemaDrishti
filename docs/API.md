@@ -7,9 +7,9 @@ Every endpoint in the system, across all four processes.
 | Process | Port | Speaks | Source |
 |---|---|---|---|
 | **Edge node** | `8000` | HTTP + SSE | `backend/` |
-| **Vision service** | `8100` | WebSocket | `ibvap/main.py` |
+| **Vision service** | `8100` | WebSocket | `vision-service/main.py` |
 | **Media hub** (MediaMTX) | `8554` RTSP · `8889` WHEP · `9997` control | RTSP / WebRTC / HTTP | `media/` |
-| **Local ANPR** | `8001` | HTTP | `ibvap/ai_service.py` |
+| **Local ANPR** | `8001` | HTTP | `vision-service/ai_service.py` |
 
 Addresses come from `.env` at the repo root — `IBVAP_BACKEND_PORT`,
 `IBVAP_BOXES_PORT`, `IBVAP_RTSP_PORT`, `IBVAP_WHEP_PORT`. Nothing hardcodes them.
@@ -187,7 +187,7 @@ node rejects every detection, and no incident can ever open.
 camera's frame is meaningless in another's, so geometry lives on the binding.
 
 `points` are **normalised 0–1 in the camera's frame** — the exact coordinates
-`ibvap/modules/fence.py` judges against. `PATCH …/cameras/:cameraId` with
+`vision-service/modules/fence.py` judges against. `PATCH …/cameras/:cameraId` with
 `points` is what the console's shape editor calls.
 
 **`geometry` is not cosmetic, and the two values do not behave alike.** A
@@ -446,7 +446,7 @@ nothing durable produced. CORS allows `localhost:3000` only.
 (IoU + centre distance) scoped to one scanner session so the UI counts a vehicle
 once — it is not re-identification and must never be described as one.
 
-Launch from inside `ibvap/`; it imports `core.*` and `modules.*` as siblings.
+Launch from inside `vision-service/`; it imports `core.*` and `modules.*` as siblings.
 
 ---
 

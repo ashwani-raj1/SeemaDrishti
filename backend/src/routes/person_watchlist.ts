@@ -30,12 +30,12 @@ function ownedPlatesOf(value: unknown): string[] | undefined {
 /**
  * The person watchlist's REST surface -- mirrors routes/watchlist.ts's shape
  * for the plate watchlist, but keyed by NAME rather than id everywhere a
- * caller touches it, because ibvap/people_ai_service.py's own /watchlist
+ * caller touches it, because vision-service/people_ai_service.py's own /watchlist
  * routes (which this replaces the storage for) were already keyed that way,
  * and changing that contract would mean changing the frontend for no reason.
  *
  * NO ROLE GATE on enrolment, unlike the plate watchlist's supervisor-only
- * POST/PATCH/DELETE: this is called by ibvap/people_ai_service.py on every
+ * POST/PATCH/DELETE: this is called by vision-service/people_ai_service.py on every
  * enrolment, which is an internal trusted service call with no operator
  * session behind it (the same reasoning /hooks/ingress/* is unauthenticated).
  * An operator enrolling a photo from the People page is exactly the

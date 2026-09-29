@@ -147,9 +147,9 @@ class Settings:
         Resolved against THIS directory, not the current one.
 
         `IBVAP_WEIGHTS` is a bare filename, and ultralytics resolves a bare
-        name against the working directory — so `python ibvap/main.py` from the
+        name against the working directory — so `python vision-service/main.py` from the
         repo root looked for the weights in the root, while `python main.py`
-        from inside `ibvap/` looked here. Both launches are documented, so the
+        from inside `vision-service/` looked here. Both launches are documented, so the
         repo ended up carrying two byte-identical 5.6 MB copies, and deleting
         either one silently re-downloaded it on the next run from that
         direction. One copy, found from either launch.
@@ -169,7 +169,7 @@ class Settings:
         Resolved against THIS directory, not the current one -- the identical
         bug `weights` documents: a bare relative path resolves differently
         depending on whether `main.py` was launched from the repo root or
-        from inside `ibvap/`, and a "missing" model on one launch and not the
+        from inside `vision-service/`, and a "missing" model on one launch and not the
         other looks like a broken model rather than a path bug.
         """
         configured = self.get("IBVAP_FACE_MODEL",

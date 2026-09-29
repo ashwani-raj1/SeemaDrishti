@@ -10,7 +10,7 @@ Border video analytics that runs **at the post, not in a cloud**.
 
 Three processes: an **edge node** (`backend/`) that judges detections against zones, turns
 what matters into incidents and records every human decision, an **operator console**
-(`frontend/`), and an **L1 vision pipeline** (`ibvap/`) — CPU-only YOLO11n + ByteTrack
+(`frontend/`), and an **L1 vision pipeline** (`vision-service/`) — CPU-only YOLO11n + ByteTrack
 person tracking with cascaded YuNet face detection — that posts real detections into the
 same ingress hook the simulator uses. One local SQLite file holds everything — a post with
 a dead uplink runs the complete feature set.
@@ -47,12 +47,12 @@ python media/fetch.py --synthetic      # or point cameras.yml at real footage
 python media/configure.py
 media/bin/mediamtx.exe media/mediamtx.yml   # terminal 1
 bun run dev                                  # terminal 2 — node + console
-python ibvap/people_service.py               # terminal 3 — human detection + tracking + faces
-# python ibvap/service.py                    # or: vehicle detection + ANPR instead
+python vision-service/people_service.py               # terminal 3 — human detection + tracking + faces
+# python vision-service/service.py                    # or: vehicle detection + ANPR instead
 ```
 
-`ibvap/` splits into two independent pipelines that do not share a filename (see
-[`ibvap/README.md`](ibvap/README.md#two-domains-four-files-on-purpose)) — `people_*.py` for
+`vision-service/` splits into two independent pipelines that do not share a filename (see
+[`vision-service/README.md`](vision-service/README.md#two-domains-four-files-on-purpose)) — `people_*.py` for
 people (this project's scope items #1–#2), `run.py`/`service.py` for vehicles/ANPR. Only run
 one at a time unless you've given each a distinct `--boxes-port`.
 
@@ -64,7 +64,7 @@ Which cameras *this* machine runs detection on is `IBVAP_WORKER_CAMERAS` in
 
 The node and console need [Bun](https://bun.com) 1.3+ and nothing else — it's the
 runtime, bundler, test runner and package manager, and SQLite is built in. The vision
-pipeline (`ibvap/`) is a separate Python process; see below.
+pipeline (`vision-service/`) is a separate Python process; see below.
 
 ```bash
 curl -fsSL https://bun.com/install | bash   # if you don't have it
@@ -98,11 +98,11 @@ curl localhost:8000/api/health
 
 ## Running the real detector
 
-`ibvap/` is a separate Python 3.11 process — not part of `bun run setup`/`dev`. Needs
-`pip install -r ibvap/requirements.txt`; `yolo11n.pt` auto-downloads on first run.
+`vision-service/` is a separate Python 3.11 process — not part of `bun run setup`/`dev`. Needs
+`pip install -r vision-service/requirements.txt`; `yolo11n.pt` auto-downloads on first run.
 
 ```bash
-cd ibvap
+cd vision-service
 python people_run.py --source data/test1.mp4 --show --post-url http://localhost:8000
 ```
 
@@ -110,11 +110,11 @@ python people_run.py --source data/test1.mp4 --show --post-url http://localhost:
 real person-tracking detections into the node instead of the simulator, through the exact
 same `/hooks/ingress/detections` seam, unset `simulated` this time. `--camera-id` must
 match one already seeded in `backend/src/db/seed.ts` (default `cam_fence_north`). See
-`ibvap/claude.md` for the full CPU-budget tuning knobs and known limitations (no
+`vision-service/claude.md` for the full CPU-budget tuning knobs and known limitations (no
 re-identification across long occlusion, face detection needs a close/choke-point range).
 
 `run.py` (no `people_` prefix) is the equivalent tool for the separate vehicle/ANPR
-pipeline — see [`ibvap/README.md`](ibvap/README.md) for why the two never share a file.
+pipeline — see [`vision-service/README.md`](vision-service/README.md) for why the two never share a file.
 
 ## Configuration
 
@@ -146,10 +146,10 @@ backend/    index.ts → src/server.ts
   src/db/   sqlite, schema.sql, seed
 frontend/
   src/features/     one folder per section; registry.tsx declares them all
-  src/components/   ui/ = shadcn, ibvap/ = ours
+  src/components/   ui/ = shadcn, vision-service/ = ours
   src/client/       per-deployment config, geography, profiles
   src/lib/          api client, SSE stream, types, formatting
-ibvap/      L1 -- Python, separate process, posts through the same ingress hook
+vision-service/      L1 -- Python, separate process, posts through the same ingress hook
   people_run.py     people: single-source debug CLI, --post-url, --show
   people_service.py people: real multi-camera shape, cameras.yml + .env
   run.py            vehicles/ANPR: single-source debug CLI (same shape as above)

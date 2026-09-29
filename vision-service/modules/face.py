@@ -72,7 +72,7 @@ from modules.target_client import TARGET_MATCH_THRESHOLD, TargetClient
 #: Resolved against THIS directory, not the current one -- the identical
 #: reason `config.py Settings.weights` resolves against `HERE`: a bare
 #: relative path means "found" or "missing" depends on whether `main.py` was
-#: launched from the repo root or from inside `ibvap/`, and that difference
+#: launched from the repo root or from inside `vision-service/`, and that difference
 #: looks like a broken model rather than a path bug. `IBVAP_FACE_MODEL` (via
 #: `Settings.face_model`) overrides this per-machine; a camera's own
 #: `face: {model: ...}` param overrides both.

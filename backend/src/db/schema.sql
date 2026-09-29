@@ -208,7 +208,7 @@ CREATE TABLE IF NOT EXISTS event (
   received_at       TEXT NOT NULL,          -- differs from occurred_at when a link was down
   evidence          TEXT NOT NULL DEFAULT '{}',
   -- A base64 JPEG of the subject, cut from the frame this was judged on by
-  -- `ibvap/core/thumbnail.py`. NULL is normal and always survivable: the
+  -- `vision-service/core/thumbnail.py`. NULL is normal and always survivable: the
   -- simulator posts no picture, a lost-track event has no current frame, and
   -- the console falls back to drawing the geometry.
   --
@@ -346,7 +346,7 @@ FROM incident i;
 -- ---------------------------------------------------------------- evidence clips
 --
 -- The seconds either side of a confirmed crossing, as the frames the detector
--- actually judged. Not video: `ibvap/core/clip.py` explains why, and why this
+-- actually judged. Not video: `vision-service/core/clip.py` explains why, and why this
 -- does not contradict the "never video" line in section 8 (that is about what
 -- syncs UPSTREAM over a BOP uplink; these stay on the node and serve the
 -- console over the LAN).
@@ -458,15 +458,15 @@ CREATE INDEX IF NOT EXISTS vehicle_traffic_by_camera
 -- The plate watchlist's sibling for people, not a copy of its shape: a plate
 -- is compared by string edit-distance (platesMatch, above); a person is
 -- compared by embedding cosine similarity, computed once by the vision
--- service's own models (ibvap/modules/face.py) and stored here as plain JSON
+-- service's own models (vision-service/modules/face.py) and stored here as plain JSON
 -- float arrays -- this table holds vectors, never photos, and never runs a
 -- model itself. Both signals are optional and independent: a close-up photo
 -- yields a face embedding (strong), a photo with no usable face still yields
 -- an appearance embedding (weak, colour-based) so enrolment never silently
 -- fails just because a face was not visible.
 --
--- The single source of truth for TWO different processes: ibvap/main.py's
--- live per-camera pipeline and ibvap/people_ai_service.py's upload/webcam
+-- The single source of truth for TWO different processes: vision-service/main.py's
+-- live per-camera pipeline and vision-service/people_ai_service.py's upload/webcam
 -- endpoint both poll this table (GET /api/watchlist/people) on a timer and
 -- match against their own cached copy, the same pattern zones already use
 -- (see media/cameras.yml's comment on zone_refresh_seconds) -- so an

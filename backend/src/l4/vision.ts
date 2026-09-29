@@ -271,7 +271,7 @@ function ingestIntrusion(event: VisionEvent, context: CameraContext) {
     alertable,
     suppressedReason,
     // The frame this was judged on, already cropped and JPEG-encoded by the
-    // worker (`ibvap/core/thumbnail.py`). Taken as-is and never re-encoded:
+    // worker (`vision-service/core/thumbnail.py`). Taken as-is and never re-encoded:
     // the node's job is to keep what it was sent, not to reinterpret it.
     //
     // Kept for SUPPRESSED events too. A crossing the system chose not to shout
@@ -302,7 +302,7 @@ function ingestIntrusion(event: VisionEvent, context: CameraContext) {
       // The evidence clip this crossing belongs to, when the worker was
       // recording. Carried so the console can ask for the frames directly
       // rather than searching for a clip by camera and time -- the id is
-      // minted by the worker BEFORE the event is sent (`ibvap/core/clip.py`),
+      // minted by the worker BEFORE the event is sent (`vision-service/core/clip.py`),
       // so it is here even when the clip itself never arrives. An incident
       // whose clip was shed still says which clip it was waiting for.
       clipId: typeof data.clip_id === "string" ? data.clip_id : null,

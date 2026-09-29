@@ -3,7 +3,7 @@ Local human detection and tracking over HTTP, for the console's People page.
 
 The people equivalent of ai_service.py, and deliberately its own file rather
 than a second endpoint bolted onto it -- the same reason people_run.py and
-run.py stayed apart from the start (see ibvap/README.md): a shared entry
+run.py stayed apart from the start (see vision-service/README.md): a shared entry
 point between the two domains is how one got its detector silently swapped
 for the other's. This file imports nothing ANPR-specific, and ai_service.py
 imports nothing from here.
@@ -142,7 +142,7 @@ class _Models:
         self.face_embedder = FaceEmbedder(DEFAULT_RECOGNITION_MODEL)
         # The backend now owns the watchlist (see modules/watchlist_client.py
         # and backend/src/l3/person_watchlist.ts) -- this process is a client
-        # of it, the same as ibvap/main.py's live camera pipeline is, so an
+        # of it, the same as vision-service/main.py's live camera pipeline is, so an
         # entry enrolled from the People page's Upload/Live-webcam mode is
         # also matched against on every real camera, and vice versa. Persists
         # across /reset on purpose -- see /reset's own docstring.
@@ -232,7 +232,7 @@ def set_target(frame: Frame):
 def _push_target(state: _Models, embedding: list[float] | None) -> None:
     """
     Relay the target embedding to the backend (backend/src/l3/target.ts) so
-    ibvap/main.py's live camera pipeline can compare against it too --
+    vision-service/main.py's live camera pipeline can compare against it too --
     otherwise a target set from the People page's Upload/Live-webcam mode
     would stay invisible to the real "Cameras" source, the same gap
     modules/watchlist_client.py already closed for the watchlist. Best
@@ -398,7 +398,7 @@ def detect(frame: Frame):
     if state.watchlist.entries():
         # Face computed at most ONCE per track per frame; matching itself is
         # delegated to modules/watchlist_client.py's WatchlistClient.match()
-        # -- the exact same function ibvap/main.py's live camera pipeline
+        # -- the exact same function vision-service/main.py's live camera pipeline
         # calls, so this ad-hoc endpoint and a real camera can never drift
         # into scoring a match two different ways.
         by_ref = {d["track_ref"]: d for d in detections if d.get("track_ref")}

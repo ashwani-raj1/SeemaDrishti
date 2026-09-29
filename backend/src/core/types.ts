@@ -84,7 +84,7 @@ export interface Zone {
    * joined the zone, and nobody chose where it sits.
    *
    * A crossing of an unplaced shape is evidence, never an alarm. See
-   * `isProvisional` in l3/zones.ts and ibvap/CLAUDE.md section 15.
+   * `isProvisional` in l3/zones.ts and vision-service/CLAUDE.md section 15.
    */
   placed: boolean;
 }

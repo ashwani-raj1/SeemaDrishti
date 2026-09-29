@@ -9,7 +9,7 @@ import { normalizePlate } from "./watchlist";
  * The person watchlist -- named entries, matched by face/appearance embedding
  * rather than a plate string. See schema.sql's table comment for why this
  * holds vectors (computed by the vision service's own models) and not photos,
- * and why it is the one thing both ibvap/main.py and ibvap/people_ai_service.py
+ * and why it is the one thing both vision-service/main.py and vision-service/people_ai_service.py
  * poll rather than each keeping their own list.
  */
 
@@ -299,7 +299,7 @@ export function deletePersonWatchlistEntryByName(orgId: string, name: string, ac
 
 /**
  * Record a match as a durable, alertable event -- the same door
- * ibvap/modules/face.py's durable emission already walks through for other
+ * vision-service/modules/face.py's durable emission already walks through for other
  * event types (see core/dispatcher.py), so a match shows up in Incidents
  * exactly like a fence crossing does, and a query by camera+time across
  * several cameras IS the cross-camera "where has this person been seen"

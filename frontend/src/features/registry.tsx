@@ -8,7 +8,7 @@
  * configuration files" thesis, and it only holds if it is never special-cased.
  *
  * THE SERVICES GROUP MIRRORS THE DETECTOR. One page per vision module, named
- * the same, in the same order as `ibvap/modules/`. That is not decoration: it
+ * the same, in the same order as `vision-service/modules/`. That is not decoration: it
  * means an operator asking "what can this system do" reads the same list a
  * developer reads, and adding a module adds exactly one page here. Camera
  * health joins them because "what can we see at all" is the precondition for

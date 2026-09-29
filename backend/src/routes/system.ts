@@ -98,7 +98,7 @@ systemRoutes.get("/api/config", (_req, res) => {
         // it is the stock placeholder, and the node records crossings of it
         // without ever alerting. The vision service carries this through to
         // the event as a FACT and never acts on it -- severity is the node's
-        // job (ibvap/CLAUDE.md sections 1 and 14). `provisional === !placed`;
+        // job (vision-service/CLAUDE.md sections 1 and 14). `provisional === !placed`;
         // `placed` is the console's word for the same bit.
         provisional: !zone.placed,
         targets: zone.targets,

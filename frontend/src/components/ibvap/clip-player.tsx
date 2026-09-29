@@ -9,7 +9,7 @@ import type { ClipManifest } from "@/lib/types";
 /**
  * The seconds either side of a crossing, as the frames the detector judged.
  *
- * NOT A VIDEO PLAYER, and the difference is the point. `ibvap/core/clip.py`
+ * NOT A VIDEO PLAYER, and the difference is the point. `vision-service/core/clip.py`
  * keeps a short ring of the frames that actually went through detection and
  * cuts the window around a confirmed crossing out of it. So every frame here
  * is a frame a decision was made from -- which is a stronger claim than

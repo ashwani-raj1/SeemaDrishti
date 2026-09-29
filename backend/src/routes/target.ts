@@ -7,7 +7,7 @@ import { readJson } from "../http";
  * The live camera pipeline's read side of target search, and
  * people_ai_service.py's write side -- it already extracts the appearance
  * embedding from an operator's uploaded photo (POST /target on port 8002),
- * this is just where that embedding also lands so ibvap/main.py's per-camera
+ * this is just where that embedding also lands so vision-service/main.py's per-camera
  * workers (a separate process, polling like modules/watchlist_client.py
  * already does for the watchlist) can compare against it too. No role gate,
  * same reasoning person_watchlist's enrolment POST has: this is an internal

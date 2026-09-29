@@ -175,7 +175,7 @@ footer{
       <text class="lane-s" x="22" y="130">:8554 &middot; :8889</text>
 
       <text class="lane-t" x="22" y="240">VISION SERVICE</text>
-      <text class="lane-s" x="22" y="256">Python &mdash; ibvap/</text>
+      <text class="lane-s" x="22" y="256">Python &mdash; vision-service/</text>
       <text class="lane-s" x="22" y="270">:8100</text>
 
       <text class="lane-t" x="22" y="380">EDGE NODE</text>
@@ -293,7 +293,7 @@ python media/configure.py
 <span class="c"># then, one per terminal</span>
 media/bin/mediamtx.exe media/mediamtx.yml   <span class="c"># 1 — the hub</span>
 bun run dev                                 <span class="c"># 2 — node :8000 + console :3000</span>
-python ibvap/service.py                     <span class="c"># 3 — detection</span></pre>
+python vision-service/service.py                     <span class="c"># 3 — detection</span></pre>
 
   <div class="note"><b>The synthetic clips are not a detection test.</b> They prove
   hub &rarr; browser and hub &rarr; worker plumbing and will produce <b>zero detections</b> &mdash;

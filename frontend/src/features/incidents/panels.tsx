@@ -16,7 +16,7 @@ import type {
  * Every row here is read from the record. Where the design asked for something
  * this system does not measure -- a subject's speed, a behaviour
  * classification -- the row says "Not measured yet" rather than being dropped
- * or, worse, filled in. Section 7 of ibvap/CLAUDE.md: never state a figure that
+ * or, worse, filled in. Section 7 of vision-service/CLAUDE.md: never state a figure that
  * was not measured on real hardware. A visible gap is a to-do; an invented
  * number is a lie that survives into a slide.
  */

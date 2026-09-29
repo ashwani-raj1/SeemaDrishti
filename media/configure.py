@@ -13,7 +13,7 @@ verbosity.
 
 WHY THIS MODULE HAS ITS OWN .env READER: media/ is a separately deployable
 module. It runs on whichever machine hosts MediaMTX, which may have no
-Python vision dependencies installed at all. Importing from ibvap/ would
+Python vision dependencies installed at all. Importing from vision-service/ would
 couple two things that are meant to be able to live on different boxes.
 Twenty duplicated lines is the cheaper side of that trade.
 
@@ -185,7 +185,7 @@ def build(values, cameras, problems):
     launcher = next((cam for cam in cameras if cam.get("detect", True)), None)
     if launcher is not None:
         python = Path(sys.executable).resolve().as_posix()
-        vision = (ROOT / "ibvap" / "main.py").resolve().as_posix()
+        vision = (ROOT / "vision-service" / "main.py").resolve().as_posix()
         paths[launcher["id"]]["runOnReady"] = (
             f'"{python}" "{vision}" '
             # Individual plate-facing cameras can override this in cameras.yml
@@ -209,7 +209,7 @@ def build(values, cameras, problems):
     )
     if anpr_launcher is not None:
         python = Path(sys.executable).resolve().as_posix()
-        app_dir = (ROOT / "ibvap").resolve().as_posix()
+        app_dir = (ROOT / "vision-service").resolve().as_posix()
         paths[anpr_launcher["id"]]["runOnReady"] = (
             f'"{python}" -m uvicorn ai_service:app '
             f'--app-dir "{app_dir}" --host 127.0.0.1 --port 8001'

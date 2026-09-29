@@ -5,7 +5,7 @@ import { clipRetentionDays } from "./settings";
 /**
  * Evidence clips: the frames a crossing was judged from.
  *
- * WHAT A CLIP IS. Not video. `ibvap/core/clip.py` keeps a short ring of the
+ * WHAT A CLIP IS. Not video. `vision-service/core/clip.py` keeps a short ring of the
  * frames the detector actually processed and cuts the seconds either side of a
  * confirmed crossing out of it. So every frame here is a frame that was
  * judged -- which is a stronger claim than "footage from around that time",

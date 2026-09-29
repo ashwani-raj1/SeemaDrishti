@@ -11,7 +11,7 @@ import { all, db, one, run } from "../db";
  *   BEGIN SELECT RAISE(ABORT, 'event log is append-only'); END;
  *
  * That is not an oversight to work around -- it is the tamper-evident event log
- * this project claims as a differentiator (ibvap/CLAUDE.md section 8), and a
+ * this project claims as a differentiator (vision-service/CLAUDE.md section 8), and a
  * DELETE that quietly slipped past it would make the claim false. So this
  * module does the one thing that keeps the claim true: it drops the guard,
  * deletes, and puts the guard back, all inside one transaction, and the CALLER
