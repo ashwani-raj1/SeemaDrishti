@@ -45,7 +45,7 @@ export interface VisionEvent {
   simulated: boolean;
 }
 
-const KNOWN_EVENTS = new Set(["intrusion", "vehicle_detection", "plate_read", "camera_health", "reidentification", "watchlist_match"]);
+const KNOWN_EVENTS = new Set(["intrusion", "vehicle_detection", "plate_read", "camera_health", "reidentification", "watchlist_match", "target_match"]);
 
 function requireString(value: unknown, field: string): string {
   if (typeof value !== "string" || !value.trim()) throw new BadRequest(`${field} is required`);
@@ -508,6 +508,52 @@ function ingestWatchlistMatch(event: VisionEvent, context: CameraContext) {
   });
 }
 
+// ------------------------------------------------------------------ target search
+//
+// The one-off, unnamed sibling of a watchlist match: an operator's current
+// reference photo (l3/target.ts, deliberately in-memory and never a named
+// identity) crossed modules/target_client.py's TARGET_MATCH_THRESHOLD on a
+// live track. Unlike a watchlist match there is no person_watchlist row to
+// look up -- "who this is" was never claimed, only "this appearance is a
+// close match to the photo currently being searched for" -- so the event
+// carries a score and a place, nothing a caller could mistake for a name.
+function ingestTargetMatch(event: VisionEvent, context: CameraContext) {
+  const score = typeof event.data.score === "number" ? event.data.score : 0;
+  const bbox = bboxOf(event.data.bbox) ?? [0, 0, 0, 0];
+  const trackedThingId = upsertTrackedThing(event, context, "person");
+
+  return recordEvent({
+    orgId: context.orgId,
+    siteId: context.siteId,
+    kind: "target_match",
+    sourceType: "camera",
+    sourceId: event.sourceId,
+    simulated: event.simulated,
+    cameraId: event.cameraId,
+    zoneId: null,
+    trackedThingId,
+    class: "person",
+    rule: "target_search.appearance",
+    confidence: score,
+    // INFO, not alertable: an appearance-only match on an unnamed reference
+    // photo is exactly the "worth a look, not a certainty" evidence
+    // people.tsx's own copy already calls it -- the same bar
+    // recordPersonWatchlistMatch holds an appearance-only watchlist hit to.
+    severity: "INFO",
+    alertable: false,
+    suppressedReason: "target_search_is_informational",
+    occurredAt: event.occurredAt,
+    evidence: {
+      trackRef: typeof event.data.track_ref === "string" ? event.data.track_ref : null,
+      score,
+      bbox,
+      camera: context.cameraName,
+    },
+    groupKey: `${event.cameraId}:target`,
+    title: `target search match at ${context.cameraName}`,
+  });
+}
+
 // ------------------------------------------------------------------ the door
 
 export function ingestVisionEvent(event: VisionEvent) {
@@ -526,6 +572,8 @@ export function ingestVisionEvent(event: VisionEvent) {
       return { event: shapeEvent(ingestReidentification(event, context)) };
     case "watchlist_match":
       return { event: shapeEvent(ingestWatchlistMatch(event, context)) };
+    case "target_match":
+      return { event: shapeEvent(ingestTargetMatch(event, context)) };
     default:
       // parseVisionEvent already rejected anything else; this is here so that
       // adding an event type without handling it fails loudly rather than

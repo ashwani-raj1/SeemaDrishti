@@ -98,6 +98,16 @@ export interface FaceExtra {
     score: number;
     signal: "face" | "appearance";
   } | null;
+  /**
+   * Raw cosine similarity against the operator's current one-off target
+   * search (backend/src/l3/target.ts, modules/target_client.py), or absent
+   * when nobody has set one. UNCONFIRMED on purpose, same as `face` above:
+   * this is appearance-only colour matching, never a face or a name, and
+   * the viewer decides what counts as "found" (people.tsx's own
+   * TARGET_MATCH_THRESHOLD) -- this field is never gated on a threshold
+   * before it reaches here.
+   */
+  target_score?: number | null;
 }
 
 /** What the multi_human module puts in `extra`. */

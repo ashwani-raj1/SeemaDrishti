@@ -92,23 +92,27 @@ cameras:
 
   - id: cam_patrol_road
     label: BOP-03 Patrol Road
-    # Same as cam_farm_gate above: real footage borrowed for now.
+    # Real CCTV footage of a crowded shopping mall (2026-09-29) -- faces are
+    # actually visible here, unlike the borrowed placeholder this replaces,
+    # so this is the camera to point a watchlist/target-search test at.
     modules: [fence, anpr, multi_human, face]
     detect: true
     source:
       kind: file
-      path: clips/fence_north.mp4
-      # url: https://www.youtube.com/watch?v=...
+      path: clips/mall_cctv.mp4
+      # url: https://youtu.be/SvldnZ6qMGU
 
   - id: cam_waterline
     label: BOP-04 Waterline
     detect: true
-    # Same as cam_farm_gate above: real footage borrowed for now.
+    # A screen-recorded tutorial, not camera footage of people -- requested
+    # as a second source anyway (2026-09-29); expect few or no real face
+    # detections here, faces are not the actual subject of this clip.
     modules: [fence, anpr, multi_human, face]
     source:
       kind: file
-      path: clips/fence_north.mp4
-      # url: https://www.youtube.com/watch?v=...
+      path: clips/powerpoint_demo.mp4
+      # url: https://youtu.be/Y5dgwwa5XRA
 
   - id: cam_garden
     label: BOP-05 Garden

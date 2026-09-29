@@ -10,7 +10,7 @@ import { CameraFeed } from "@/components/ibvap/camera-feed";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { useClient } from "@/client/context";
 import { api } from "@/lib/api";
-import { onLive, type PeopleExtra } from "@/lib/live";
+import { onLive, type FaceExtra, type PeopleExtra } from "@/lib/live";
 import { useResource } from "@/lib/use-resource";
 import { relative } from "@/lib/format";
 import type { IbvapEvent } from "@/lib/types";
@@ -179,6 +179,12 @@ export function PeopleScreen() {
   const [totalPeople, setTotalPeople] = useState(0);
   const [modelOnline, setModelOnline] = useState(false);
   const [playing, setPlaying] = useState(false);
+  // Why "Live camera" shows nothing, when it is nothing: getUserMedia used
+  // to fail into total silence here -- setPlaying(false) and nothing else,
+  // so a denied permission, a missing device, or an insecure origin all
+  // looked identical to "still loading". Named per DOMException.name so the
+  // fix is obvious rather than a generic "camera error".
+  const [liveError, setLiveError] = useState<string | null>(null);
   const [fileName, setFileName] = useState("");
   const [videoUrl, setVideoUrl] = useState<string | null>(null);
   const videoRef = useRef<HTMLVideoElement | null>(null);
@@ -209,6 +215,12 @@ export function PeopleScreen() {
   // person been seen" view (see backend/src/l3/person_watchlist.ts's own
   // comment on why the backend is the single source of truth here).
   const [sightings, setSightings] = useState<IbvapEvent[]>([]);
+  // Same idea, for the CURRENT target search: durable target_match events
+  // (modules/face.py's target-scoring block, backend/src/l4/vision.ts's
+  // ingestTargetMatch) recorded once per confirmation, unnamed on purpose --
+  // this is "the person in the reference photo was seen here", not a claim
+  // about who they are.
+  const [targetSightings, setTargetSightings] = useState<IbvapEvent[]>([]);
 
   useEffect(() => {
     if (cameraId || cameras.length === 0) return;
@@ -235,25 +247,48 @@ export function PeopleScreen() {
   }, []);
 
   // "Cameras" mode: the SAME live channel and the SAME CameraFeed component
-  // every other service page uses -- this effect only feeds the stats strip.
-  // targetScore/watchlistMatch are always null here: the vision service's
-  // own multi_human instance has no reference photo or watchlist to score
-  // against (see the module docstring on why both are scoped to live
-  // camera/upload only).
+  // every other service page uses -- this effect feeds the stats strip.
+  // targetScore stays null here: target search is a one-off comparison this
+  // page runs itself against raw pixels it does not have in this mode (see
+  // the module docstring). watchlistMatch is DIFFERENT -- the vision
+  // service's own `face` module already computes it for any camera running
+  // that module (media/cameras.yml), on the SAME channel camera-feed.tsx
+  // draws its amber box from. `watchlistByTrackRef` below is fed by a
+  // second subscription to that channel and joined in here by `track_ref`,
+  // so this page's own stats/labels stop disagreeing with what the tile
+  // right above them is already showing.
+  const watchlistByTrackRef = useRef(new Map<string, WatchlistMatch>());
+
+  useEffect(() => {
+    if (mode !== "media" || !cameraId) return;
+    watchlistByTrackRef.current = new Map();
+    return onLive(cameraId, "face", (observation) => {
+      const next = new Map<string, WatchlistMatch>();
+      observation.tracks.forEach((track, index) => {
+        const extra = track.extra as FaceExtra;
+        if (!extra.watchlist_match) return;
+        const key = extra.track_ref ?? `${cameraId}:${track.track_id ?? index}`;
+        next.set(key, extra.watchlist_match);
+      });
+      watchlistByTrackRef.current = next;
+    });
+  }, [cameraId, mode]);
+
   useEffect(() => {
     if (mode !== "media" || !cameraId) return;
     return onLive(cameraId, "multi_human", (observation) => {
       acceptTracks(observation.tracks.map((track, index): ScannerTrack => {
         const extra = track.extra as PeopleExtra;
+        const key = extra.track_ref ?? `${cameraId}:${track.track_id ?? index}`;
         return {
-          key: extra.track_ref ?? `${cameraId}:${track.track_id ?? index}`,
+          key,
           personId: extra.person_id ?? null,
           confidence: track.confidence,
           bbox: track.bbox,
           trail: extra.trail ?? [],
           ageSeconds: extra.age_seconds ?? 0,
           targetScore: null,
-          watchlistMatch: null,
+          watchlistMatch: watchlistByTrackRef.current.get(key) ?? null,
         };
       }));
     });
@@ -328,6 +363,21 @@ export function PeopleScreen() {
     return () => { cancelled = true; clearInterval(interval); };
   }, []);
 
+  useEffect(() => {
+    let cancelled = false;
+    const load = async () => {
+      try {
+        const events = await api.events({ kind: "target_match", limit: 25 });
+        if (!cancelled) setTargetSightings(events);
+      } catch {
+        // Same as the watchlist sightings poll above -- try again next tick.
+      }
+    };
+    void load();
+    const interval = setInterval(load, 8000);
+    return () => { cancelled = true; clearInterval(interval); };
+  }, []);
+
   const enrollWatchlist = useCallback(async (file?: File) => {
     const name = enrollName.trim();
     if (!file || !name) return;
@@ -387,6 +437,15 @@ export function PeopleScreen() {
       streamRef.current = null;
       return;
     }
+    setLiveError(null);
+    if (!navigator.mediaDevices?.getUserMedia) {
+      // Not a permission problem -- the API itself is absent, which happens
+      // on an insecure origin (anything but https/localhost) or a browser
+      // too old to have it. No retry will fix this, so say so plainly.
+      setLiveError("This browser will not expose a camera on this address (needs https, or localhost).");
+      setPlaying(false);
+      return;
+    }
     let cancelled = false;
     void navigator.mediaDevices.getUserMedia({ video: { facingMode: "environment" }, audio: false })
       .then((stream) => {
@@ -395,7 +454,17 @@ export function PeopleScreen() {
         if (videoRef.current) videoRef.current.srcObject = stream;
         setPlaying(true);
       })
-      .catch(() => setPlaying(false));
+      .catch((error: unknown) => {
+        if (cancelled) return;
+        const name = error instanceof DOMException ? error.name : "";
+        setLiveError(
+          name === "NotAllowedError" ? "Camera permission was denied -- allow it for this site and switch back to Live camera."
+            : name === "NotFoundError" ? "No camera device was found on this machine."
+            : name === "NotReadableError" ? "The camera is already in use by another app."
+            : `Could not open the camera${name ? ` (${name})` : ""}.`,
+        );
+        setPlaying(false);
+      });
     return () => { cancelled = true; };
   }, [mode]);
 
@@ -551,14 +620,21 @@ export function PeopleScreen() {
           </div>
         </CardHeader>
         <CardContent className="space-y-3">
-          {mode === "media" ? (
+          {mode === "media" && targetPhoto && !targetBusy && !targetError && (
+            // Cameras mode has no single "tracks in view" list to summarise
+            // (each grid tile runs its own CameraFeed independently, and a
+            // single-camera view is just one tile) -- the match itself is
+            // real, computed by modules/target_client.py against the same
+            // backend/src/l3/target.ts this photo was pushed to, and drawn
+            // directly on whichever tile it fires on (a red TARGET box), so
+            // this just says where to look rather than repeating a summary
+            // this component cannot compute for a wall of tiles.
             <p className="text-sm text-muted-foreground">
-              Target search works on <strong>Live camera</strong> and <strong>Upload video</strong>
-              {" "}-- switch source to use it. The shared camera view reads tracks the vision
-              service already computed, which does not include a target comparison.
+              Searching live: a match on any camera draws a red <strong>TARGET</strong> box
+              directly on that camera's tile, single view or grid alike.
             </p>
-          ) : (
-            <div className="flex flex-wrap items-center gap-4">
+          )}
+          <div className="flex flex-wrap items-center gap-4">
               <button type="button" onClick={() => targetFileRef.current?.click()}
                 className="flex h-20 w-20 flex-none items-center justify-center overflow-hidden rounded-md border-2 border-dashed text-muted-foreground hover:border-primary hover:text-primary">
                 {targetPhoto ? (
@@ -580,20 +656,22 @@ export function PeopleScreen() {
                         </span>
                       )}
                     </p>
-                    <p className="text-muted-foreground">
-                      {bestMatch
-                        ? bestMatchConfirmed
-                          // The match score and multi_human's own "P<n>" label
-                          // are two different confirmations -- an 83% target
-                          // match is real evidence on its own, even while the
-                          // track's stable identity is still in its own
-                          // confirmation window. Never word this as if a high
-                          // score were somehow provisional because of that.
-                          ? `Best match in view: ${((bestMatch.targetScore ?? 0) * 100).toFixed(0)}%` +
-                            (bestMatch.personId ? ` -- tracked as ${bestMatch.personId}` : " -- track id not yet confirmed")
-                          : `Closest candidate: ${((bestMatch.targetScore ?? 0) * 100).toFixed(0)}% -- below the ${(TARGET_MATCH_THRESHOLD * 100).toFixed(0)}% match threshold`
-                        : "No one currently in view to compare."}
-                    </p>
+                    {mode !== "media" && (
+                      <p className="text-muted-foreground">
+                        {bestMatch
+                          ? bestMatchConfirmed
+                            // The match score and multi_human's own "P<n>" label
+                            // are two different confirmations -- an 83% target
+                            // match is real evidence on its own, even while the
+                            // track's stable identity is still in its own
+                            // confirmation window. Never word this as if a high
+                            // score were somehow provisional because of that.
+                            ? `Best match in view: ${((bestMatch.targetScore ?? 0) * 100).toFixed(0)}%` +
+                              (bestMatch.personId ? ` -- tracked as ${bestMatch.personId}` : " -- track id not yet confirmed")
+                            : `Closest candidate: ${((bestMatch.targetScore ?? 0) * 100).toFixed(0)}% -- below the ${(TARGET_MATCH_THRESHOLD * 100).toFixed(0)}% match threshold`
+                          : "No one currently in view to compare."}
+                      </p>
+                    )}
                   </>
                 )}
                 {!targetBusy && !targetError && !targetPhoto && (
@@ -604,8 +682,7 @@ export function PeopleScreen() {
                   </p>
                 )}
               </div>
-            </div>
-          )}
+          </div>
         </CardContent>
       </Card>
 
@@ -614,47 +691,50 @@ export function PeopleScreen() {
           <CardTitle className="flex items-center gap-2 text-base"><ShieldAlertIcon className="size-4" /> Watchlist</CardTitle>
         </CardHeader>
         <CardContent className="space-y-3">
-          {mode === "media" ? (
+          {/* Enrolling is a plain POST to people_ai_service:8002/watchlist --
+              it has nothing to do with which source this page happens to be
+              showing, so it is never gated by `mode`. What DOES depend on
+              mode is where a match then shows up: Cameras mode reads it off
+              the vision service's own `face` channel (joined in above),
+              Live camera/Upload video compute it themselves per frame. */}
+          <div className="flex flex-wrap items-center gap-2">
+            <Input value={enrollName} onChange={(event) => setEnrollName(event.target.value)}
+              placeholder="Name this person" className="max-w-[200px]" disabled={enrollBusy} />
+            <Button size="sm" variant="outline" disabled={!enrollName.trim() || enrollBusy}
+              onClick={() => watchlistFileRef.current?.click()}>
+              <ScanFaceIcon /> Add photo
+            </Button>
+            {enrollBusy && <span className="text-xs text-muted-foreground">Enrolling…</span>}
+          </div>
+          {enrollError && <p className="text-sm text-destructive">{enrollError}</p>}
+          {watchlist.length === 0 ? (
             <p className="text-sm text-muted-foreground">
-              The watchlist works on <strong>Live camera</strong> and <strong>Upload video</strong>
-              {" "}-- same reason target search does (see above).
+              Name someone and add their photo -- a face if visible, clothing colour as a
+              fallback -- and every tracked person is checked against them, on every frame,
+              until removed. This is real face matching when a face is enrolled (see the
+              info box below), not a guess.
             </p>
           ) : (
-            <>
-              <div className="flex flex-wrap items-center gap-2">
-                <Input value={enrollName} onChange={(event) => setEnrollName(event.target.value)}
-                  placeholder="Name this person" className="max-w-[200px]" disabled={enrollBusy} />
-                <Button size="sm" variant="outline" disabled={!enrollName.trim() || enrollBusy}
-                  onClick={() => watchlistFileRef.current?.click()}>
-                  <ScanFaceIcon /> Add photo
-                </Button>
-                {enrollBusy && <span className="text-xs text-muted-foreground">Enrolling…</span>}
-              </div>
-              {enrollError && <p className="text-sm text-destructive">{enrollError}</p>}
-              {watchlist.length === 0 ? (
-                <p className="text-sm text-muted-foreground">
-                  Name someone and add their photo -- a face if visible, clothing colour as a
-                  fallback -- and every tracked person is checked against them, on every frame,
-                  until removed. This is real face matching when a face is enrolled (see the
-                  info box below), not a guess.
-                </p>
-              ) : (
-                <div className="flex flex-wrap gap-2">
-                  {watchlist.map((entry) => (
-                    <Badge key={entry.name} variant="secondary" className="gap-1.5 py-1 pl-2.5 pr-1">
-                      {entry.name}
-                      <span className="text-[10px] text-muted-foreground">
-                        {entry.hasFace ? "face" : entry.hasAppearance ? "clothing only" : "no signature"}
-                      </span>
-                      <button type="button" onClick={() => void removeWatchlistEntry(entry.name)}
-                        className="ml-1 rounded-full p-0.5 hover:bg-muted-foreground/20" aria-label={`Remove ${entry.name}`}>
-                        <XIcon className="size-3" />
-                      </button>
-                    </Badge>
-                  ))}
-                </div>
-              )}
-            </>
+            <div className="flex flex-wrap gap-2">
+              {watchlist.map((entry) => (
+                <Badge key={entry.name} variant="secondary" className="gap-1.5 py-1 pl-2.5 pr-1">
+                  {entry.name}
+                  <span className="text-[10px] text-muted-foreground">
+                    {entry.hasFace ? "face" : entry.hasAppearance ? "clothing only" : "no signature"}
+                  </span>
+                  <button type="button" onClick={() => void removeWatchlistEntry(entry.name)}
+                    className="ml-1 rounded-full p-0.5 hover:bg-muted-foreground/20" aria-label={`Remove ${entry.name}`}>
+                    <XIcon className="size-3" />
+                  </button>
+                </Badge>
+              ))}
+            </div>
+          )}
+          {mode === "media" && (
+            <p className="text-xs text-muted-foreground">
+              On this camera, a match only appears once the camera's own `face` module sees it --
+              see the amber box on the feed below. Not every camera runs that module.
+            </p>
           )}
         </CardContent>
       </Card>
@@ -685,6 +765,42 @@ export function PeopleScreen() {
                       {typeof evidence.score === "number" && (
                         <span className="text-xs text-muted-foreground">
                           {(evidence.score * 100).toFixed(0)}% {evidence.signal === "appearance" ? "(clothing)" : "(face)"}
+                        </span>
+                      )}
+                    </div>
+                    <span className="text-xs text-muted-foreground">{relative(event.occurredAt)}</span>
+                  </li>
+                );
+              })}
+            </ul>
+          </CardContent>
+        </Card>
+      )}
+
+      {targetSightings.length > 0 && (
+        <Card>
+          <CardHeader className="pb-3">
+            <CardTitle className="text-base">Recent target-search matches</CardTitle>
+          </CardHeader>
+          <CardContent>
+            {/* Same durable-history idea as watchlist sightings above, for
+                the CURRENT reference photo instead of a named entry -- no
+                name to show, because target search never claimed one; just
+                where and how strong a match this photo got, across every
+                camera, surviving a reload. Cleared implicitly the moment a
+                new target photo replaces this one, same as the live score. */}
+            <ul className="space-y-2">
+              {targetSightings.map((event) => {
+                const evidence = event.evidence as { score?: number };
+                const cameraName = cameras.find((c) => c.id === event.cameraId)?.name ?? event.cameraId ?? "unknown camera";
+                return (
+                  <li key={event.id} className="flex flex-wrap items-center justify-between gap-2 border-b pb-2 text-sm last:border-0 last:pb-0">
+                    <div className="flex items-center gap-2">
+                      <Badge variant="destructive">TARGET</Badge>
+                      <span className="text-muted-foreground">at {cameraName}</span>
+                      {typeof evidence.score === "number" && (
+                        <span className="text-xs text-muted-foreground">
+                          {(evidence.score * 100).toFixed(0)}% (clothing)
                         </span>
                       )}
                     </div>
@@ -782,7 +898,12 @@ export function PeopleScreen() {
               )
             ) : (
               <div className="relative aspect-video">
-                {mode === "upload" && !videoUrl ? (
+                {mode === "live" && liveError ? (
+                  <div className="absolute inset-0 flex flex-col items-center justify-center gap-2 px-6 text-center text-white/70">
+                    <CameraIcon className="size-9" />
+                    <span className="text-sm">{liveError}</span>
+                  </div>
+                ) : mode === "upload" && !videoUrl ? (
                   <button type="button" onClick={() => fileRef.current?.click()}
                     className="absolute inset-0 flex w-full flex-col items-center justify-center gap-2 text-white/70">
                     <UploadCloudIcon className="size-9" />

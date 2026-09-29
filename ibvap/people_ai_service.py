@@ -65,8 +65,10 @@ STATUS: prototype.
 """
 
 import base64
+import json
 import time
 import urllib.error
+import urllib.request
 
 import cv2
 import numpy as np
@@ -223,7 +225,42 @@ def set_target(frame: Frame):
     if embedding is None:
         raise HTTPException(400, "could not read an appearance signature from the reference photo")
     state.target_embedding = embedding
+    _push_target(state, embedding)
     return {"ok": True, "confidence": round(float(subject["confidence"]), 3)}
+
+
+def _push_target(state: _Models, embedding: list[float] | None) -> None:
+    """
+    Relay the target embedding to the backend (backend/src/l3/target.ts) so
+    ibvap/main.py's live camera pipeline can compare against it too --
+    otherwise a target set from the People page's Upload/Live-webcam mode
+    would stay invisible to the real "Cameras" source, the same gap
+    modules/watchlist_client.py already closed for the watchlist. Best
+    effort: a target that fails to push still works for THIS process's own
+    /detect calls, it just will not reach the live cameras until the next
+    successful push.
+    """
+    body = json.dumps({"appearanceEmbedding": embedding}).encode("utf-8")
+    request = urllib.request.Request(
+        f"{state.watchlist.backend_url}/api/target", data=body, method="POST",
+        headers={"content-type": "application/json"},
+    )
+    try:
+        with urllib.request.urlopen(request, timeout=3.0) as response:
+            response.read()
+    except (urllib.error.URLError, OSError) as error:
+        print(f"[target] could not push to {state.watchlist.backend_url}/api/target: {error}")
+
+
+def _clear_target_backend(state: _Models) -> None:
+    request = urllib.request.Request(
+        f"{state.watchlist.backend_url}/api/target", method="DELETE",
+    )
+    try:
+        with urllib.request.urlopen(request, timeout=3.0) as response:
+            response.read()
+    except (urllib.error.URLError, OSError) as error:
+        print(f"[target] could not clear {state.watchlist.backend_url}/api/target: {error}")
 
 
 @app.post("/identify")
@@ -265,6 +302,7 @@ def clear_target():
     """Back to plain tracking -- every /detect call stops scoring against anyone."""
     state = models()
     state.target_embedding = None
+    _clear_target_backend(state)
     return {"ok": True}
 
 
