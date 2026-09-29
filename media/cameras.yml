@@ -1,130 +1,175 @@
-# The camera manifest — the one place a camera is declared.
+# The camera manifest — what cameras exist and what runs on each.
 #
-# Adding a camera is adding a block here. Nothing else changes: `configure.py`
-# regenerates the media hub config from this file, the vision service reads the
-# same file to know what to pull, and the console gets it from the backend.
+# Read by:  media/configure.py  (writes media/mediamtx.yml — the hub paths)
+#           media/fetch.py      (downloads / re-encodes clips)
+#           ibvap/config.py     (the vision service — which cameras, which modules)
+# NOT read by the backend. The backend's `camera` table is a separate list
+# (see `id` below), and the console shows the table's `name`, not `label`.
 #
-# This file says WHAT cameras exist. `.env` says WHERE the modules run and
-# which of these cameras THIS machine handles. Keep the split — this file is
-# shared and committed, `.env` is per-machine and ignored.
+# This file says WHAT cameras exist. `.env` says WHERE things run and which of
+# these cameras THIS machine handles (IBVAP_WORKER_CAMERAS). Zones are never
+# written here — they are drawn in the console and pulled from the node.
 #
-# `id` MUST match a camera row seeded in backend/src/db/seed.ts. The backend
-# rejects a frame for an unknown camera_id (l4/hooks.ts), so a typo here shows
-# up as a worker that runs fine and produces no events.
+# After editing: python media/configure.py, restart mediamtx, restart
+# ibvap/main.py. (Careful: `fetch.py --url` rewrites this file and drops every
+# comment in it.)
 
-# ── source kinds ─────────────────────────────────────────────────────────
+# ═══════════════════════════════════════════════════════════════════════
+# KEY REFERENCE  (every key the code reads — nothing else has any effect)
+# ═══════════════════════════════════════════════════════════════════════
 #
-#   file    loop a local clip forever. The v0 default.
-#             path:  clips/whatever.mp4
-#             url:   optional. `fetch.py` downloads this into `path` when the
-#                    file is missing. Any yt-dlp-supported URL.
+# ── top level ───────────────────────────────────────────────────────────
 #
-#   rtsp    a real camera. The day one arrives, change `kind` and drop the
-#           URL in — the path name stays, so nothing downstream notices.
-#             url:   rtsp://user:pass@10.0.0.14:554/Streaming/Channels/102
-#             Credentials stay in this file and never reach the browser.
+#   defaults:   keys merged into every camera block. SHALLOW merge — a
+#               camera's own `modules:` or `source:` replaces the default
+#               wholesale, it does not combine with it.
+#   cameras:    the list of camera blocks.
 #
-#   webcam  a local capture device (Windows DirectShow).
-#             device: "Integrated Camera"   — exact name from
+# ── per camera ──────────────────────────────────────────────────────────
+#
+#   id          REQUIRED. Unique. Letters, digits, `_`, `-` only.
+#               It is the hub path (rtsp://<host>:8554/<id>), the WHEP path,
+#               and the camera_id on every event. It MUST match a row in the
+#               backend's `camera` table (backend/ibvap.db) or the node rejects
+#               every event with "unknown camera <id>" — video plays, nothing is
+#               recorded. Add a missing row with the console's "Add to the node"
+#               or POST /api/cameras {id, name}.
+#
+#   label       Display text for the vision service's logs and the overlay
+#               burned into `fetch.py --synthetic` clips. Default: the id.
+#               The console's camera name comes from the DB row, not this —
+#               change it there (PATCH /api/cameras/<id> {name}).
+#
+#   detect      true | false. Whether the vision service runs on this camera.
+#               false = video only (live tile, no boxes).
+#               ALWAYS WRITE IT. If omitted, ibvap treats it as false, while
+#               configure.py treats it as true when picking launcher cameras —
+#               the two disagree.
+#
+#   simulated   true | false. Stamped on every event; the console shows a
+#               SIMULATED badge. Default: true when source.kind is `file`,
+#               false otherwise. Set false for replayed footage you want treated
+#               as operational.
+#
+#   imgsz       YOLO inference size for this camera only (e.g. 640 for a
+#               plate-facing gate). Default: IBVAP_IMGSZ — but configure.py
+#               launches the service with --imgsz 384, which wins over .env.
+#               Bigger = small objects/plates detected, more CPU.
+#
+#   height      Only used by fetch.py: the height clips are scaled to when it
+#               downloads, normalises or synthesises them (synthetic default
+#               480). null / omitted = keep the source resolution.
+#               NO effect at runtime — the hub publishes the file as-is.
+#
+#   modules     Which modules run on the shared YOLO+ByteTrack pass. Either:
+#                   modules: [fence, anpr]            names, default params
+#                   modules:                          names with params
+#                     fence: {confirm_frames: 4}
+#               Omitted → defaults.modules → built-in {fence, multi_human}.
+#               Available: fence, anpr, multi_human, face (params below).
+#
+#   source      REQUIRED. Where the video comes from.
+#     kind        file (default) | rtsp | webcam
+#     file:   path    REQUIRED. Relative to media/ (e.g. clips/x.mp4).
+#                     Must be H.264, no B-frames, yuv420p, or the tile stays
+#                     black — `python media/fetch.py --normalise` fixes that.
+#             url     Optional. Any yt-dlp URL; `fetch.py` downloads it into
+#                     `path` when the file is missing (≤720p, trimmed to
+#                     --seconds, default 120; --seconds 0 keeps all).
+#     rtsp:   url     REQUIRED. rtsp://user:pass@10.0.0.14:554/... — the hub
+#                     pulls it directly; credentials stay on the hub machine.
+#     webcam: device  REQUIRED. DirectShow name, from
 #                     ffmpeg -list_devices true -f dshow -i dummy
 #
-# ── per-camera keys ──────────────────────────────────────────────────────
+# ── module params (all optional; defaults shown) ────────────────────────
 #
-#   detect: true|false   whether a vision worker runs on this camera.
-#                        false still publishes video — the tile is live, it
-#                        just has no boxes. That is a legitimate v0 state and
-#                        the console shows it honestly.
+#   fence
+#     confirm_frames: 3        frames a crossing must hold (AND confirm_seconds
+#                              from the zone — both clocks must agree)
+#     cooldown_seconds: 20     per (track, zone, direction) before re-alerting
+#     clips: false             keep a frame ring and attach an evidence clip to
+#                              each confirmed crossing (costs RAM, see core/clip.py)
+#     clip_pre_seconds: 4      seconds kept before the crossing
+#     clip_post_seconds: 2     seconds kept after
+#     (`zones` is overwritten from the node every refresh — never set it here)
 #
-#   modules:             which detection sub-modules run on this camera. The
-#                        vision service loads one shared YOLO+ByteTrack pass per
-#                        camera and hands its output to each of these; a module
-#                        never runs a detector of its own.
+#   anpr                       (loads EasyOCR — heavy; enable only where plates
+#                              face the camera)
+#     ocr_every: 1             OCR every Nth processed frame per vehicle
+#     ocr_confidence: 0.32     minimum EasyOCR confidence for a read
+#     read_interval: 1.5       seconds between reads of the same track
+#     exit_grace: 15           seconds a vehicle must be absent before its
+#                              track is closed and counted (min 0.25)
 #
-#                        modules: [fence, anpr]          names, default params
-#                        modules:                        names with params
-#                          fence: {confirm_frames: 4}
-#                          anpr:  {report_interval: 12}
+#   multi_human
+#     embed_every: 2           refresh a track's appearance every Nth frame
+#     trail_limit: 0           trail points kept per person (0 = unlimited)
+#     max_speed: 1.5           frame-widths/second; faster re-ID jumps are
+#                              rejected (not calibrated to metres)
+#     reid: histogram          histogram | null (null = never re-associate)
+#     reid_threshold: 0.65     cosine similarity needed to fold a track back in
+#     reid_ttl_seconds: 120    how long a lost person stays matchable
 #
-#                        Omit it to take `defaults.modules` below. Available:
-#                        fence (zone/line intrusion), anpr (plate reading),
-#                        multi_human (person tracking; re-ID is interface-only).
-#                        Fence ZONES are not configured here — they are drawn by
-#                        an operator, stored by the edge node, and pulled from
-#                        its /api/config while running, so an edit takes effect
-#                        without touching this file or restarting a worker.
+#   face
+#     face_every: 5            run face detection every Nth frame per person
+#     upper_frac: 0.55         top fraction of the person box searched
+#     score_threshold: 0.75    YuNet detection score floor
+#     model                    default: IBVAP_FACE_MODEL
+#                              (data/face_detection_yunet_2023mar.onnx)
+#     recognition_model        embedding model for watchlist matching
+#     backend_url              default: from .env (IBVAP_BACKEND_HOST/PORT)
+#     watchlist_refresh_seconds: 5   default: IBVAP_WATCHLIST_REFRESH_SECONDS
+#
+# ── ORDER MATTERS ───────────────────────────────────────────────────────
+#
+#   configure.py hangs the vision service (ibvap/main.py) off the FIRST
+#   camera with detect: true, and the plate-scanner API (ai_service, :8001)
+#   off the SECOND. They start when that camera's path becomes ready — so if
+#   the first camera's clip is missing, the vision service never starts.
+#   Keep a camera whose clip definitely exists at the top.
 
-defaults:
-  detect: true
-  # Downscale on publish. Detection runs at --imgsz anyway, so pushing
-  # 1080p into the hub buys nothing and costs decode on every worker.
-  # null = publish at the source's own resolution.
-  height: 480
-
-  # Cheap by default: both are arithmetic over the shared detection pass. ANPR
-  # is opt-in per camera because it loads EasyOCR and reads pixels — and
-  # because plate reading only works where plates face the camera anyway.
-  modules: [fence, multi_human]
+# defaults:
+#   detect: true
+#   modules: [fence, multi_human]
 
 cameras:
-  - id: cam_fence_north
-    label: BOP-01 Fence North
+  - id: cam_fence_north            # DB name: CCTV-01 Highway
+    label: CCTV-01 Highway
     detect: true
+    modules: [fence, anpr]
     source:
       kind: file
-      path: clips/fence_north.mp4
-      # url: https://www.youtube.com/watch?v=...
+      path: clips/highway_cam.mp4
 
-  - id: cam_farm_gate
-    label: BOP-02 Farm Gate
-    # Temporarily pointed at the same real people footage as cam_fence_north
-    # (2026-09-25, multi-camera watchlist grid) -- there is no second real
-    # clip yet, and a 5-tile grid with 4 empty placeholder tiles proves
-    # nothing about cross-camera matching. anpr stays configured (it is
-    # harmless, just idle -- fence_north.mp4 has no plates) so this camera
-    # reverts to being the ANPR demo the instant it gets its own footage
-    # back; nothing about ITS identity changes, only what it is fed.
-    modules: [fence, anpr, multi_human, face]
+  - id: cam_farm_gate              # DB name: CCTV-02 Highway
+    label: CCTV-02 Highway
     detect: true
+    modules: [fence, anpr]
     source:
       kind: file
-      path: clips/fence_north.mp4
-      # url: https://www.youtube.com/watch?v=...
+      path: clips/highway_cam2.mp4
 
-  - id: cam_patrol_road
-    label: BOP-03 Patrol Road
-    # Same as cam_farm_gate above: real footage borrowed for now.
-    modules: [fence, anpr, multi_human, face]
+  - id: cam_patrol_road            # DB name: Mall-Patrol
+    label: Mall-Patrol
     detect: true
+    modules: [multi_human, face]
     source:
       kind: file
-      path: clips/fence_north.mp4
-      # url: https://www.youtube.com/watch?v=...
+      path: clips/mall_cctv.mp4
+      url: https://youtu.be/SvldnZ6qMGU
 
-  - id: cam_waterline
-    label: BOP-04 Waterline
+  - id: cam_waterline              # DB name: Mall-Patrol 2
+    label: Mall-Patrol 2
     detect: true
-    # Same as cam_farm_gate above: real footage borrowed for now.
-    modules: [fence, anpr, multi_human, face]
+    modules: [multi_human, face]
     source:
       kind: file
-      path: clips/fence_north.mp4
-      # url: https://www.youtube.com/watch?v=...
+      path: clips/Face_detection.mp4
+      url: https://youtu.be/5CG-hLc1Eps
 
-  - id: cam_garden
+  - id: cam_garden                 # DB name: BOP-05 Garden
     label: BOP-05 Garden
     detect: true
-    # Real footage (a car park), unlike the synthetic test patterns on the
-    # other paths -- so this is the one camera where detections actually
-    # appear. ANPR is on because what is in frame is vehicles. face is on
-    # too, alongside anpr, for the same multi-camera watchlist grid every
-    # other camera got face added for.
-    #
-    # `clips` keeps a short ring of processed frames and cuts the seconds
-    # either side of a confirmed crossing out of it, so an incident arrives
-    # carrying the frames it was judged from. Opt-in per camera because the
-    # ring costs real RAM (see ibvap/core/clip.py for the arithmetic), and
-    # enabled here because this is the camera that actually produces
-    # crossings. `clip_pre_seconds` / `clip_post_seconds` default to 4 and 2.
     modules:
       fence: { clips: true }
       anpr: {}
@@ -133,23 +178,19 @@ cameras:
     source:
       kind: file
       path: clips/virtual_fence.mp4
-      # url: https://youtu.be/gz8N0kc90uU
+      url: https://youtu.be/gz8N0kc90uU
 
-  - id: cam_border_gate
-    label: Border Gate
+  - id: cam_border_gate            # DB name: Pedestrian Gate
+    label: Pedestrian Gate
     detect: true
-    # This replay contains real monitoring footage and is the approved ANPR
-    # demo source. Keep its detections in the operational 12-hour capture list.
+    # Real monitoring footage and the approved ANPR demo source, so its
+    # events are treated as operational rather than simulated.
     simulated: false
-    # Vehicles are too small for the shared CPU-friendly 384px detector at
-    # their first readable approach. Raise only this plate-facing camera.
+    # Vehicles are too small for the shared 384px pass at their first
+    # readable approach; raise only this plate-facing camera.
     imgsz: 640
-    # Keep the source resolution for vehicle crops and number-plate OCR. The
-    # detector still controls its own inference size, so this does not force
-    # every YOLO pass to process the full source resolution.
-    height: null
     modules: [fence, anpr, multi_human]
     source:
       kind: file
-      path: clips/border_gate.mp4
+      path: clips/street_footage.mp4
       # url: https://youtu.be/dP1UQ59d0Vw

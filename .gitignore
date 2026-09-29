@@ -9,4 +9,6 @@
 *.onnx
 
 mcp/learning
+
+docs/promo
 mcp/learning
