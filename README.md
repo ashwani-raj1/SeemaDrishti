@@ -24,6 +24,11 @@ Built for **Smart India Hackathon 2026 · Problem Statement 26187** (Ministry of
 
 > **Key principle:** the vision service owns *realtime observation*, and the backend owns *durable truth* and *operator decisions*.
 
+
+## Incident Reporting Flow
+
+![SeemaDrishti Incident Reporting Flow](docs/incident_reporting_flow.png)
+
 ### Where it started
 
 Our first brainstorm sketch (25 August), the idea before the code:
