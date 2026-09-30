@@ -92,6 +92,14 @@ Also: [`docs/`](docs) has the API reference, guidelines, ER diagram and HLD; [`p
 </tr>
 </table>
 
+
+## Raw Run Video
+
+https://github.com/user-attachments/assets/0af04939-5e0b-41c6-8fc2-6bdf2ddfb930
+
+
+
+
 ## Tech stack
 
 | Area | Technologies |
