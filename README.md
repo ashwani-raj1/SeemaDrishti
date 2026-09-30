@@ -10,7 +10,8 @@ Built for **Smart India Hackathon 2026 · Problem Statement 26187** (Ministry of
 
 ## Explanation video
 
-> 🎬 **Coming soon.** *(placeholder: add the video link here)*
+https://github.com/user-attachments/assets/9a6e01bd-2c4b-48cc-ab78-07f172b6ed1b
+
 
 ## High-level architecture
 
