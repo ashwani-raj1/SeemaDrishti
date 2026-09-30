@@ -76,6 +76,10 @@ Also: [`docs/`](docs) has the API reference, guidelines, ER diagram and HLD; [`p
 <td><img src="docs/screenshots/audit-trail.png" alt="Audit trail"><br><sub><b>Audit trail</b>: every decision, hash-chained and verifiable</sub></td>
 </tr>
 <tr>
+<td><img src="docs/screenshots/anpr-incident.png" alt="ANPR watchlist incident"><br><sub><b>Watchlist hit</b>: flagged plate with captured proof, match details and recommended action</sub></td>
+<td><img src="docs/screenshots/person-recognition.png" alt="Person search"><br><sub><b>Person search</b>: closest candidate shown with its score; below the 75% threshold it is not claimed as a match</sub></td>
+</tr>
+<tr>
 <td><img src="docs/screenshots/cameras.png" alt="Cameras"><br><sub><b>Cameras</b>: feed health and service status</sub></td>
 <td><img src="docs/screenshots/zones.png" alt="Zones"><br><sub><b>Zones</b>: named places, watching cameras, target policy</sub></td>
 </tr>
