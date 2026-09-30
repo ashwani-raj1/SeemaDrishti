@@ -36,6 +36,10 @@ Our first brainstorm sketch (25 August), the idea before the code:
 
 ![First brainstorm sketch](docs/brainstorm-sketch.png)
 
+### Dataflow for events
+<img width="5571" height="3195" alt="image" src="https://github.com/user-attachments/assets/828c1a12-a9a0-485f-88de-8ebd687ec22f" />
+
+
 The core split was there from day one: a source-agnostic media hub, a Python vision service that only detects, and an edge service where all operator actions and data stay. Some things changed on the way. The `ibvap/service` box became `vision-service/`, and the Gemini main agent with sub-agents became the ADK investigation agent over the MCP server, running on any OpenRouter model.
 
 ## Repository map
