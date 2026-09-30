@@ -10,7 +10,8 @@ Built for **Smart India Hackathon 2026 · Problem Statement 26187** (Ministry of
 
 ## Explanation video
 
-> 🎬 **Coming soon.** *(placeholder: add the video link here)*
+https://github.com/user-attachments/assets/9a6e01bd-2c4b-48cc-ab78-07f172b6ed1b
+
 
 ## High-level architecture
 
@@ -94,6 +95,14 @@ Also: [`docs/`](docs) has the API reference, guidelines, ER diagram and HLD; [`p
 <td width="33%"><img src="docs/screenshots/agent-critical-alerts.png" alt="Agent critical alerts"><br><sub>"Any critical alerts in the last 20 mins?"</sub></td>
 </tr>
 </table>
+
+
+## Raw Run Video
+
+https://github.com/user-attachments/assets/0af04939-5e0b-41c6-8fc2-6bdf2ddfb930
+
+
+
 
 ## Tech stack
 
